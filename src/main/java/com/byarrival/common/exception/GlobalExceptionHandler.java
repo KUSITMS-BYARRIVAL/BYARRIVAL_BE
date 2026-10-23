@@ -14,7 +14,9 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
-/** 전역 예외 처리. 4xx는 warn, 5xx는 error 로그를 남긴다. */
+/**
+ * 전역 예외 처리. 4xx는 warn, 5xx는 error 로그를 남긴다.
+ */
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {

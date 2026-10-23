@@ -4,7 +4,9 @@ import com.byarrival.common.exception.ErrorCode;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 
-/** 모든 API의 공통 응답 형식 (성공/실패 모두 success, code, message, data 구조) */
+/**
+ * 모든 API의 공통 응답 형식 (성공/실패 모두 success, code, message, data 구조)
+ */
 @JsonPropertyOrder({"success", "code", "message", "data"})
 public record ApiResponse<T>(
     boolean success,
