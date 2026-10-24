@@ -13,7 +13,7 @@ model: sonnet
 
 ## 절차
 
-1. `.claude/spec/roadmap.md`에서 티켓의 관련 기능 ID를 찾는다.
+1. `.claude/spec/roadmap.md`에서 티켓의 관련 기능 ID를 찾는다. 같은 파일의 "확정된 결정"이 명세와 다르면 결정을 기준으로 대조한다.
 2. 해당 기능이 있는 `.claude/spec/features/<그룹>.md`를 읽는다.
 3. 기능 ID마다 아래를 코드와 대조한다.
    - **입력값**: Request DTO와 PathVariable에 명세의 입력이 모두 있는가, 명세에 없는 필수 입력이 추가되지 않았는가
