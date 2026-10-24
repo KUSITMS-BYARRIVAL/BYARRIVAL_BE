@@ -17,12 +17,12 @@
       "Bash(gh label list:*)"
     ],
     "deny": [
-      "Read(./.env)",
-      "Read(./.env.*)",
-      "Read(./src/main/resources/application-local.yaml)",
-      "Edit(./.env)",
-      "Edit(./.env.*)",
-      "Edit(./src/main/resources/application-local.yaml)",
+      "Read(/.env)",
+      "Read(/.env.*)",
+      "Read(/src/main/resources/application-local.yaml)",
+      "Edit(/.env)",
+      "Edit(/.env.*)",
+      "Edit(/src/main/resources/application-local.yaml)",
       "Bash(git push origin main:*)",
       "Bash(git push origin dev:*)",
       "Bash(git push --force:*)",
