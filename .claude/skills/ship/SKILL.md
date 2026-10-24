@@ -10,10 +10,10 @@ argument-hint: "[commit-only]"
 
 ## 1. 상태 확인
 
-1. `git status`, `git diff`, `git log dev..HEAD`로 변경 범위를 확인한다.
-2. 현재 브랜치가 `main`이나 `dev`면 멈추고 작업 브랜치를 먼저 만들라고 알린다.
-3. 브랜치 이름에서 이슈 번호를 읽는다. 예: `feat/#12-route-create` → `#12`
-4. `.env`, `application-local.yaml`, 키·토큰이 들어간 파일이 변경에 있으면 멈추고 알린다.
+1. 현재 브랜치가 `main`이나 `dev`면 멈추고 작업 브랜치를 먼저 만들라고 알린다.
+2. `git status --short`, `git diff --name-only dev...HEAD`로 **파일 이름만** 먼저 확인한다. `.env`, `application-local.yaml`, 키·토큰 파일(`*.pem`, `*.key`, `*credentials*` 등)이 있으면 내용을 열지 말고 멈춘 뒤 알린다.
+3. 문제가 없을 때만 `git diff`, `git log dev..HEAD`로 변경 내용을 확인한다.
+4. 브랜치 이름에서 이슈 번호를 읽는다. 예: `feat/#12-route-create` → `#12`
 
 ## 2. 검증
 
