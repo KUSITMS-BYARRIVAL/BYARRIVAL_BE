@@ -18,11 +18,8 @@ permissions:
 
 jobs:
   create-jira-subtask:
-    # 이슈 폼으로 만든 이슈 중 조직 멤버·협업자가 만든 것만 처리
-    # (public 레포라 외부인도 이슈를 만들 수 있으므로 Jira 토큰 사용을 막음)
-    if: >-
-      contains(github.event.issue.body, '상위 작업') &&
-      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association)
+    # 이슈 폼으로 만든 이슈만 처리
+    if: contains(github.event.issue.body, '상위 작업')
     runs-on: ubuntu-latest
     env:
       JIRA_PROJECT: DCK
