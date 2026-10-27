@@ -1,0 +1,98 @@
+name: Close Jira Sub-task
+
+# PR이 머지되면
+# 1) 브랜치 이름에서 Jira 키(DCK-숫자)를 찾음
+# 2) 해당 하위 작업을 완료로 전환
+# 머지 없이 닫힌 PR은 처리하지 않음
+# 상위 스토리 완료는 Jira에서 직접 처리
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+
+jobs:
+  close-jira-subtask:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    env:
+      JIRA_PROJECT: DCK
+      DONE_STATUS: 완료
+      JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+      JIRA_USER_EMAIL: ${{ secrets.JIRA_USER_EMAIL }}
+      JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+      # 사용자 입력은 환경 변수로만 전달 (스크립트 인젝션 방지)
+      HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+
+    steps:
+      - name: Transition Jira sub-task to done
+        run: |
+          set -uo pipefail
+          BASE="${JIRA_BASE_URL%/}"
+
+          jira() {
+            local method="$1" path="$2" data="${3:-}"
+            local args=(-sS --fail-with-body -X "$method"
+              -u "${JIRA_USER_EMAIL}:${JIRA_API_TOKEN}"
+              -H "Accept: application/json")
+            if [ -n "$data" ]; then
+              args+=(-H "Content-Type: application/json" --data "$data")
+            fi
+            curl "${args[@]}" "${BASE}${path}"
+          }
+
+          # 브랜치 이름에서 Jira 키 찾기
+          KEYS=$(printf '%s\n' "$HEAD_BRANCH" | grep -oE "${JIRA_PROJECT}-[0-9]+" | sort -u || true)
+
+          if [ -z "$KEYS" ]; then
+            echo "::notice::브랜치 이름에 Jira 키가 없어 건너뜁니다. (브랜치: ${HEAD_BRANCH})"
+            exit 0
+          fi
+
+          FAILED=0
+          for KEY in $KEYS; do
+            if ! ISSUE=$(jira GET "/rest/api/3/issue/${KEY}?fields=status,issuetype"); then
+              echo "::warning::${KEY}을(를) Jira에서 찾을 수 없습니다."
+              FAILED=1
+              continue
+            fi
+
+            # 하위 작업만 완료 처리 (스토리 키가 들어간 경우 건너뜀)
+            IS_SUBTASK=$(echo "$ISSUE" | jq -r '.fields.issuetype.subtask')
+            if [ "$IS_SUBTASK" != "true" ]; then
+              echo "::notice::${KEY}은(는) 하위 작업이 아니라 건너뜁니다. 스토리는 Jira에서 직접 완료해 주세요."
+              continue
+            fi
+
+            # 이미 완료면 건너뜀
+            CATEGORY=$(echo "$ISSUE" | jq -r '.fields.status.statusCategory.key')
+            if [ "$CATEGORY" = "done" ]; then
+              echo "${KEY}은(는) 이미 완료 상태입니다."
+              continue
+            fi
+
+            # 상태 이름으로 전환을 찾고, 없으면 완료 계열 상태로 가는 전환을 사용
+            TRANSITION_ID=$(jira GET "/rest/api/3/issue/${KEY}/transitions" \
+              | jq -r --arg s "$DONE_STATUS" '
+                  ([.transitions[] | select(.to.name == $s or .name == $s)][0].id)
+                  // ([.transitions[] | select(.to.statusCategory.key == "done")][0].id)
+                  // empty')
+
+            if [ -z "$TRANSITION_ID" ]; then
+              echo "::warning::${KEY}: '${DONE_STATUS}' 상태로 전환할 수 없습니다. Jira 워크플로우를 확인해 주세요."
+              FAILED=1
+              continue
+            fi
+
+            if jira POST "/rest/api/3/issue/${KEY}/transitions" \
+                "$(jq -n --arg id "$TRANSITION_ID" '{transition: {id: $id}}')" > /dev/null; then
+              echo "${KEY} → ${DONE_STATUS}"
+            else
+              echo "::warning::${KEY} 완료 전환에 실패했습니다."
+              FAILED=1
+            fi
+          done
+
+          exit $FAILED

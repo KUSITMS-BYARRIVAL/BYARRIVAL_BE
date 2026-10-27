@@ -1,0 +1,234 @@
+name: Create Jira Sub-task
+
+# GitHub 이슈 생성 시 (.github/ISSUE_TEMPLATE의 이슈 폼으로 만든 이슈만)
+# 1) 입력한 Jira 스토리 아래에 하위 작업(Sub-task) 생성
+# 2) 담당자 = 이슈 작성자 (JIRA_USER_MAP에 없으면 담당자 없음)
+# 3) 하위 작업 → 진행 중, 부모 스토리가 To Do면 → 진행 중
+# 4) {타입}/#{이슈번호}-{Jira키}-{설명} 브랜치를 dev에서 생성
+#    타입은 제목 접두사([FEAT] → feat, [FIX]/[BUG] → fix ...)에서, 없으면 라벨에서 정함
+# 5) GitHub 이슈에 Jira 링크와 브랜치 이름을 댓글로 남김
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  create-jira-subtask:
+    # 이슈 폼으로 만든 이슈만 처리
+    if: contains(github.event.issue.body, '상위 작업')
+    runs-on: ubuntu-latest
+    env:
+      JIRA_PROJECT: DCK
+      IN_PROGRESS_STATUS: 진행 중
+      BASE_BRANCH: dev
+      JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+      JIRA_USER_EMAIL: ${{ secrets.JIRA_USER_EMAIL }}
+      JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+      JIRA_USER_MAP: ${{ vars.JIRA_USER_MAP }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # 사용자 입력은 run 스크립트에 직접 넣지 않고 환경 변수로만 전달 (스크립트 인젝션 방지)
+      ISSUE_NUMBER: ${{ github.event.issue.number }}
+      ISSUE_TITLE: ${{ github.event.issue.title }}
+      ISSUE_BODY: ${{ github.event.issue.body }}
+      ISSUE_LABELS: ${{ toJSON(github.event.issue.labels.*.name) }}
+      ISSUE_AUTHOR: ${{ github.event.issue.user.login }}
+
+    steps:
+      - name: Parse and validate issue form
+        id: input
+        run: |
+          fail() { echo "ERROR_MSG=$1" >> "$GITHUB_ENV"; echo "::error::$1"; exit 1; }
+
+          # 이슈 폼 본문은 "### 라벨" 다음 줄에 값이 들어감. 빈 값은 "_No response_"
+          field() {
+            printf '%s\n' "$ISSUE_BODY" | tr -d '\r' | awk -v h="$1" '
+              /^### / { inside = index($0, h) > 0; next }
+              inside && NF { print; exit }' | sed 's/^_No response_$//'
+          }
+
+          PARENT_KEY=$(field "상위 작업" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')
+          WORK=$(field "브랜치 설명" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+
+          # 브랜치 타입: 제목 접두사 → 라벨 순으로 결정
+          PREFIX=$(printf '%s' "$ISSUE_TITLE" | sed -nE 's/^[[:space:]]*\[([A-Za-z]+)\].*/\1/p' | tr '[:upper:]' '[:lower:]')
+          case "$PREFIX" in
+            feat|fix|refactor|style|test|docs|chore) BRANCH_TYPE="$PREFIX" ;;
+            bug) BRANCH_TYPE="fix" ;;
+            *)
+              BRANCH_TYPE=$(printf '%s' "$ISSUE_LABELS" | jq -r '
+                map({"✨Feat":"feat","🐞BugFix":"fix","⚙️Chore":"chore","🔨 Refactor":"refactor","✅Test":"test","📝style":"style"}[.] // empty)[0] // empty')
+              ;;
+          esac
+
+          [[ "$PARENT_KEY" =~ ^${JIRA_PROJECT}-[0-9]+$ ]] \
+            || fail "상위 작업 번호 형식이 올바르지 않습니다. ${JIRA_PROJECT}-10 형식으로 입력해 주세요."
+          [ -n "$BRANCH_TYPE" ] \
+            || fail "브랜치 타입을 정할 수 없습니다. 제목을 [FEAT], [FIX], [REFACTOR], [CHORE] 같은 접두사로 시작해 주세요."
+          [[ "$WORK" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] \
+            || fail "브랜치 설명은 영문 소문자, 숫자, - 만 사용하는 kebab-case로 입력해 주세요. (예: route-create)"
+
+          {
+            echo "parent_key=$PARENT_KEY"
+            echo "branch_type=$BRANCH_TYPE"
+            echo "work=$WORK"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Convert description to Jira format
+        id: md2jira
+        uses: peter-evans/jira2md@v3
+        with:
+          input-text: |
+            ### GitHub Issue
+            - ${{ github.event.issue.html_url }}
+
+            ${{ github.event.issue.body }}
+          mode: md2jira
+
+      - name: Create Jira sub-task
+        id: jira
+        env:
+          PARENT_KEY: ${{ steps.input.outputs.parent_key }}
+          DESCRIPTION: ${{ steps.md2jira.outputs.output-text }}
+          SUBTASK_TYPE_ID: ${{ vars.JIRA_SUBTASK_TYPE_ID }}
+        run: |
+          set -euo pipefail
+          BASE="${JIRA_BASE_URL%/}"
+          fail() { echo "ERROR_MSG=$1" >> "$GITHUB_ENV"; echo "::error::$1"; exit 1; }
+
+          jira() {
+            local method="$1" path="$2" data="${3:-}"
+            local args=(-sS --fail-with-body -X "$method"
+              -u "${JIRA_USER_EMAIL}:${JIRA_API_TOKEN}"
+              -H "Accept: application/json")
+            if [ -n "$data" ]; then
+              args+=(-H "Content-Type: application/json" --data "$data")
+            fi
+            curl "${args[@]}" "${BASE}${path}"
+          }
+
+          transition_to() {
+            local key="$1" status="$2" id
+            id=$(jira GET "/rest/api/3/issue/${key}/transitions" \
+              | jq -r --arg s "$status" '[.transitions[] | select(.to.name == $s or .name == $s)][0].id // empty')
+            if [ -z "$id" ]; then
+              echo "::warning::${key}: '${status}' 상태로 전환할 수 없습니다. 워크플로우의 상태 이름을 확인해 주세요."
+              return 0
+            fi
+            jira POST "/rest/api/3/issue/${key}/transitions" \
+              "$(jq -n --arg id "$id" '{transition: {id: $id}}')" > /dev/null
+            echo "${key} → ${status}"
+          }
+
+          # 1. 상위 스토리 확인
+          if ! PARENT=$(jira GET "/rest/api/3/issue/${PARENT_KEY}?fields=issuetype,status"); then
+            echo "$PARENT"
+            fail "Jira에서 ${PARENT_KEY}을(를) 찾을 수 없거나 접근 권한이 없습니다. 티켓 번호를 확인해 주세요."
+          fi
+
+          PARENT_LEVEL=$(echo "$PARENT" | jq -r '.fields.issuetype.hierarchyLevel')
+          PARENT_TYPE=$(echo "$PARENT" | jq -r '.fields.issuetype.name')
+          if [ "$PARENT_LEVEL" != "0" ]; then
+            fail "${PARENT_KEY}은(는) ${PARENT_TYPE} 유형이라 하위 작업을 만들 수 없습니다. 스토리 번호를 입력해 주세요."
+          fi
+
+          # 2. 하위 작업 이슈 타입 ID (변수에 없으면 자동 조회)
+          if [ -z "$SUBTASK_TYPE_ID" ]; then
+            SUBTASK_TYPE_ID=$(jira GET "/rest/api/3/issue/createmeta/${JIRA_PROJECT}/issuetypes" \
+              | jq -r '[(.issueTypes // .values)[] | select(.subtask == true)][0].id // empty')
+          fi
+          [ -n "$SUBTASK_TYPE_ID" ] || fail "${JIRA_PROJECT} 프로젝트에서 하위 작업 이슈 타입을 찾을 수 없습니다."
+
+          # 3. 하위 작업 생성
+          PAYLOAD=$(jq -n \
+            --arg project "$JIRA_PROJECT" \
+            --arg parent "$PARENT_KEY" \
+            --arg type "$SUBTASK_TYPE_ID" \
+            --arg summary "$ISSUE_TITLE" \
+            --arg description "$DESCRIPTION" \
+            '{fields: {
+                project: {key: $project},
+                parent: {key: $parent},
+                issuetype: {id: $type},
+                summary: $summary,
+                description: $description
+              }}')
+
+          if ! CREATED=$(jira POST "/rest/api/2/issue" "$PAYLOAD"); then
+            echo "$CREATED"
+            fail "Jira 하위 작업 생성에 실패했습니다."
+          fi
+          KEY=$(echo "$CREATED" | jq -r '.key')
+          echo "key=${KEY}" >> "$GITHUB_OUTPUT"
+          echo "Created ${KEY}"
+
+          # 4. 담당자 = 이슈 작성자 (매핑이 없거나 실패해도 계속 진행)
+          MAP="${JIRA_USER_MAP:-}"
+          [ -n "$MAP" ] || MAP='{}'
+          ASSIGNEE_ID=$(printf '%s' "$MAP" | jq -r --arg u "$ISSUE_AUTHOR" '.[$u] // empty' 2>/dev/null || true)
+
+          if [ -n "$ASSIGNEE_ID" ]; then
+            jira PUT "/rest/api/3/issue/${KEY}/assignee" \
+              "$(jq -n --arg id "$ASSIGNEE_ID" '{accountId: $id}')" > /dev/null \
+              && echo "Assigned ${KEY} to ${ISSUE_AUTHOR}" \
+              || echo "::warning::${ISSUE_AUTHOR}을(를) 담당자로 지정하지 못했습니다."
+          else
+            echo "::notice::JIRA_USER_MAP에 ${ISSUE_AUTHOR}이(가) 없어 담당자 없이 생성합니다."
+          fi
+
+          # 5. 상태 전환: 하위 작업 → 진행 중, 부모 스토리가 To Do면 → 진행 중
+          transition_to "$KEY" "$IN_PROGRESS_STATUS" \
+            || echo "::warning::${KEY} 상태 전환에 실패했습니다."
+
+          PARENT_CATEGORY=$(echo "$PARENT" | jq -r '.fields.status.statusCategory.key')
+          if [ "$PARENT_CATEGORY" = "new" ]; then
+            transition_to "$PARENT_KEY" "$IN_PROGRESS_STATUS" \
+              || echo "::warning::${PARENT_KEY} 상태 전환에 실패했습니다."
+          fi
+
+      - name: Create branch
+        id: branch
+        env:
+          KEY: ${{ steps.jira.outputs.key }}
+          BRANCH_TYPE: ${{ steps.input.outputs.branch_type }}
+          WORK: ${{ steps.input.outputs.work }}
+        run: |
+          BRANCH_NAME="${BRANCH_TYPE}/#${ISSUE_NUMBER}-${KEY}-${WORK}"
+          SHA=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/${BASE_BRANCH}" --jq '.object.sha')
+          if ! gh api "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f ref="refs/heads/${BRANCH_NAME}" -f sha="$SHA" > /dev/null; then
+            echo "ERROR_MSG=브랜치 생성에 실패했습니다. 같은 이름의 브랜치가 있는지 확인해 주세요." >> "$GITHUB_ENV"
+            exit 1
+          fi
+          echo "name=${BRANCH_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Comment result on GitHub issue
+        env:
+          KEY: ${{ steps.jira.outputs.key }}
+          BRANCH_NAME: ${{ steps.branch.outputs.name }}
+        run: |
+          BASE="${JIRA_BASE_URL%/}"
+
+          printf 'Jira 하위 작업: [%s](%s/browse/%s)\n생성된 브랜치: `%s`\n\n```bash\ngit fetch origin && git switch %s\n```\n' \
+            "$KEY" "$BASE" "$KEY" "$BRANCH_NAME" "$BRANCH_NAME" > comment.md
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file comment.md
+
+      - name: Notify failure
+        if: failure()
+        env:
+          KEY: ${{ steps.jira.outputs.key }}
+        run: |
+          MSG="${ERROR_MSG:-자동화 중 오류가 발생했습니다.}"
+          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+          if [ -n "$KEY" ]; then
+            NOTE="Jira 하위 작업 ${KEY}은(는) 이미 생성되었습니다. 브랜치만 직접 만들어 주세요."
+          else
+            NOTE="내용을 수정한 뒤 이 이슈를 닫고 새로 만들어 주세요."
+          fi
+
+          printf '⚠️ %s\n\n%s\n\n[실행 로그 보기](%s)\n' "$MSG" "$NOTE" "$RUN_URL" > fail.md
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file fail.md
