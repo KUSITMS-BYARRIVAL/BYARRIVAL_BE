@@ -102,6 +102,8 @@ jobs:
           BASE="${JIRA_BASE_URL%/}"
           fail() { echo "ERROR_MSG=$1" >> "$GITHUB_ENV"; echo "::error::$1"; exit 1; }
 
+          [[ "$BASE" == https://* ]] || fail "JIRA_BASE_URL은 https:// 로 시작해야 합니다. 레포 Secrets를 확인해 주세요."
+
           jira() {
             local method="$1" path="$2" data="${3:-}"
             local args=(-sS --fail-with-body -X "$method"

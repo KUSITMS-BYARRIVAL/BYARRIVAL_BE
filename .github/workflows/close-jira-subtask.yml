@@ -1,7 +1,7 @@
 name: Close Jira Sub-task
 
-# PR이 머지되면
-# 1) 브랜치 이름에서 Jira 키(DCK-숫자)를 찾음
+# dev로 PR이 머지되면
+# 1) 브랜치 이름의 정해진 위치({타입}/#{이슈번호}-{Jira키}-{설명})에서 Jira 키를 하나 찾음
 # 2) 해당 하위 작업을 완료로 전환
 # 머지 없이 닫힌 PR은 처리하지 않음
 # 상위 스토리 완료는 Jira에서 직접 처리
@@ -15,7 +15,9 @@ permissions:
 
 jobs:
   close-jira-subtask:
-    if: github.event.pull_request.merged == true
+    if: >-
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.base.ref == 'dev'
     runs-on: ubuntu-latest
     env:
       JIRA_PROJECT: DCK
@@ -31,6 +33,8 @@ jobs:
         run: |
           set -uo pipefail
           BASE="${JIRA_BASE_URL%/}"
+          [[ "$BASE" == https://* ]] \
+            || { echo "::error::JIRA_BASE_URL은 https:// 로 시작해야 합니다."; exit 1; }
 
           jira() {
             local method="$1" path="$2" data="${3:-}"
@@ -43,8 +47,9 @@ jobs:
             curl "${args[@]}" "${BASE}${path}"
           }
 
-          # 브랜치 이름에서 Jira 키 찾기
-          KEYS=$(printf '%s\n' "$HEAD_BRANCH" | grep -oE "${JIRA_PROJECT}-[0-9]+" | sort -u || true)
+          # 브랜치 이름의 정해진 위치에서 Jira 키 하나만 찾기 (예: feat/#12-DCK-40-route-create → DCK-40)
+          KEYS=$(printf '%s\n' "$HEAD_BRANCH" \
+            | sed -nE "s@^[a-z]+/#[0-9]+-(${JIRA_PROJECT}-[0-9]+)-[a-z0-9-]+\$@\1@p")
 
           if [ -z "$KEYS" ]; then
             echo "::notice::브랜치 이름에 Jira 키가 없어 건너뜁니다. (브랜치: ${HEAD_BRANCH})"
