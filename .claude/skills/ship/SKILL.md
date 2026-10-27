@@ -13,7 +13,7 @@ argument-hint: "[commit-only]"
 1. 현재 브랜치가 `main`이나 `dev`면 멈추고 작업 브랜치를 먼저 만들라고 알린다.
 2. `git status --short`, `git diff --name-only dev...HEAD`로 **파일 이름만** 먼저 확인한다. `.env`, `application-local.yaml`, 키·토큰 파일(`*.pem`, `*.key`, `*credentials*` 등)이 있으면 내용을 열지 말고 멈춘 뒤 알린다.
 3. 문제가 없을 때만 `git diff`, `git log dev..HEAD`로 변경 내용을 확인한다.
-4. 브랜치 이름에서 이슈 번호를 읽는다. 예: `feat/#12-route-create` → `#12`
+4. 브랜치 이름에서 이슈 번호를 읽는다. 예: `feat/#12-DCK-40-route-create` → `#12`. 브랜치 이름의 `DCK-xx`는 머지 시 Jira 하위 작업 완료에 쓰이므로 브랜치 이름을 바꾸지 않는다.
 
 ## 2. 검증
 
