@@ -27,7 +27,8 @@ com.byarrival
 - 요청 검증(`@Valid`)과 응답 변환만 합니다. 비즈니스 로직은 Service에 둡니다.
 - 응답은 항상 `ApiResponse.ok(data)` 또는 `ApiResponse.ok()`로 감쌉니다.
 - Entity를 요청이나 응답에 직접 쓰지 않고 DTO를 씁니다.
-- URI는 복수형 명사, 동작은 HTTP Method로 표현합니다. 예: `POST /api/routes`, `GET /api/routes/{routeId}/articles/{articleId}`
+- URI는 `/api/v1`로 시작하고, 노션 API 명세의 경로를 그대로 따릅니다.
+- 리소스는 복수형 명사, 동작은 HTTP Method로 표현합니다. 예: `POST /api/v1/routes`, `GET /api/v1/routes/{routeId}/articles/{articleId}`
 
 ### Service
 - 변경 메서드는 `@Transactional`, 조회 메서드는 `@Transactional(readOnly = true)`를 붙입니다.

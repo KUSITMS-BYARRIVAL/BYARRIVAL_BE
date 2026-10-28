@@ -7,3 +7,15 @@ spring:
     open-in-view: false
     hibernate:
       ddl-auto: validate
+
+auth:
+  social:
+    connect-timeout: 3s
+    read-timeout: 5s
+    kakao:
+      token-info-uri: https://kapi.kakao.com/v1/user/access_token_info
+      app-id: ${KAKAO_APP_ID:}
+    apple:
+      issuer: https://appleid.apple.com
+      keys-uri: https://appleid.apple.com/auth/keys
+      client-id: ${APPLE_CLIENT_ID:}
