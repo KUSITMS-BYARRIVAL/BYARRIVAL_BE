@@ -1,6 +1,7 @@
 package com.byarrival.common.config;
 
 import org.springframework.cache.annotation.EnableCaching;
+import org.springframework.cache.support.NullValue;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.cache.RedisCacheConfiguration;
@@ -17,10 +18,11 @@ public class RedisCacheConfig {
 
     @Bean
     public RedisCacheConfiguration redisCacheConfiguration() {
-        // 역직렬화 대상 타입을 우리 패키지와 JDK 타입으로 제한한다
+        // 역직렬화 대상 타입을 우리 패키지, JDK 타입, null 캐시용 NullValue로 제한한다
         BasicPolymorphicTypeValidator typeValidator = BasicPolymorphicTypeValidator.builder()
             .allowIfSubType("com.byarrival.")
             .allowIfSubType("java.")
+            .allowIfSubType(NullValue.class)
             .build();
 
         GenericJacksonJsonRedisSerializer valueSerializer = GenericJacksonJsonRedisSerializer.builder()

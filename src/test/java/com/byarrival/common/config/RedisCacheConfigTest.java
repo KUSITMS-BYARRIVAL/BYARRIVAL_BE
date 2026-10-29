@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.springframework.cache.support.NullValue;
 import org.springframework.data.redis.serializer.RedisSerializationContext.SerializationPair;
 
 class RedisCacheConfigTest {
@@ -22,5 +23,12 @@ class RedisCacheConfigTest {
         Object restored = valuePair.read(valuePair.write(value));
 
         assertThat(restored).isEqualTo(value);
+    }
+
+    @Test
+    void null_캐시_값은_NullValue로_복원된다() {
+        Object restored = valuePair.read(valuePair.write(NullValue.INSTANCE));
+
+        assertThat(restored).isInstanceOf(NullValue.class);
     }
 }
