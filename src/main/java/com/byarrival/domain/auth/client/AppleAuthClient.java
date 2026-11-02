@@ -58,7 +58,8 @@ public class AppleAuthClient implements SocialAuthClient {
         }
         try {
             AppleTokenHeader header = readPart(parts[0], AppleTokenHeader.class);
-            if (!SIGNING_ALGORITHM.equals(header.alg()) || header.kid() == null) {
+            // 헤더나 클레임 부분이 JSON null이면 readValue가 null을 돌려준다.
+            if (header == null || !SIGNING_ALGORITHM.equals(header.alg()) || header.kid() == null) {
                 throw authFailed();
             }
             verifySignature(parts, findPublicKey(header.kid()));
@@ -114,7 +115,8 @@ public class AppleAuthClient implements SocialAuthClient {
 
     // 클라이언트 ID 설정이 비어 있으면 어떤 토큰도 통과시키지 않는다.
     private void validateClaims(AppleTokenClaims claims) {
-        boolean valid = properties.issuer().equals(claims.iss())
+        boolean valid = claims != null
+            && properties.issuer().equals(claims.iss())
             && properties.clientId() != null && !properties.clientId().isBlank()
             && properties.clientId().equals(claims.aud())
             && claims.exp() != null && Instant.ofEpochSecond(claims.exp()).isAfter(clock.instant())

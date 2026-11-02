@@ -125,6 +125,22 @@ class AppleAuthClientTest {
     }
 
     @Test
+    void 헤더가_JSON_null이면_인증_실패다() {
+        String token = encode("null") + "." + encode(claims(ISSUER, CLIENT_ID, NOW.plusSeconds(600), "apple-user"))
+            + ".signature";
+
+        assertAuthError(token, AuthErrorCode.SOCIAL_AUTH_FAILED);
+    }
+
+    @Test
+    void 클레임이_JSON_null이면_인증_실패다() throws Exception {
+        expectKeys();
+        String token = sign(appleKeyPair, header(KID), "null");
+
+        assertAuthError(token, AuthErrorCode.SOCIAL_AUTH_FAILED);
+    }
+
+    @Test
     void JWT_형식이_아니면_인증_실패다() {
         assertAuthError("not-a-jwt", AuthErrorCode.SOCIAL_AUTH_FAILED);
         assertAuthError("a.b.c", AuthErrorCode.SOCIAL_AUTH_FAILED);
