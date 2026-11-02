@@ -19,3 +19,10 @@ auth:
       issuer: https://appleid.apple.com
       keys-uri: https://appleid.apple.com/auth/keys
       client-id: ${APPLE_CLIENT_ID:}
+
+rss:
+  fetch:
+    connect-timeout: 5s
+    read-timeout: 10s
+    max-response-size: 5MB
+    max-redirects: 3

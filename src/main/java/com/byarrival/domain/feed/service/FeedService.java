@@ -6,6 +6,8 @@ import com.byarrival.domain.feed.dto.response.FeedResponse;
 import com.byarrival.domain.feed.entity.RssFeed;
 import com.byarrival.domain.feed.exception.FeedErrorCode;
 import com.byarrival.domain.feed.repository.RssFeedRepository;
+import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.hibernate.exception.ConstraintViolationException;
@@ -53,6 +55,14 @@ public class FeedService {
     @Transactional(readOnly = true)
     public List<RssFeed> getActiveFeeds() {
         return rssFeedRepository.findAllByActiveTrue();
+    }
+
+    @Transactional
+    public void markFetched(Collection<Long> feedIds, LocalDateTime fetchedAt) {
+        if (feedIds.isEmpty()) {
+            return;
+        }
+        rssFeedRepository.updateLastFetchedAt(feedIds, fetchedAt);
     }
 
     @Transactional
