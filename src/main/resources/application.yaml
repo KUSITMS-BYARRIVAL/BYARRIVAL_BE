@@ -26,3 +26,10 @@ rss:
     read-timeout: 10s
     max-response-size: 5MB
     max-redirects: 3
+
+jwt:
+  secret: ${JWT_SECRET:}
+  # TODO: 임시값. 토큰 유효기간 정책 확정 후 변경
+  access-token-validity: 24h
+  # TODO: 임시값. 앱은 보통 30~60일로 길게 둔다
+  refresh-token-validity: 720h

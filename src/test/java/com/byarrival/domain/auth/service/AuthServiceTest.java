@@ -13,7 +13,9 @@ import com.byarrival.domain.auth.client.SocialAuthClient;
 import com.byarrival.domain.auth.client.SocialAuthClients;
 import com.byarrival.domain.auth.dto.request.SocialLoginRequest;
 import com.byarrival.domain.auth.dto.response.SocialLoginResponse;
+import com.byarrival.domain.auth.dto.response.TokenResponse;
 import com.byarrival.domain.auth.exception.AuthErrorCode;
+import com.byarrival.domain.term.service.TermService;
 import com.byarrival.domain.user.entity.SocialProvider;
 import com.byarrival.domain.user.entity.User;
 import com.byarrival.domain.user.service.UserService;
@@ -31,6 +33,8 @@ class AuthServiceTest {
 
     private SocialAuthClient kakaoClient;
     private UserService userService;
+    private TokenService tokenService;
+    private TermService termService;
     private AuthService authService;
 
     @BeforeEach
@@ -40,7 +44,11 @@ class AuthServiceTest {
         given(kakaoClient.provider()).willReturn(SocialProvider.KAKAO);
         given(appleClient.provider()).willReturn(SocialProvider.APPLE);
         userService = mock(UserService.class);
-        authService = new AuthService(new SocialAuthClients(List.of(kakaoClient, appleClient)), userService);
+        tokenService = mock(TokenService.class);
+        termService = mock(TermService.class);
+        given(tokenService.issue(any())).willReturn(TokenResponse.of("access-token", "refresh-token"));
+        authService = new AuthService(new SocialAuthClients(List.of(kakaoClient, appleClient)), userService,
+            tokenService, termService);
     }
 
     @Test
@@ -71,6 +79,21 @@ class AuthServiceTest {
     }
 
     @Test
+    void 로그인에_성공하면_서비스_토큰과_필수_약관_동의_여부를_함께_응답한다() {
+        User user = userWithId(1L);
+        given(kakaoClient.getProviderUserId(TOKEN)).willReturn(PROVIDER_USER_ID);
+        given(userService.findActiveUser(SocialProvider.KAKAO, PROVIDER_USER_ID)).willReturn(Optional.of(user));
+        given(termService.hasAgreedRequiredTerms(1L)).willReturn(true);
+
+        SocialLoginResponse response = authService.socialLogin(new SocialLoginRequest(SocialProvider.KAKAO, TOKEN));
+
+        assertThat(response.accessToken()).isEqualTo("access-token");
+        assertThat(response.refreshToken()).isEqualTo("refresh-token");
+        assertThat(response.termsAgreed()).isTrue();
+        verify(tokenService).issue(1L);
+    }
+
+    @Test
     void 동시_가입으로_유니크_제약에_걸리면_먼저_가입된_회원으로_응답한다() {
         User user = userWithId(3L);
         given(kakaoClient.getProviderUserId(TOKEN)).willReturn(PROVIDER_USER_ID);
@@ -95,6 +118,7 @@ class AuthServiceTest {
             .isEqualTo(AuthErrorCode.SOCIAL_AUTH_FAILED);
         verify(userService, never()).findActiveUser(any(), any());
         verify(userService, never()).signUp(any(), any());
+        verify(tokenService, never()).issue(any());
     }
 
     private User userWithId(Long id) {
