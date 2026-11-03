@@ -7,6 +7,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
@@ -49,8 +50,13 @@ public class KakaoAuthClient implements SocialAuthClient {
                 .retrieve()
                 .body(KakaoTokenInfoResponse.class);
         } catch (HttpClientErrorException e) {
-            log.warn("카카오 토큰 검증 실패: status={}", e.getStatusCode());
-            throw new BusinessException(AuthErrorCode.SOCIAL_AUTH_FAILED);
+            // 토큰이 잘못됐거나 만료된 경우(401)만 인증 실패다. 호출 제한(429) 등 나머지 4xx는 카카오 쪽 오류로 본다.
+            if (e.getStatusCode().isSameCodeAs(HttpStatus.UNAUTHORIZED)) {
+                log.warn("카카오 토큰 검증 실패: status={}", e.getStatusCode());
+                throw new BusinessException(AuthErrorCode.SOCIAL_AUTH_FAILED);
+            }
+            log.warn("카카오 토큰 정보 API 오류: status={}", e.getStatusCode());
+            throw new BusinessException(AuthErrorCode.SOCIAL_PROVIDER_UNAVAILABLE);
         } catch (RestClientException e) {
             log.warn("카카오 토큰 정보 API 호출 실패: {}", e.getClass().getSimpleName());
             throw new BusinessException(AuthErrorCode.SOCIAL_PROVIDER_UNAVAILABLE);
