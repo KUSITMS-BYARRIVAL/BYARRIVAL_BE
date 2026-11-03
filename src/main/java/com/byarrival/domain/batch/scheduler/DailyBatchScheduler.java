@@ -1,5 +1,6 @@
 package com.byarrival.domain.batch.scheduler;
 
+import com.byarrival.common.config.ClockConfig;
 import com.byarrival.domain.batch.service.DailyBatchService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -14,7 +15,7 @@ public class DailyBatchScheduler {
 
     private final DailyBatchService dailyBatchService;
 
-    @Scheduled(cron = "0 45 23 * * *")
+    @Scheduled(cron = "0 45 23 * * *", zone = ClockConfig.KST)
     public void run() {
         dailyBatchService.run();
     }
