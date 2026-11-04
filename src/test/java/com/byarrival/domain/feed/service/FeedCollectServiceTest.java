@@ -10,6 +10,7 @@ import com.byarrival.domain.feed.dto.FetchedFeed;
 import com.byarrival.domain.feed.entity.RssFeed;
 import com.byarrival.domain.feed.exception.FeedErrorCode;
 import java.time.Clock;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
@@ -21,6 +22,7 @@ class FeedCollectServiceTest {
 
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
     private static final LocalDateTime NOW = LocalDateTime.of(2026, 11, 2, 23, 45);
+    private static final LocalDate SERVICE_DATE = LocalDate.of(2026, 11, 3);
 
     private FeedService feedService;
     private RssFeedFetcher rssFeedFetcher;
@@ -42,10 +44,11 @@ class FeedCollectServiceTest {
         given(rssFeedFetcher.fetch(economy.getFeedUrl())).willReturn(new byte[] {1});
         given(rssFeedFetcher.fetch(society.getFeedUrl())).willReturn(new byte[] {2});
 
-        List<FetchedFeed> fetchedFeeds = feedCollectService.collect();
+        List<FetchedFeed> fetchedFeeds = feedCollectService.collect(SERVICE_DATE);
 
         assertThat(fetchedFeeds).extracting(FetchedFeed::feedId).containsExactly(1L, 2L);
         verify(feedService).markFetched(List.of(1L, 2L), NOW);
+        verify(feedService).recordFailures(List.of(), SERVICE_DATE);
     }
 
     @Test
@@ -57,24 +60,24 @@ class FeedCollectServiceTest {
             .willThrow(new BusinessException(FeedErrorCode.FEED_FETCH_FAILED));
         given(rssFeedFetcher.fetch(economy.getFeedUrl())).willReturn(new byte[] {1});
 
-        List<FetchedFeed> fetchedFeeds = feedCollectService.collect();
+        List<FetchedFeed> fetchedFeeds = feedCollectService.collect(SERVICE_DATE);
 
         assertThat(fetchedFeeds).extracting(FetchedFeed::feedId).containsExactly(2L);
         verify(feedService).markFetched(List.of(2L), NOW);
     }
 
     @Test
-    void 수집에_실패한_Feed는_비활성으로_바꾸지_않는다() {
+    void 수집에_실패한_Feed는_서비스일과_함께_실패로_기록한다() {
         RssFeed broken = feed(1L, "https://broken.example.com/rss.xml");
         given(feedService.getActiveFeeds()).willReturn(List.of(broken));
         given(rssFeedFetcher.fetch(broken.getFeedUrl()))
             .willThrow(new BusinessException(FeedErrorCode.FEED_FETCH_FAILED));
 
-        List<FetchedFeed> fetchedFeeds = feedCollectService.collect();
+        List<FetchedFeed> fetchedFeeds = feedCollectService.collect(SERVICE_DATE);
 
         assertThat(fetchedFeeds).isEmpty();
-        assertThat(broken.isActive()).isTrue();
         verify(feedService).markFetched(List.of(), NOW);
+        verify(feedService).recordFailures(List.of(1L), SERVICE_DATE);
     }
 
     private RssFeed feed(Long id, String feedUrl) {

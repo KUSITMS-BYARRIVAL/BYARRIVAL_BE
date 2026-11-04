@@ -33,7 +33,7 @@ public class DailyBatchService {
         }
 
         try {
-            List<FetchedFeed> fetchedFeeds = feedCollectService.collect();
+            List<FetchedFeed> fetchedFeeds = feedCollectService.collect(serviceDate);
             batchRunService.complete(batchRunId.get());
             log.info("[DailyBatch] serviceDate={} 완료 - 수집 Feed {}개", serviceDate, fetchedFeeds.size());
         } catch (RuntimeException e) {

@@ -26,3 +26,4 @@ rss:
     read-timeout: 10s
     max-response-size: 5MB
     max-redirects: 3
+    max-consecutive-failures: 3

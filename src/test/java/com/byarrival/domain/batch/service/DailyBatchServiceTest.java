@@ -34,18 +34,18 @@ class DailyBatchServiceTest {
     @Test
     void 밤_23시45분_배치는_다음_서비스일_수집분으로_기록된다() {
         given(batchRunService.start(LocalDate.of(2026, 11, 3))).willReturn(Optional.of(10L));
-        given(feedCollectService.collect()).willReturn(List.of());
+        given(feedCollectService.collect(any())).willReturn(List.of());
 
         service(LocalDateTime.of(2026, 11, 2, 23, 45)).run();
 
-        verify(feedCollectService).collect();
+        verify(feedCollectService).collect(LocalDate.of(2026, 11, 3));
         verify(batchRunService).complete(10L);
     }
 
     @Test
     void 자정을_넘겨_실행해도_같은_서비스일_수집분이다() {
         given(batchRunService.start(LocalDate.of(2026, 11, 3))).willReturn(Optional.of(10L));
-        given(feedCollectService.collect()).willReturn(List.of());
+        given(feedCollectService.collect(any())).willReturn(List.of());
 
         service(LocalDateTime.of(2026, 11, 3, 0, 10)).run();
 
@@ -58,14 +58,14 @@ class DailyBatchServiceTest {
 
         service(LocalDateTime.of(2026, 11, 2, 23, 45)).run();
 
-        verify(feedCollectService, never()).collect();
+        verify(feedCollectService, never()).collect(any());
         verify(batchRunService, never()).complete(anyLong());
     }
 
     @Test
     void 배치가_예외로_끝나면_실패로_기록한다() {
         given(batchRunService.start(any())).willReturn(Optional.of(10L));
-        given(feedCollectService.collect()).willThrow(new IllegalStateException("DB 연결 실패"));
+        given(feedCollectService.collect(any())).willThrow(new IllegalStateException("DB 연결 실패"));
 
         service(LocalDateTime.of(2026, 11, 2, 23, 45)).run();
 
@@ -76,7 +76,7 @@ class DailyBatchServiceTest {
     @Test
     void 정상_종료하면_실패로_기록하지_않는다() {
         given(batchRunService.start(any())).willReturn(Optional.of(10L));
-        given(feedCollectService.collect()).willReturn(List.of());
+        given(feedCollectService.collect(any())).willReturn(List.of());
 
         service(LocalDateTime.of(2026, 11, 2, 23, 45)).run();
 
