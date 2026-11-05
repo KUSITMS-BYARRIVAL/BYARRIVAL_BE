@@ -11,8 +11,14 @@ PostgreSQL, Redis: 외부 포트 없음 (compose 네트워크 안에서만 접�
 ## 배포 흐름 (`deploy.sh`)
 
 1. KST 23:30~00:30이면 아무것도 바꾸지 않고 종료합니다. 23:45 일일 배치가 두 컨테이너에서 두 번 돌거나, 배포 중 이전 컨테이너를 내리면서 끊기는 것을 막습니다. 00:30 이후 Actions에서 다시 실행합니다.
-2. 쉬고 있는 쪽에 새 이미지를 띄우고 `/actuator/health`가 `UP`이 될 때까지 기다립니다(최대 200초).
-3. 통과하면 `nginx/upstream.inc`를 새 쪽으로 바꾸고 Nginx를 reload한 뒤 이전 쪽을 내립니다. 실패하면 새 쪽만 내리고 기존 쪽은 그대로 둡니다.
+2. 쉬고 있는 쪽에 새 이미지를 띄우고 `/actuator/health`가 `UP`이 될 때까지 기다립니다. 5초 간격으로 40번 확인하고, 한 번 확인에 최대 5초까지 기다립니다(전체 최대 약 7분).
+3. 통과하면 `nginx/upstream.inc`를 새 쪽으로 바꾸고 Nginx를 reload한 뒤 이전 쪽을 내립니다.
+   - 헬스 체크가 실패하면 새 쪽만 내리고 기존 쪽은 그대로 둡니다.
+   - Nginx 검사·reload가 실패하면 `upstream.inc`를 이전 내용으로 되돌리고 새 쪽을 내립니다.
+
+PostgreSQL·Redis는 이미 떠 있으면 배포 때 재생성하지 않습니다(`--no-recreate`). 설정을 바꿨을 때는 아래 "DB·Redis 설정 변경" 절차로 적용합니다.
+
+지금은 HTTP(80)로만 서비스합니다. HTTPS(443, 인증서, 80→443 리다이렉트)는 DCK-74에서 추가합니다.
 
 `/actuator`는 Nginx에서 막혀 있어 외부에서 접근할 수 없습니다.
 
@@ -41,7 +47,7 @@ PostgreSQL, Redis: 외부 포트 없음 (compose 네트워크 안에서만 접�
 |---|---|
 | 서버 | 가비아 클라우드 Gen2, Ubuntu 24.04 LTS, 4GB 메모리, swap 2GB |
 | 타임존 | Asia/Seoul |
-| 보안 그룹 인바운드 | 22, 80, 443 (DB·Redis 포트는 열지 않음) |
+| 보안 그룹 인바운드 | 22, 80, 443 (443은 DCK-74 HTTPS용, DB·Redis 포트는 열지 않음) |
 | 배포 폴더 | `~/byarrival` (compose, 스크립트, Nginx 설정은 배포 때 Actions가 복사) |
 | 환경 변수 | `~/byarrival/.env` (서버에만 있음, 권한 600) |
 | 배포 키 | GitHub Actions 전용 키가 `authorized_keys`에 등록됨 |
@@ -51,7 +57,7 @@ GHCR 로그인은 워크플로의 `GITHUB_TOKEN`을 쓰므로 따로 등록하�
 
 ### `.env` 키 목록
 
-값을 추가하거나 바꿀 때 참고합니다. 수정 후 다음 배포부터 적용됩니다.
+값을 추가하거나 바꿀 때 참고합니다. 앱이 읽는 값(`DB_*`, `REDIS_*`, `KAKAO_*`, `APPLE_*`, `JAVA_OPTS`)은 수정 후 다음 배포부터 적용됩니다. `POSTGRES_*`는 아래 "DB·Redis 설정 변경"을 따릅니다.
 
 | 키 | 값 |
 |---|---|
@@ -78,6 +84,17 @@ GHCR 로그인은 워크플로의 `GITHUB_TOKEN`을 쓰므로 따로 등록하�
    ```
 
 5. GitHub Secrets의 `SERVER_HOST`, `SERVER_USER`, `SERVER_SSH_KEY`(배포 전용 개인 키 전체)를 새 서버 기준으로 갱신
+
+### DB·Redis 설정 변경
+
+`docker-compose.prod.yml`의 postgres·redis 설정이나 `.env`의 `POSTGRES_*`를 바꾼 경우에만 필요합니다. 컨테이너를 다시 만드는 동안 DB 요청이 실패하므로 사용자가 적은 시간에 합니다(KST 23:30~00:30 배치 시간대는 피합니다).
+
+```bash
+cd ~/byarrival
+docker compose -f docker-compose.prod.yml up -d --wait postgres redis
+```
+
+`POSTGRES_PASSWORD`는 DB 데이터가 처음 만들어질 때만 적용됩니다. 비밀번호를 바꾸려면 DB 안에서 `ALTER USER`로 바꾼 뒤 `.env`의 `POSTGRES_PASSWORD`와 `DB_PASSWORD`를 같은 값으로 고치고 다시 배포합니다.
 
 ## 자주 쓰는 명령 (서버의 `~/byarrival`)
 
