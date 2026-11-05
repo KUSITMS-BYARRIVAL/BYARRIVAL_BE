@@ -41,6 +41,8 @@ out/
 .env.*
 !.env.example
 !.env.sample
+*.p8
+*.pem
 
 ### Logs ###
 *.log
