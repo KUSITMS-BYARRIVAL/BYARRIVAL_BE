@@ -15,6 +15,8 @@ concurrency:
 
 jobs:
   deploy:
+    # 수동 실행(workflow_dispatch)도 main에서만 운영에 반영한다
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
