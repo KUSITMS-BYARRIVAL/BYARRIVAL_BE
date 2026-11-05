@@ -1,6 +1,8 @@
 # 운영 배포
 
-main에 push되면 `.github/workflows/deploy.yml`이 이미지를 GHCR에 올리고, 서버에서 `deploy.sh`로 블루/그린 배포를 합니다.
+dev에 머지되면(push) `.github/workflows/deploy.yml`이 이미지를 GHCR에 올리고, 서버에서 `deploy.sh`로 블루/그린 배포를 합니다. Actions의 Deploy 워크플로를 dev 브랜치로 수동 실행해도 같습니다.
+
+출시 전까지 이 서버는 개발 서버 역할을 합니다. 출시 전에 운영 서버 분리나 main 배포 전환 여부를 다시 정합니다.
 
 ```
 Nginx(:80) ─┬─ app-blue  (127.0.0.1:8081)

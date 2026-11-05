@@ -14,7 +14,9 @@
 ## 브랜치
 
 - 기본 브랜치는 `dev`입니다. 모든 작업 브랜치는 `dev`에서 만들고 `dev`로 PR을 보냅니다.
-- `main`은 배포용입니다. `main`과 `dev`에 직접 push하지 않습니다.
+- `dev`에 머지되면 GitHub Actions(`deploy.yml`)가 서버에 자동 배포합니다. 출시 전까지 서버는 개발 서버 역할을 하며, 프론트·iOS는 서버 Swagger에서 dev에 머지된 API를 확인합니다.
+- `main`은 지금 배포에 쓰지 않습니다. 출시 전에 운영 서버 분리나 main 배포 전환 여부를 다시 정합니다.
+- `main`과 `dev`에 직접 push하지 않습니다.
 - 이름 형식: `<타입>/#<이슈번호>-<Jira 하위 작업 키>-<영문-kebab-case-설명>`
   - 예: `feat/#12-DCK-40-route-create`, `fix/#15-DCK-43-route-expire-date`
   - 이슈 폼의 `브랜치 설명` 칸에 적은 값이 설명이 됩니다.
