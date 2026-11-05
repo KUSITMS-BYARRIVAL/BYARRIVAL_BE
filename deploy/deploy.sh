@@ -3,7 +3,7 @@
 # 사용법: ./deploy.sh <이미지>   예) ./deploy.sh ghcr.io/kusitms-byarrival/byarrival_be:<sha>
 #
 # 1. 배치 시간대(KST 23:30~00:30)이면 아무것도 바꾸지 않고 종료한다.
-# 2. 쉬고 있는 쪽(blue/green)에 새 이미지를 띄우고 헬스 체크를 기다린다.
+# 2. 쉬고 있는 쪽(blue/green)에 새 이미지를 띄우고 헬스 체크를 기다린다(5초 간격 40회).
 # 3. 헬스 체크가 통과하면 Nginx를 새 쪽으로 돌리고, 이전 쪽을 내린다.
 #    통과하지 못하면 새 쪽만 내리고 기존 쪽은 그대로 둔다.
 set -euo pipefail
@@ -39,8 +39,9 @@ fi
 target_port="$(port_of "$target")"
 log "현재: ${active:-없음(첫 배포)} → 배포 대상: $target ($APP_IMAGE)"
 
-# DB와 Redis가 떠 있는지 확인한다 (이미 떠 있으면 그대로 둔다)
-"${COMPOSE[@]}" up -d --wait postgres redis
+# DB와 Redis가 떠 있는지 확인한다. 이미 떠 있으면 설정이 바뀌었어도 재생성하지 않는다
+# (구 앱이 서비스 중이므로 DB·Redis 설정 변경은 README의 별도 절차로 적용한다)
+"${COMPOSE[@]}" up -d --wait --no-recreate postgres redis
 
 # 2. 새 쪽 기동
 "${COMPOSE[@]}" pull "app-$target"
@@ -49,7 +50,7 @@ log "현재: ${active:-없음(첫 배포)} → 배포 대상: $target ($APP_IMAG
 log "헬스 체크 대기: http://127.0.0.1:$target_port/actuator/health"
 healthy=false
 for ((i = 1; i <= HEALTH_RETRIES; i++)); do
-  if curl -fsS "http://127.0.0.1:$target_port/actuator/health" 2>/dev/null | grep -q '"status":"UP"'; then
+  if curl -fsS --connect-timeout 2 --max-time 5 "http://127.0.0.1:$target_port/actuator/health" 2>/dev/null | grep -q '"status":"UP"'; then
     healthy=true
     break
   fi
@@ -64,7 +65,10 @@ if [[ "$healthy" != true ]]; then
 fi
 log "app-$target 정상 기동"
 
-# 3. Nginx 전환
+# 3. Nginx 전환. 실패하면 upstream.inc를 이전 내용으로 되돌리고 새 쪽을 내린다
+previous_upstream=""
+[[ -f "$UPSTREAM_FILE" ]] && previous_upstream="$(cat "$UPSTREAM_FILE")"
+
 cat > "$UPSTREAM_FILE" <<EOF
 upstream app {
     server app-$target:8080;
@@ -72,11 +76,23 @@ upstream app {
 }
 EOF
 
-if [[ -n "$("${COMPOSE[@]}" ps -q --status running nginx)" ]]; then
-  "${COMPOSE[@]}" exec -T nginx nginx -t
-  "${COMPOSE[@]}" exec -T nginx nginx -s reload
-else
-  "${COMPOSE[@]}" up -d --no-deps nginx
+switch_nginx() {
+  if [[ -n "$("${COMPOSE[@]}" ps -q --status running nginx)" ]]; then
+    "${COMPOSE[@]}" exec -T nginx nginx -t && "${COMPOSE[@]}" exec -T nginx nginx -s reload
+  else
+    "${COMPOSE[@]}" up -d --no-deps nginx
+  fi
+}
+
+if ! switch_nginx; then
+  log "Nginx 전환 실패. upstream.inc를 되돌리고 app-$target 을 내립니다."
+  if [[ -n "$previous_upstream" ]]; then
+    printf '%s\n' "$previous_upstream" > "$UPSTREAM_FILE"
+  else
+    rm -f "$UPSTREAM_FILE"
+  fi
+  "${COMPOSE[@]}" stop "app-$target"
+  exit 1
 fi
 log "Nginx가 app-$target 을 바라보도록 전환했습니다"
 
