@@ -16,6 +16,7 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import javax.xml.stream.XMLInputFactory;
 import javax.xml.stream.XMLStreamConstants;
 import javax.xml.stream.XMLStreamException;
@@ -33,6 +34,8 @@ public class RssParser {
     private static final String CONTENT_NAMESPACE = "http://purl.org/rss/1.0/modules/content/";
     private static final String DUBLIN_CORE_NAMESPACE = "http://purl.org/dc/elements/1.1/";
     private static final ZoneId KST = ZoneId.of(ClockConfig.KST);
+    // RSS 2.0은 0.91·0.92와 호환된다. version이 없는 문서는 막지 않는다.
+    private static final Set<String> SUPPORTED_VERSIONS = Set.of("2.0", "0.91", "0.92");
     // 시간대가 없는 날짜(예: 2026-11-06 10:00:00)는 KST로 본다
     private static final DateTimeFormatter LOCAL_DATE_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd[ ]['T']HH:mm[:ss]");
 
@@ -58,7 +61,11 @@ public class RssParser {
             if (!isRss(reader, "rss")) {
                 throw failed("RSS 문서가 아닙니다. root=" + reader.getLocalName());
             }
-            return readItems(feedId, reader);
+            String version = reader.getAttributeValue(null, "version");
+            if (version != null && !SUPPORTED_VERSIONS.contains(version.strip())) {
+                throw failed("지원하지 않는 RSS 버전입니다. version=" + version);
+            }
+            return readChannel(feedId, reader);
         } catch (XMLStreamException | RuntimeException e) {
             if (e instanceof BusinessException businessException) {
                 throw businessException;
@@ -78,11 +85,35 @@ public class RssParser {
         throw failed("root 요소가 없습니다.");
     }
 
-    private List<RssItem> readItems(Long feedId, XMLStreamReader reader) throws XMLStreamException {
+    // rss 바로 아래의 channel에서 channel 바로 아래의 item만 읽는다. channel이 없으면 RSS 문서로 보지 않는다.
+    private List<RssItem> readChannel(Long feedId, XMLStreamReader reader) throws XMLStreamException {
         List<RssItem> items = new ArrayList<>();
         int skipped = 0;
+        boolean hasChannel = false;
+        boolean inChannel = false;
+        int depth = 0;
         while (reader.hasNext()) {
-            if (reader.next() == XMLStreamConstants.START_ELEMENT && isRss(reader, "item")) {
+            int event = reader.next();
+            if (event == XMLStreamConstants.END_ELEMENT) {
+                if (depth == 0) {
+                    break;
+                }
+                if (depth == 1) {
+                    inChannel = false;
+                }
+                depth--;
+                continue;
+            }
+            if (event != XMLStreamConstants.START_ELEMENT) {
+                continue;
+            }
+            depth++;
+            if (depth == 1 && isRss(reader, "channel")) {
+                hasChannel = true;
+                inChannel = true;
+            } else if (depth == 2 && inChannel && isRss(reader, "item")) {
+                // readItem은 item의 END_ELEMENT까지 읽는다
+                depth--;
                 Optional<RssItem> item = readItem(feedId, reader);
                 if (item.isPresent()) {
                     items.add(item.get());
@@ -90,6 +121,9 @@ public class RssParser {
                     skipped++;
                 }
             }
+        }
+        if (!hasChannel) {
+            throw failed("rss 문서에 channel이 없습니다.");
         }
         if (skipped > 0) {
             log.warn("[RssParse] feedId={} 필수값 누락 Item {}건 제외", feedId, skipped);

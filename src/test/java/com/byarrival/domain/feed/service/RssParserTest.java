@@ -180,6 +180,24 @@ class RssParserTest {
     }
 
     @Test
+    void channel이_없는_rss_문서는_파싱_실패다() {
+        assertParseFailed("<rss version=\"2.0\"/>");
+        assertParseFailed("<rss version=\"2.0\">" + item("<pubDate>Fri, 06 Nov 2026 10:00:00 +0900</pubDate>") + "</rss>");
+    }
+
+    @Test
+    void 지원하지_않는_RSS_버전은_파싱_실패다() {
+        assertParseFailed("<rss version=\"3.0\"><channel></channel></rss>");
+    }
+
+    @Test
+    void version이_없어도_channel이_있으면_읽는다() {
+        String xml = "<rss><channel>" + item("<pubDate>Fri, 06 Nov 2026 10:00:00 +0900</pubDate>") + "</channel></rss>";
+
+        assertThat(parse(xml)).extracting(RssItem::title).containsExactly("정상 기사");
+    }
+
+    @Test
     void 빈_응답이면_파싱_실패다() {
         assertParseFailed("");
     }
