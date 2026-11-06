@@ -42,6 +42,25 @@ log "현재: ${active:-없음(첫 배포)} → 배포 대상: $target ($APP_IMAG
 # DB와 Redis가 떠 있는지 확인한다. 이미 떠 있으면 설정이 바뀌었어도 재생성하지 않는다
 # (구 앱이 서비스 중이므로 DB·Redis 설정 변경은 README의 별도 절차로 적용한다)
 "${COMPOSE[@]}" up -d --wait --no-recreate postgres redis
+"${COMPOSE[@]}" up -d certbot
+
+# Nginx는 인증서 파일이 없으면 뜨지 않는다. 처음에는 임시 자체 서명 인증서를 두고,
+# 실제 인증서는 init-cert.sh 로 발급한다 (README 참고)
+CERT_LIVE="/etc/letsencrypt/live/byarrival"
+ensure_certificate() {
+  if "${COMPOSE[@]}" run --rm --no-deps --entrypoint test certbot -f "$CERT_LIVE/fullchain.pem"; then
+    return 0
+  fi
+  log "인증서가 없어 임시 자체 서명 인증서를 만듭니다. init-cert.sh 로 실제 인증서를 발급해 주세요."
+  local tmp
+  tmp="$(mktemp -d)"
+  openssl req -x509 -nodes -newkey rsa:2048 -days 1 -subj "/CN=localhost" \
+    -keyout "$tmp/privkey.pem" -out "$tmp/fullchain.pem" 2>/dev/null
+  "${COMPOSE[@]}" run --rm --no-deps -v "$tmp:/dummy:ro" --entrypoint sh certbot \
+    -c "mkdir -p $CERT_LIVE && cp /dummy/privkey.pem /dummy/fullchain.pem $CERT_LIVE/"
+  rm -rf "$tmp"
+}
+ensure_certificate
 
 # 2. 새 쪽 기동
 "${COMPOSE[@]}" pull "app-$target"
@@ -76,12 +95,12 @@ upstream app {
 }
 EOF
 
+# 설정을 임시 컨테이너로 먼저 검사한 뒤, compose 설정이 바뀌었으면 Nginx를 다시 만들고 reload 한다
 switch_nginx() {
-  if [[ -n "$("${COMPOSE[@]}" ps -q --status running nginx)" ]]; then
-    "${COMPOSE[@]}" exec -T nginx nginx -t && "${COMPOSE[@]}" exec -T nginx nginx -s reload
-  else
-    "${COMPOSE[@]}" up -d --no-deps nginx
-  fi
+  "${COMPOSE[@]}" run --rm --no-deps nginx nginx -t || return 1
+  "${COMPOSE[@]}" up -d --no-deps nginx || return 1
+  sleep 2
+  "${COMPOSE[@]}" exec -T nginx nginx -s reload
 }
 
 if ! switch_nginx; then
