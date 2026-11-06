@@ -12,7 +12,8 @@ public enum FeedErrorCode implements ErrorCode {
     FEED_NOT_FOUND(HttpStatus.NOT_FOUND, "RSS Feed를 찾을 수 없습니다."),
     DUPLICATE_FEED_URL(HttpStatus.CONFLICT, "이미 등록된 Feed URL입니다."),
     INVALID_FEED_URL(HttpStatus.BAD_REQUEST, "사용할 수 없는 Feed URL입니다."),
-    FEED_FETCH_FAILED(HttpStatus.BAD_GATEWAY, "RSS Feed를 가져오지 못했습니다.");
+    FEED_FETCH_FAILED(HttpStatus.BAD_GATEWAY, "RSS Feed를 가져오지 못했습니다."),
+    FEED_PARSE_FAILED(HttpStatus.BAD_GATEWAY, "RSS Feed 형식이 올바르지 않습니다.");
 
     private final HttpStatus status;
     private final String message;

@@ -8,6 +8,9 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
+import com.byarrival.domain.article.service.ArticleCollectService;
+import com.byarrival.domain.feed.dto.FeedCollectResult;
+import com.byarrival.domain.feed.dto.FetchedFeed;
 import com.byarrival.domain.feed.service.FeedCollectService;
 import java.time.Clock;
 import java.time.LocalDate;
@@ -21,34 +24,91 @@ import org.junit.jupiter.api.Test;
 class DailyBatchServiceTest {
 
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
+    private static final LocalDate SERVICE_DATE = LocalDate.of(2026, 11, 3);
 
     private BatchRunService batchRunService;
     private FeedCollectService feedCollectService;
+    private ArticleCollectService articleCollectService;
 
     @BeforeEach
     void setUp() {
         batchRunService = mock(BatchRunService.class);
         feedCollectService = mock(FeedCollectService.class);
+        articleCollectService = mock(ArticleCollectService.class);
     }
 
     @Test
     void 밤_23시45분_배치는_다음_서비스일_수집분으로_기록된다() {
-        given(batchRunService.start(LocalDate.of(2026, 11, 3))).willReturn(Optional.of(10L));
-        given(feedCollectService.collect(any())).willReturn(List.of());
+        given(batchRunService.start(SERVICE_DATE)).willReturn(Optional.of(10L));
+        given(feedCollectService.collect(any())).willReturn(collected());
 
         service(LocalDateTime.of(2026, 11, 2, 23, 45)).run();
 
-        verify(feedCollectService).collect(LocalDate.of(2026, 11, 3));
+        verify(feedCollectService).collect(SERVICE_DATE);
         verify(batchRunService).complete(10L);
     }
 
     @Test
     void 자정을_넘겨_실행해도_같은_서비스일_수집분이다() {
-        given(batchRunService.start(LocalDate.of(2026, 11, 3))).willReturn(Optional.of(10L));
-        given(feedCollectService.collect(any())).willReturn(List.of());
+        given(batchRunService.start(SERVICE_DATE)).willReturn(Optional.of(10L));
+        given(feedCollectService.collect(any())).willReturn(collected());
 
         service(LocalDateTime.of(2026, 11, 3, 0, 10)).run();
 
+        verify(batchRunService).complete(10L);
+    }
+
+    @Test
+    void 수집한_Feed마다_기사를_서비스일로_저장한다() {
+        FetchedFeed economy = fetchedFeed(1L);
+        FetchedFeed society = fetchedFeed(2L);
+        given(batchRunService.start(SERVICE_DATE)).willReturn(Optional.of(10L));
+        given(feedCollectService.collect(SERVICE_DATE)).willReturn(collected(economy, society));
+
+        service(LocalDateTime.of(2026, 11, 2, 23, 45)).run();
+
+        verify(articleCollectService).saveCollected(economy, SERVICE_DATE);
+        verify(articleCollectService).saveCollected(society, SERVICE_DATE);
+        verify(batchRunService).complete(10L);
+    }
+
+    @Test
+    void 한_Feed의_기사_저장이_실패해도_나머지는_저장하고_배치는_실패로_남긴다() {
+        FetchedFeed broken = fetchedFeed(1L);
+        FetchedFeed economy = fetchedFeed(2L);
+        given(batchRunService.start(SERVICE_DATE)).willReturn(Optional.of(10L));
+        given(feedCollectService.collect(SERVICE_DATE)).willReturn(collected(broken, economy));
+        given(articleCollectService.saveCollected(broken, SERVICE_DATE))
+            .willThrow(new IllegalStateException("DB 연결 실패"));
+
+        service(LocalDateTime.of(2026, 11, 2, 23, 45)).run();
+
+        verify(articleCollectService).saveCollected(economy, SERVICE_DATE);
+        verify(batchRunService).fail(10L, "기사 저장 실패 feedIds=[1]");
+        verify(batchRunService, never()).complete(anyLong());
+    }
+
+    @Test
+    void 모든_Feed_수집에_실패하면_배치를_실패로_남긴다() {
+        given(batchRunService.start(SERVICE_DATE)).willReturn(Optional.of(10L));
+        given(feedCollectService.collect(SERVICE_DATE)).willReturn(FeedCollectResult.of(List.of(), List.of(1L, 2L)));
+
+        service(LocalDateTime.of(2026, 11, 2, 23, 45)).run();
+
+        verify(batchRunService).fail(10L, "모든 Feed 수집 실패 feedIds=[1, 2]");
+        verify(batchRunService, never()).complete(anyLong());
+        verify(articleCollectService, never()).saveCollected(any(), any());
+    }
+
+    @Test
+    void 일부_Feed만_실패하면_수집한_Feed를_저장하고_완료한다() {
+        FetchedFeed economy = fetchedFeed(2L);
+        given(batchRunService.start(SERVICE_DATE)).willReturn(Optional.of(10L));
+        given(feedCollectService.collect(SERVICE_DATE)).willReturn(FeedCollectResult.of(List.of(economy), List.of(1L)));
+
+        service(LocalDateTime.of(2026, 11, 2, 23, 45)).run();
+
+        verify(articleCollectService).saveCollected(economy, SERVICE_DATE);
         verify(batchRunService).complete(10L);
     }
 
@@ -76,15 +136,23 @@ class DailyBatchServiceTest {
     @Test
     void 정상_종료하면_실패로_기록하지_않는다() {
         given(batchRunService.start(any())).willReturn(Optional.of(10L));
-        given(feedCollectService.collect(any())).willReturn(List.of());
+        given(feedCollectService.collect(any())).willReturn(collected());
 
         service(LocalDateTime.of(2026, 11, 2, 23, 45)).run();
 
         verify(batchRunService, never()).fail(anyLong(), anyString());
     }
 
+    private FeedCollectResult collected(FetchedFeed... feeds) {
+        return FeedCollectResult.of(List.of(feeds), List.of());
+    }
+
+    private FetchedFeed fetchedFeed(Long feedId) {
+        return new FetchedFeed(feedId, "한국경제", null, List.of());
+    }
+
     private DailyBatchService service(LocalDateTime now) {
         Clock clock = Clock.fixed(now.atZone(KST).toInstant(), KST);
-        return new DailyBatchService(batchRunService, feedCollectService, clock);
+        return new DailyBatchService(batchRunService, feedCollectService, articleCollectService, clock);
     }
 }
