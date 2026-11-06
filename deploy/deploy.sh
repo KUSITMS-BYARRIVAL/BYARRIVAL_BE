@@ -95,22 +95,45 @@ upstream app {
 }
 EOF
 
-# 설정을 임시 컨테이너로 먼저 검사한 뒤, compose 설정이 바뀌었으면 Nginx를 다시 만들고 reload 한다
-switch_nginx() {
-  "${COMPOSE[@]}" run --rm --no-deps nginx nginx -t || return 1
+nginx_id() { "${COMPOSE[@]}" ps -q --status running nginx; }
+
+# Nginx가 지금 upstream.inc 를 읽은 상태로 실행 중이게 한다.
+# compose 설정이 바뀌었으면 컨테이너가 다시 만들어지고(새 컨테이너는 시작할 때 upstream.inc 를 읽는다),
+# 같은 컨테이너가 그대로면 reload 한다.
+apply_nginx() {
+  local before after
+  before="$(nginx_id)"
   "${COMPOSE[@]}" up -d --no-deps nginx || return 1
   sleep 2
-  "${COMPOSE[@]}" exec -T nginx nginx -s reload
+  after="$(nginx_id)"
+  [[ -n "$after" ]] || return 1
+  if [[ "$before" == "$after" ]]; then
+    "${COMPOSE[@]}" exec -T nginx nginx -s reload || return 1
+  fi
+}
+
+# 설정을 임시 컨테이너로 먼저 검사한 뒤 적용한다
+switch_nginx() {
+  "${COMPOSE[@]}" run --rm --no-deps nginx nginx -t || return 1
+  apply_nginx
 }
 
 if ! switch_nginx; then
-  log "Nginx 전환 실패. upstream.inc를 되돌리고 app-$target 을 내립니다."
-  if [[ -n "$previous_upstream" ]]; then
-    printf '%s\n' "$previous_upstream" > "$UPSTREAM_FILE"
-  else
+  log "Nginx 전환 실패. upstream.inc를 되돌립니다."
+  if [[ -z "$previous_upstream" ]]; then
     rm -f "$UPSTREAM_FILE"
+    "${COMPOSE[@]}" stop "app-$target"
+    exit 1
   fi
-  "${COMPOSE[@]}" stop "app-$target"
+  printf '%s\n' "$previous_upstream" > "$UPSTREAM_FILE"
+  # 실패 지점에 따라 Nginx가 내려갔거나 새 쪽을 바라보고 있을 수 있으므로 이전 쪽으로 다시 맞춘다
+  if apply_nginx; then
+    log "Nginx를 app-$active 로 되돌렸습니다. app-$target 을 내립니다."
+    "${COMPOSE[@]}" stop "app-$target"
+  else
+    log "Nginx 복구 실패. 두 앱을 모두 남겨 둡니다. 서버에서 Nginx 상태를 직접 확인해 주세요:"
+    log "  docker compose -f docker-compose.prod.yml logs --tail 50 nginx"
+  fi
   exit 1
 fi
 log "Nginx가 app-$target 을 바라보도록 전환했습니다"
