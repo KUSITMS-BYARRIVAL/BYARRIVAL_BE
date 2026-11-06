@@ -33,3 +33,5 @@ rss:
     max-response-size: 5MB
     max-redirects: 3
     max-consecutive-failures: 3
+  reading:
+    chars-per-minute: 500
