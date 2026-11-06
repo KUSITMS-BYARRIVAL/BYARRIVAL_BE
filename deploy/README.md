@@ -5,8 +5,8 @@ dev에 머지되면(push) `.github/workflows/deploy.yml`이 이미지를 GHCR에
 출시 전까지 이 서버는 개발 서버 역할을 합니다. 출시 전에 운영 서버 분리나 main 배포 전환 여부를 다시 정합니다.
 
 ```
-Nginx(:80) ─┬─ app-blue  (127.0.0.1:8081)
-            └─ app-green (127.0.0.1:8082)
+Nginx(:80→:443) ─┬─ app-blue  (127.0.0.1:8081)
+                 └─ app-green (127.0.0.1:8082)
 PostgreSQL, Redis: 외부 포트 없음 (compose 네트워크 안에서만 접근)
 ```
 
@@ -20,7 +20,7 @@ PostgreSQL, Redis: 외부 포트 없음 (compose 네트워크 안에서만 접�
 
 PostgreSQL·Redis는 이미 떠 있으면 배포 때 재생성하지 않습니다(`--no-recreate`). 설정을 바꿨을 때는 아래 "DB·Redis 설정 변경" 절차로 적용합니다.
 
-지금은 HTTP(80)로만 서비스합니다. HTTPS(443, 인증서, 80→443 리다이렉트)는 DCK-74에서 추가합니다.
+HTTP(80) 요청은 HTTPS(443)로 리다이렉트합니다. 80에서는 인증서 발급·갱신 확인 경로(`/.well-known/acme-challenge/`)만 직접 응답합니다.
 
 `/actuator`는 Nginx에서 막혀 있어 외부에서 접근할 수 없습니다.
 
@@ -49,7 +49,8 @@ PostgreSQL·Redis는 이미 떠 있으면 배포 때 재생성하지 않습니�
 |---|---|
 | 서버 | 가비아 클라우드 Gen2, Ubuntu 24.04 LTS, 4GB 메모리, swap 2GB |
 | 타임존 | Asia/Seoul |
-| 보안 그룹 인바운드 | 22, 80, 443 (443은 DCK-74 HTTPS용, DB·Redis 포트는 열지 않음) |
+| 보안 그룹 인바운드 | 22, 80, 443 (80은 인증서 발급·갱신에 필요, DB·Redis 포트는 열지 않음) |
+| HTTPS 인증서 | Let's Encrypt IP 주소 인증서 (`~/byarrival/certbot/conf`, 자동 갱신) |
 | 배포 폴더 | `~/byarrival` (compose, 스크립트, Nginx 설정은 배포 때 Actions가 복사) |
 | 환경 변수 | `~/byarrival/.env` (서버에만 있음, 권한 600) |
 | 배포 키 | GitHub Actions 전용 키가 `authorized_keys`에 등록됨 |
@@ -86,6 +87,7 @@ GHCR 로그인은 워크플로의 `GITHUB_TOKEN`을 쓰므로 따로 등록하�
    ```
 
 5. GitHub Secrets의 `SERVER_HOST`, `SERVER_USER`, `SERVER_SSH_KEY`(배포 전용 개인 키 전체)를 새 서버 기준으로 갱신
+6. 첫 배포가 끝나면 아래 "HTTPS 인증서"의 최초 발급을 실행
 
 ### DB·Redis 설정 변경
 
@@ -97,6 +99,37 @@ docker compose -f docker-compose.prod.yml up -d --wait postgres redis
 ```
 
 `POSTGRES_PASSWORD`는 DB 데이터가 처음 만들어질 때만 적용됩니다. 비밀번호를 바꾸려면 DB 안에서 `ALTER USER`로 바꾼 뒤 `.env`의 `POSTGRES_PASSWORD`와 `DB_PASSWORD`를 같은 값으로 고치고 다시 배포합니다.
+
+## HTTPS 인증서
+
+서버 공인 IP로 Let's Encrypt **IP 주소 인증서**를 받습니다. Let's Encrypt 정책상 IP 주소 인증서는 **6일짜리**(shortlived)만 발급됩니다.
+
+- `certbot` 컨테이너가 12시간마다 확인해 만료 3일 전에 갱신합니다.
+- `nginx` 컨테이너는 6시간마다 reload해서 갱신된 인증서를 읽습니다.
+- 갱신이 3일 넘게 실패하면 인증서가 만료되므로 가끔 아래 "상태 확인"을 봅니다.
+
+### 최초 발급 (서버에서 한 번)
+
+인증서가 없으면 `deploy.sh`가 임시 자체 서명 인증서를 만들어 Nginx를 띄웁니다. 이 상태에서는 브라우저가 경고를 띄우므로, HTTPS 설정이 처음 배포된 직후 실제 인증서를 발급합니다.
+
+```bash
+cd ~/byarrival
+./init-cert.sh <서버 공인 IP> --staging   # 시험 발급 (신뢰되지 않는 인증서, 발급 횟수 제한 없음)
+./init-cert.sh <서버 공인 IP>             # 실제 발급
+```
+
+시험 발급이 성공해야 실제 발급을 합니다. 실패하면 보안 그룹의 80 포트와 `http://<서버 IP>/.well-known/acme-challenge/` 접근을 확인합니다.
+
+### 상태 확인
+
+```bash
+docker compose -f docker-compose.prod.yml logs --tail 50 certbot
+echo | openssl s_client -connect localhost:443 2>/dev/null | openssl x509 -noout -dates   # notAfter가 만료 시각
+```
+
+### 도메인으로 바꿀 때
+
+도메인을 서버 IP에 연결한 뒤 `init-cert.sh`의 `--ip-address "$IP"`를 `-d <도메인>`으로 바꿔 발급합니다. 도메인 인증서는 90일짜리라 `--preferred-profile shortlived`와 `renew_before_expiry` 조정은 필요 없습니다.
 
 ## 자주 쓰는 명령 (서버의 `~/byarrival`)
 
