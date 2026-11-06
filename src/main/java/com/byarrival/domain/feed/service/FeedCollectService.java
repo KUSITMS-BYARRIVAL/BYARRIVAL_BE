@@ -1,5 +1,6 @@
 package com.byarrival.domain.feed.service;
 
+import com.byarrival.domain.feed.dto.FeedCollectResult;
 import com.byarrival.domain.feed.dto.FetchedFeed;
 import com.byarrival.domain.feed.dto.RssItem;
 import com.byarrival.domain.feed.entity.RssFeed;
@@ -27,7 +28,7 @@ public class FeedCollectService {
     private final Clock clock;
 
     // 외부 호출이 트랜잭션을 붙잡지 않도록 트랜잭션을 걸지 않는다.
-    public List<FetchedFeed> collect(LocalDate serviceDate) {
+    public FeedCollectResult collect(LocalDate serviceDate) {
         List<RssFeed> feeds = feedService.getActiveFeeds();
         List<FetchedFeed> fetchedFeeds = new ArrayList<>();
         List<Long> failedFeedIds = new ArrayList<>();
@@ -48,6 +49,6 @@ public class FeedCollectService {
             log.warn("[FeedCollect] 연속 실패로 비활성화한 feedIds={}", deactivatedFeedIds);
         }
         log.info("[FeedCollect] 활성 Feed {}개 중 {}개 수집", feeds.size(), fetchedFeeds.size());
-        return fetchedFeeds;
+        return FeedCollectResult.of(fetchedFeeds, failedFeedIds);
     }
 }

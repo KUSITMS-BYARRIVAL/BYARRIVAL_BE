@@ -2,6 +2,7 @@ package com.byarrival.domain.batch.service;
 
 import com.byarrival.common.time.ServiceDay;
 import com.byarrival.domain.article.service.ArticleCollectService;
+import com.byarrival.domain.feed.dto.FeedCollectResult;
 import com.byarrival.domain.feed.dto.FetchedFeed;
 import com.byarrival.domain.feed.service.FeedCollectService;
 import java.time.Clock;
@@ -36,7 +37,13 @@ public class DailyBatchService {
         }
 
         try {
-            List<FetchedFeed> fetchedFeeds = feedCollectService.collect(serviceDate);
+            FeedCollectResult collectResult = feedCollectService.collect(serviceDate);
+            if (collectResult.allFailed()) {
+                // 다시 실행할 수 있도록 실패로 남긴다. 실패 횟수는 서비스일당 1회만 세므로 재실행해도 늘지 않는다.
+                batchRunService.fail(batchRunId.get(), "모든 Feed 수집 실패 feedIds=" + collectResult.failedFeedIds());
+                return;
+            }
+            List<FetchedFeed> fetchedFeeds = collectResult.fetchedFeeds();
             List<Long> saveFailedFeedIds = saveArticles(fetchedFeeds, serviceDate);
             if (!saveFailedFeedIds.isEmpty()) {
                 // 다시 실행할 수 있도록 실패로 남긴다. 이미 저장된 기사는 재실행 때 건너뛴다.

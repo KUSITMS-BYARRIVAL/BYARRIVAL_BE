@@ -6,6 +6,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
 import com.byarrival.common.exception.BusinessException;
+import com.byarrival.domain.feed.dto.FeedCollectResult;
 import com.byarrival.domain.feed.dto.FetchedFeed;
 import com.byarrival.domain.feed.dto.RssItem;
 import com.byarrival.domain.feed.entity.RssFeed;
@@ -52,9 +53,9 @@ class FeedCollectServiceTest {
         given(rssParser.parse(1L, ECONOMY_XML)).willReturn(List.of(item));
         given(rssParser.parse(2L, SOCIETY_XML)).willReturn(List.of());
 
-        List<FetchedFeed> fetchedFeeds = feedCollectService.collect(SERVICE_DATE);
+        FeedCollectResult result = feedCollectService.collect(SERVICE_DATE);
 
-        assertThat(fetchedFeeds).containsExactly(
+        assertThat(result.fetchedFeeds()).containsExactly(
             new FetchedFeed(1L, "한국경제", "경제", List.of(item)),
             new FetchedFeed(2L, "한국경제", "경제", List.of()));
         verify(feedService).markFetched(List.of(1L, 2L), NOW);
@@ -71,9 +72,11 @@ class FeedCollectServiceTest {
         given(rssFeedFetcher.fetch(economy.getFeedUrl())).willReturn(ECONOMY_XML);
         given(rssParser.parse(2L, ECONOMY_XML)).willReturn(List.of());
 
-        List<FetchedFeed> fetchedFeeds = feedCollectService.collect(SERVICE_DATE);
+        FeedCollectResult result = feedCollectService.collect(SERVICE_DATE);
 
-        assertThat(fetchedFeeds).extracting(FetchedFeed::feedId).containsExactly(2L);
+        assertThat(result.fetchedFeeds()).extracting(FetchedFeed::feedId).containsExactly(2L);
+        assertThat(result.failedFeedIds()).containsExactly(1L);
+        assertThat(result.allFailed()).isFalse();
         verify(feedService).markFetched(List.of(2L), NOW);
     }
 
@@ -84,9 +87,10 @@ class FeedCollectServiceTest {
         given(rssFeedFetcher.fetch(broken.getFeedUrl()))
             .willThrow(new BusinessException(FeedErrorCode.FEED_FETCH_FAILED));
 
-        List<FetchedFeed> fetchedFeeds = feedCollectService.collect(SERVICE_DATE);
+        FeedCollectResult result = feedCollectService.collect(SERVICE_DATE);
 
-        assertThat(fetchedFeeds).isEmpty();
+        assertThat(result.fetchedFeeds()).isEmpty();
+        assertThat(result.allFailed()).isTrue();
         verify(feedService).markFetched(List.of(), NOW);
         verify(feedService).recordFailures(List.of(1L), SERVICE_DATE);
     }
@@ -98,9 +102,10 @@ class FeedCollectServiceTest {
         given(rssFeedFetcher.fetch(errorPage.getFeedUrl())).willReturn(ECONOMY_XML);
         given(rssParser.parse(1L, ECONOMY_XML)).willThrow(new BusinessException(FeedErrorCode.FEED_PARSE_FAILED));
 
-        List<FetchedFeed> fetchedFeeds = feedCollectService.collect(SERVICE_DATE);
+        FeedCollectResult result = feedCollectService.collect(SERVICE_DATE);
 
-        assertThat(fetchedFeeds).isEmpty();
+        assertThat(result.fetchedFeeds()).isEmpty();
+        assertThat(result.allFailed()).isTrue();
         verify(feedService).markFetched(List.of(), NOW);
         verify(feedService).recordFailures(List.of(1L), SERVICE_DATE);
     }
