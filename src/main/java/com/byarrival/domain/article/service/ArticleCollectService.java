@@ -79,11 +79,12 @@ public class ArticleCollectService {
             .build();
     }
 
-    // Item의 category를 순서대로 보고 처음 매핑되는 값을 쓴다. Item에 category가 없으면 Feed의 category로 매핑한다.
+    // Item의 category를 순서대로 보고 처음 매핑되는 값을 쓴다. 하나도 매핑되지 않으면 Feed의 category로 매핑한다.
     private CategoryMatch matchCategory(RssItem item, String feedCategory, Map<String, Long> categoryIds) {
-        List<String> candidates = item.categories().isEmpty()
-            ? (feedCategory == null ? List.of() : List.of(feedCategory))
-            : item.categories();
+        List<String> candidates = new ArrayList<>(item.categories());
+        if (feedCategory != null) {
+            candidates.add(feedCategory);
+        }
         for (String candidate : candidates) {
             Long categoryId = categoryIds.get(candidate);
             if (categoryId != null) {

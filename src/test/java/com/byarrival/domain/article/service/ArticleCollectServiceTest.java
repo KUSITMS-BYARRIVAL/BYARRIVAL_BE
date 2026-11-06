@@ -132,8 +132,19 @@ class ArticleCollectServiceTest {
     }
 
     @Test
-    void 매핑되지_않는_기사는_카테고리_없이_저장한다() {
+    void Item의_category가_매핑되지_않으면_Feed의_category로_매핑한다() {
         categoryMappingRepository.save(CategoryMapping.create(feedId, "경제", economyId));
+        RssItem item = item("guid-1", "https://news.example.com/1", "본문", List.of("연예"));
+
+        articleCollectService.saveCollected(feed(item), SERVICE_DATE);
+
+        Article article = articleRepository.findAll().getFirst();
+        assertThat(article.getCategoryId()).isEqualTo(economyId);
+        assertThat(article.getRssCategory()).isEqualTo("경제");
+    }
+
+    @Test
+    void 매핑되지_않는_기사는_카테고리_없이_저장한다() {
         RssItem item = item("guid-1", "https://news.example.com/1", "본문", List.of("연예"));
 
         articleCollectService.saveCollected(feed(item), SERVICE_DATE);
@@ -184,7 +195,8 @@ class ArticleCollectServiceTest {
         List<Article> articles = articleRepository.findAll();
         assertThat(saved).isEqualTo(1);
         assertThat(articles).extracting(Article::getGuid).containsExactly("guid-4");
-        assertThat(articles.getFirst().getRssCategory()).isNull();
+        // 50자를 넘는 Item category는 버리고 Feed의 category를 남긴다
+        assertThat(articles.getFirst().getRssCategory()).isEqualTo("경제");
     }
 
     private Long insertCategory(String name, int displayOrder) {
