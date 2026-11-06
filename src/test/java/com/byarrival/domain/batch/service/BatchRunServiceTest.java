@@ -1,6 +1,7 @@
 package com.byarrival.domain.batch.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.byarrival.domain.batch.entity.BatchRun;
 import com.byarrival.domain.batch.entity.BatchRunStatus;
@@ -13,11 +14,18 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.dao.DataIntegrityViolationException;
 
 @SpringBootTest
 @Import(TestcontainersConfig.class)
@@ -82,6 +90,49 @@ class BatchRunServiceTest {
         BatchRun failed = batchRunRepository.findById(failedId).orElseThrow();
         assertThat(failed.getStatus()).isEqualTo(BatchRunStatus.FAILED);
         assertThat(failed.getErrorMessage()).isEqualTo("DB 연결 실패");
+    }
+
+    @Test
+    void 동시에_시작해도_같은_서비스일_배치는_하나만_시작된다() throws Exception {
+        int threads = 8;
+        CountDownLatch ready = new CountDownLatch(threads);
+        CountDownLatch go = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(threads);
+        try {
+            List<Callable<Optional<Long>>> tasks = IntStream.range(0, threads)
+                .<Callable<Optional<Long>>>mapToObj(i -> () -> {
+                    ready.countDown();
+                    go.await();
+                    return batchRunService.start(SERVICE_DATE);
+                })
+                .toList();
+            List<Future<Optional<Long>>> futures = tasks.stream().map(executor::submit).toList();
+            ready.await();
+            go.countDown();
+
+            long started = 0;
+            for (Future<Optional<Long>> future : futures) {
+                if (future.get().isPresent()) {
+                    started++;
+                }
+            }
+
+            assertThat(started).isEqualTo(1);
+            assertThat(batchRunRepository.findAll())
+                .filteredOn(run -> run.getServiceDate().equals(SERVICE_DATE))
+                .hasSize(1);
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void 같은_서비스일에_실행_중인_배치는_DB에_두_개_저장할_수_없다() {
+        batchRunRepository.saveAndFlush(BatchRun.start(SERVICE_DATE, LocalDateTime.of(2026, 11, 2, 23, 45)));
+
+        assertThatThrownBy(() -> batchRunRepository.saveAndFlush(
+            BatchRun.start(SERVICE_DATE, LocalDateTime.of(2026, 11, 2, 23, 45))))
+            .isInstanceOf(DataIntegrityViolationException.class);
     }
 
     @Test
