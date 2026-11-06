@@ -183,6 +183,22 @@ class ArticleCollectServiceTest {
     }
 
     @Test
+    void URL이_중복이라_건너뛴_기사의_GUID로_다른_신규_기사를_막지_않는다() {
+        articleCollectService.saveCollected(
+            feed(item("guid-old", "https://news.example.com/1", "본문", List.of())), SERVICE_DATE);
+
+        int saved = articleCollectService.saveCollected(feed(
+            item("guid-new", "https://news.example.com/1", "본문", List.of()),
+            item("guid-new", "https://news.example.com/2", "본문", List.of())), SERVICE_DATE);
+
+        assertThat(saved).isEqualTo(1);
+        assertThat(articleRepository.findAll()).extracting(Article::getGuid, Article::getOriginalUrl)
+            .containsExactlyInAnyOrder(
+                tuple("guid-old", "https://news.example.com/1"),
+                tuple("guid-new", "https://news.example.com/2"));
+    }
+
+    @Test
     void 컬럼_길이를_넘는_기사는_저장하지_않는다() {
         RssItem longTitle = new RssItem("guid-1", "https://news.example.com/1", "가".repeat(301), "본문",
             PUBLISHED_AT, List.of(), null);

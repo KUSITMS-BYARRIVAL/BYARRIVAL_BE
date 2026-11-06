@@ -45,10 +45,15 @@ public class ArticleCollectService {
         List<Article> articles = new ArrayList<>();
         int unmapped = 0;
         for (RssItem item : items) {
-            boolean duplicateGuid = item.guid() != null && !knownGuids.add(item.guid());
-            if (duplicateGuid || !knownUrls.add(item.link())) {
+            boolean duplicateGuid = item.guid() != null && knownGuids.contains(item.guid());
+            if (duplicateGuid || knownUrls.contains(item.link())) {
                 continue;
             }
+            // 두 검사를 모두 통과한 기사만 등록해야, 건너뛴 기사의 GUID 때문에 다른 신규 기사가 빠지지 않는다
+            if (item.guid() != null) {
+                knownGuids.add(item.guid());
+            }
+            knownUrls.add(item.link());
             Article article = toArticle(feed, item, serviceDate, categoryIds);
             if (article.getCategoryId() == null) {
                 unmapped++;
