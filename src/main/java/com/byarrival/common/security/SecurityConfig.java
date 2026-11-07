@@ -17,8 +17,9 @@ import org.springframework.security.web.SecurityFilterChain;
 public class SecurityConfig {
 
     private static final String[] PUBLIC_POST_PATHS = {"/api/v1/auth/login", "/api/v1/auth/reissue"};
+    // /actuator/health는 배포 스크립트의 헬스 체크용이다. 외부 접근은 Nginx에서 막는다.
     private static final String[] PUBLIC_PATHS = {
-        "/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**", "/api/test/**", "/error"
+        "/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**", "/api/test/**", "/error", "/actuator/health"
     };
 
     private final SecurityErrorHandler securityErrorHandler;

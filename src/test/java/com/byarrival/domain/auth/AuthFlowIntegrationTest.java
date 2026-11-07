@@ -68,6 +68,19 @@ class AuthFlowIntegrationTest {
     }
 
     @Test
+    void 배포_헬스_체크는_토큰_없이_접근할_수_있다() throws Exception {
+        mockMvc.perform(get("/actuator/health"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("UP"));
+    }
+
+    @Test
+    void 헬스_체크_외의_actuator_엔드포인트는_토큰이_필요하다() throws Exception {
+        mockMvc.perform(get("/actuator/info"))
+            .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void 토큰이_없으면_UNAUTHORIZED다() throws Exception {
         mockMvc.perform(get("/api/v1/users/me"))
             .andExpect(status().isUnauthorized())
