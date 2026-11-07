@@ -34,7 +34,14 @@ public class FeedUrlValidator {
     }
 
     public URI validate(String url) {
-        URI uri = parse(url);
+        return validate(url, MAX_URL_LENGTH);
+    }
+
+    /**
+     * @param maxLength 허용할 URL 최대 길이. Feed가 아닌 주소(기사 원문 등)는 저장 컬럼 길이에 맞춰 쓴다.
+     */
+    public URI validate(String url, int maxLength) {
+        URI uri = parse(url, maxLength);
         for (InetAddress address : resolve(uri.getHost())) {
             if (isBlocked(address)) {
                 throw invalid("내부망 주소로 해석되는 Feed URL입니다.");
@@ -43,9 +50,9 @@ public class FeedUrlValidator {
         return uri;
     }
 
-    private URI parse(String url) {
-        if (url == null || url.isBlank() || url.length() > MAX_URL_LENGTH) {
-            throw invalid("Feed URL은 1자 이상 " + MAX_URL_LENGTH + "자 이하여야 합니다.");
+    private URI parse(String url, int maxLength) {
+        if (url == null || url.isBlank() || url.length() > maxLength) {
+            throw invalid("Feed URL은 1자 이상 " + maxLength + "자 이하여야 합니다.");
         }
         URI uri;
         try {

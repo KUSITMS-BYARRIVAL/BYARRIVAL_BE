@@ -15,7 +15,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 /**
- * 매일 23:45 일일 배치. 다음 서비스일에 노출할 기사를 수집해 저장한다.
+ * 매일 23:45 일일 배치. 다음 서비스일에 노출할 기사를 수집하고, 카테고리별로 고른 기사의 원문을 크롤링해 저장한다.
  */
 @Slf4j
 @Service
@@ -64,7 +64,7 @@ public class DailyBatchService {
         int saved = 0;
         for (FetchedFeed feed : fetchedFeeds) {
             try {
-                saved += articleCollectService.saveCollected(feed, serviceDate);
+                saved += articleCollectService.collect(feed, serviceDate);
             } catch (RuntimeException e) {
                 failedFeedIds.add(feed.feedId());
                 log.error("[DailyBatch] serviceDate={} feedId={} 기사 저장 실패 - {}",

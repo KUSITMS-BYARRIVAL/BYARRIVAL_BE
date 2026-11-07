@@ -67,8 +67,8 @@ class DailyBatchServiceTest {
 
         service(LocalDateTime.of(2026, 11, 2, 23, 45)).run();
 
-        verify(articleCollectService).saveCollected(economy, SERVICE_DATE);
-        verify(articleCollectService).saveCollected(society, SERVICE_DATE);
+        verify(articleCollectService).collect(economy, SERVICE_DATE);
+        verify(articleCollectService).collect(society, SERVICE_DATE);
         verify(batchRunService).complete(10L);
     }
 
@@ -78,12 +78,12 @@ class DailyBatchServiceTest {
         FetchedFeed economy = fetchedFeed(2L);
         given(batchRunService.start(SERVICE_DATE)).willReturn(Optional.of(10L));
         given(feedCollectService.collect(SERVICE_DATE)).willReturn(collected(broken, economy));
-        given(articleCollectService.saveCollected(broken, SERVICE_DATE))
+        given(articleCollectService.collect(broken, SERVICE_DATE))
             .willThrow(new IllegalStateException("DB 연결 실패"));
 
         service(LocalDateTime.of(2026, 11, 2, 23, 45)).run();
 
-        verify(articleCollectService).saveCollected(economy, SERVICE_DATE);
+        verify(articleCollectService).collect(economy, SERVICE_DATE);
         verify(batchRunService).fail(10L, "기사 저장 실패 feedIds=[1]");
         verify(batchRunService, never()).complete(anyLong());
     }
@@ -97,7 +97,7 @@ class DailyBatchServiceTest {
 
         verify(batchRunService).fail(10L, "모든 Feed 수집 실패 feedIds=[1, 2]");
         verify(batchRunService, never()).complete(anyLong());
-        verify(articleCollectService, never()).saveCollected(any(), any());
+        verify(articleCollectService, never()).collect(any(), any());
     }
 
     @Test
@@ -108,7 +108,7 @@ class DailyBatchServiceTest {
 
         service(LocalDateTime.of(2026, 11, 2, 23, 45)).run();
 
-        verify(articleCollectService).saveCollected(economy, SERVICE_DATE);
+        verify(articleCollectService).collect(economy, SERVICE_DATE);
         verify(batchRunService).complete(10L);
     }
 
