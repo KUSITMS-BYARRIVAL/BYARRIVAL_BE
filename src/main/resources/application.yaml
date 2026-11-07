@@ -35,3 +35,8 @@ rss:
     max-consecutive-failures: 3
   reading:
     chars-per-minute: 500
+
+jwt:
+  secret: ${JWT_SECRET:}
+  access-token-validity: 24h
+  refresh-token-validity: 30d
