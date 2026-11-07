@@ -73,6 +73,24 @@ class KakaoAuthClientTest {
     }
 
     @Test
+    void 카카오_호출_제한에_걸리면_인증_실패가_아니라_연결_불가로_응답한다() {
+        server.expect(requestTo(TOKEN_INFO_URI))
+            .andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS));
+
+        assertAuthError(() -> client.getProviderUserId("access-token"), AuthErrorCode.SOCIAL_PROVIDER_UNAVAILABLE);
+    }
+
+    @Test
+    void 카카오가_401이_아닌_4xx로_응답하면_연결_불가로_응답한다() {
+        server.expect(requestTo(TOKEN_INFO_URI))
+            .andRespond(withStatus(HttpStatus.BAD_REQUEST)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body("{\"code\":-2,\"msg\":\"invalid argument\"}"));
+
+        assertAuthError(() -> client.getProviderUserId("access-token"), AuthErrorCode.SOCIAL_PROVIDER_UNAVAILABLE);
+    }
+
+    @Test
     void 카카오_서버_오류면_연결_불가로_응답한다() {
         server.expect(requestTo(TOKEN_INFO_URI)).andRespond(withServerError());
 

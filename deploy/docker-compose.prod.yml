@@ -1,0 +1,93 @@
+# 운영 서버용 compose. 서버의 ~/byarrival 에서 deploy.sh 가 사용한다.
+# app-blue, app-green 중 하나만 Nginx에 연결되고, 배포할 때 번갈아 교체된다.
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-app: &app
+  image: ${APP_IMAGE:-ghcr.io/kusitms-byarrival/byarrival_be:latest}
+  env_file: .env
+  environment:
+    SPRING_PROFILES_ACTIVE: prod
+    TZ: Asia/Seoul
+  restart: unless-stopped
+  stop_grace_period: 30s
+  logging: *default-logging
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: byarrival-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      TZ: Asia/Seoul
+      PGTZ: Asia/Seoul
+    # 외부에는 열지 않고 서버 localhost에만 연다. 개발자는 SSH 터널로 접속한다
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    logging: *default-logging
+
+  redis:
+    image: redis:7.4
+    container_name: byarrival-redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    logging: *default-logging
+
+  app-blue:
+    <<: *app
+    container_name: byarrival-app-blue
+    ports:
+      - "127.0.0.1:8081:8080"
+
+  app-green:
+    <<: *app
+    container_name: byarrival-app-green
+    ports:
+      - "127.0.0.1:8082:8080"
+
+  nginx:
+    image: nginx:1.27
+    container_name: byarrival-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx:/etc/nginx/conf.d:ro
+      - ./certbot/www:/var/www/certbot:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
+    # 갱신된 인증서를 읽도록 6시간마다 reload 한다
+    command: ["/bin/sh", "-c", "while :; do sleep 6h & wait $$!; nginx -s reload; done & exec nginx -g 'daemon off;'"]
+    restart: unless-stopped
+    logging: *default-logging
+
+  # IP 주소 인증서(Let's Encrypt 6일 단기 인증서)를 12시간마다 확인해 갱신한다
+  certbot:
+    image: certbot/certbot:v5.8.0
+    container_name: byarrival-certbot
+    volumes:
+      - ./certbot/www:/var/www/certbot
+      - ./certbot/conf:/etc/letsencrypt
+    entrypoint: ["/bin/sh", "-c", "trap exit TERM; while :; do certbot renew --quiet; sleep 12h & wait $$!; done"]
+    restart: unless-stopped
+    logging: *default-logging
+
+volumes:
+  postgres-data:

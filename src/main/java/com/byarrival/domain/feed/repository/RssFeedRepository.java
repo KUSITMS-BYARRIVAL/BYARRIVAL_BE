@@ -16,6 +16,7 @@ public interface RssFeedRepository extends JpaRepository<RssFeed, Long> {
     List<RssFeed> findAllByActiveTrue();
 
     @Modifying(clearAutomatically = true)
-    @Query("UPDATE RssFeed f SET f.lastFetchedAt = :fetchedAt, f.updatedAt = :fetchedAt WHERE f.id IN :feedIds")
+    @Query("UPDATE RssFeed f SET f.lastFetchedAt = :fetchedAt, f.updatedAt = :fetchedAt,"
+        + " f.consecutiveFailureCount = 0, f.lastFailedServiceDate = null WHERE f.id IN :feedIds")
     int updateLastFetchedAt(@Param("feedIds") Collection<Long> feedIds, @Param("fetchedAt") LocalDateTime fetchedAt);
 }

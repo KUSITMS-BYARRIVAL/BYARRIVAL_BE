@@ -7,3 +7,7 @@ spring:
     redis:
       host: ${REDIS_HOST}
       port: ${REDIS_PORT}
+
+server:
+  # Nginx(HTTPS) 뒤에서 X-Forwarded-Proto 를 반영해 Swagger 등이 https 주소를 쓰게 한다
+  forward-headers-strategy: framework

@@ -2,10 +2,12 @@ package com.byarrival.domain.feed.service;
 
 import com.byarrival.common.exception.BusinessException;
 import com.byarrival.common.exception.CommonErrorCode;
+import com.byarrival.domain.feed.config.RssFetchProperties;
 import com.byarrival.domain.feed.dto.response.FeedResponse;
 import com.byarrival.domain.feed.entity.RssFeed;
 import com.byarrival.domain.feed.exception.FeedErrorCode;
 import com.byarrival.domain.feed.repository.RssFeedRepository;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
@@ -30,6 +32,7 @@ public class FeedService {
 
     private final RssFeedRepository rssFeedRepository;
     private final FeedUrlValidator feedUrlValidator;
+    private final RssFetchProperties rssFetchProperties;
 
     // URL 검증의 DNS 조회가 트랜잭션을 붙잡지 않도록 트랜잭션을 걸지 않는다.
     // 중복 확인과 저장은 각각 Repository 트랜잭션에서 실행되고, 그 사이의 중복은 UNIQUE 제약이 막는다.
@@ -63,6 +66,19 @@ public class FeedService {
             return;
         }
         rssFeedRepository.updateLastFetchedAt(feedIds, fetchedAt);
+    }
+
+    // 호출에 실패한 Feed의 연속 실패를 센다. 비활성화된 Feed ID를 돌려준다.
+    @Transactional
+    public List<Long> recordFailures(Collection<Long> feedIds, LocalDate serviceDate) {
+        if (feedIds.isEmpty()) {
+            return List.of();
+        }
+        int maxConsecutiveFailures = rssFetchProperties.maxConsecutiveFailures();
+        return rssFeedRepository.findAllById(feedIds).stream()
+            .filter(feed -> feed.recordFailure(serviceDate, maxConsecutiveFailures))
+            .map(RssFeed::getId)
+            .toList();
     }
 
     @Transactional

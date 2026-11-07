@@ -1,0 +1,14 @@
+.git
+.github
+.gradle
+.idea
+.claude
+build
+deploy
+*.md
+*.p8
+*.pem
+.env
+.env.*
+docker-compose.yml
+src/main/resources/application-local.yaml

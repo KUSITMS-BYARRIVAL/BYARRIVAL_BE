@@ -10,12 +10,14 @@ import static org.mockito.Mockito.verify;
 
 import com.byarrival.common.exception.BusinessException;
 import com.byarrival.common.exception.CommonErrorCode;
+import com.byarrival.domain.feed.config.RssFetchProperties;
 import com.byarrival.domain.feed.dto.response.FeedResponse;
 import com.byarrival.domain.feed.entity.RssFeed;
 import com.byarrival.domain.feed.exception.FeedErrorCode;
 import com.byarrival.domain.feed.repository.RssFeedRepository;
 import java.net.InetAddress;
 import java.sql.SQLException;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import org.hibernate.exception.ConstraintViolationException;
@@ -23,6 +25,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.util.unit.DataSize;
 
 class FeedServiceTest {
 
@@ -35,7 +38,9 @@ class FeedServiceTest {
     void setUp() {
         rssFeedRepository = mock(RssFeedRepository.class);
         FeedUrlValidator validator = new FeedUrlValidator(host -> new InetAddress[] {InetAddress.getByName("203.0.113.10")});
-        feedService = new FeedService(rssFeedRepository, validator);
+        RssFetchProperties properties = new RssFetchProperties(
+            Duration.ofSeconds(5), Duration.ofSeconds(10), DataSize.ofMegabytes(5), 3, 3);
+        feedService = new FeedService(rssFeedRepository, validator, properties);
     }
 
     @Test

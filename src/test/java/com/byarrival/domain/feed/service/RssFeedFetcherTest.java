@@ -55,7 +55,7 @@ class RssFeedFetcherTest {
             InetAddress.getByName("blocked.test".equals(host) ? "10.0.0.1" : "203.0.113.10")
         });
         RssFetchProperties properties = new RssFetchProperties(
-            Duration.ofSeconds(1), Duration.ofMillis(300), DataSize.ofBytes(MAX_BYTES), 3);
+            Duration.ofSeconds(1), Duration.ofMillis(300), DataSize.ofBytes(MAX_BYTES), 3, 3);
         fetcher = new RssFeedFetcher(validator, properties);
     }
 
