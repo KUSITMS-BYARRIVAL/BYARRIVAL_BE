@@ -82,6 +82,23 @@ public class ArticleSaveService {
     }
 
     /**
+     * @return 매핑된 서비스 카테고리별로 이 서비스일에 저장된 기사 수. 저장된 기사가 없는 카테고리는 0
+     */
+    @Transactional(readOnly = true)
+    public Map<Long, Long> countByMappedCategory(LocalDate serviceDate) {
+        Set<Long> categoryIds = categoryMappingService.getMappedCategoryIds();
+        Map<Long, Long> counts = new HashMap<>();
+        if (categoryIds.isEmpty()) {
+            return counts;
+        }
+        categoryIds.forEach(categoryId -> counts.put(categoryId, 0L));
+        for (CategoryArticleCount count : articleRepository.countByCategory(serviceDate, categoryIds)) {
+            counts.put(count.getCategoryId(), count.getArticleCount());
+        }
+        return counts;
+    }
+
+    /**
      * 기사와 원문 본문을 한 트랜잭션으로 저장한다. 본문이 없는 기사(카테고리 미매핑)는 기사만 저장한다.
      */
     @Transactional

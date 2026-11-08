@@ -1,6 +1,7 @@
 package com.byarrival.domain.article.service;
 
 import com.byarrival.common.exception.BusinessException;
+import com.byarrival.domain.article.config.ArticleSelectionProperties;
 import com.byarrival.domain.article.entity.Article;
 import com.byarrival.domain.article.exception.ArticleErrorCode;
 import com.byarrival.domain.article.service.ArticleCrawler.CrawlResult;
@@ -21,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
@@ -43,23 +45,23 @@ public class ArticleCollectService {
     private final ArticleStoryMatcher storyMatcher;
     private final ReadingTimeCalculator readingTimeCalculator;
     private final ExecutorService crawlExecutor;
+    private final ArticleSelectionProperties selectionProperties;
 
     public ArticleCollectService(ArticleSaveService articleSaveService, ArticleCrawler articleCrawler,
         ArticleStoryMatcher storyMatcher, ReadingTimeCalculator readingTimeCalculator,
-        @Qualifier("articleCrawlExecutor") ExecutorService crawlExecutor) {
+        @Qualifier("articleCrawlExecutor") ExecutorService crawlExecutor, ArticleSelectionProperties selectionProperties) {
         this.articleSaveService = articleSaveService;
         this.articleCrawler = articleCrawler;
         this.storyMatcher = storyMatcher;
         this.readingTimeCalculator = readingTimeCalculator;
         this.crawlExecutor = crawlExecutor;
+        this.selectionProperties = selectionProperties;
     }
 
     /**
      * 크롤링은 트랜잭션 밖에서 하고, 저장만 한 트랜잭션으로 묶는다. 저장에 실패하면 이 Feed의 기사만 저장되지 않는다.
      *
      * @return 새로 저장한 기사 수
-     * @throws BusinessException 시도한 크롤링이 모두 가져오기 실패면(구글 차단, 네트워크 장애 등) 크롤링 장애로 보고
-     *                           아무것도 저장하지 않는다. 배치를 실패로 남겨 다시 실행할 수 있게 한다.
      */
     public int collect(FetchedFeed feed, LocalDate serviceDate) {
         CollectPlan plan = articleSaveService.plan(feed, serviceDate);
@@ -102,9 +104,8 @@ public class ArticleCollectService {
                     if (sameStory > 0 || sameSource > 0) {
                         log.info("[ArticleCollect] 같은 사건 {}건, 같은 원문 {}건 제외", sameStory, sameSource);
                     }
-                    if (attempts > 0 && fetchFailures == attempts) {
-                        throw new BusinessException(ArticleErrorCode.ARTICLE_CRAWL_FAILED,
-                            "크롤링 장애: 시도한 " + attempts + "건 모두 원문을 가져오지 못했습니다.");
+                    if (fetchFailures > 0) {
+                        log.info("[ArticleCollect] 크롤링 {}건 중 원문 가져오기 실패 {}건", attempts, fetchFailures);
                     }
                     return collected;
                 }
@@ -178,6 +179,34 @@ public class ArticleCollectService {
         private boolean isPickedStory(Story story) {
             return pickedStories.stream().anyMatch(picked -> storyMatcher.isSameStory(picked, story));
         }
+    }
+
+    /**
+     * 이 서비스일에 카테고리별로 채운 기사 수를 확인한다. 20건을 다 채우지 못해도 그날 추천은 할 수 있으므로 경고만 하고,
+     * 한 건도 없는 카테고리는 그날 추천을 할 수 없으므로 따로 돌려준다.
+     */
+    public CategoryFill checkCategoryFill(LocalDate serviceDate) {
+        Map<Long, Long> counts = articleSaveService.countByMappedCategory(serviceDate);
+        int max = selectionProperties.maxArticlesPerCategory();
+        List<Long> empty = counts.entrySet().stream()
+            .filter(entry -> entry.getValue() == 0)
+            .map(Map.Entry::getKey)
+            .sorted()
+            .toList();
+        Map<Long, Long> shortage = new TreeMap<>();
+        counts.forEach((categoryId, count) -> {
+            if (count > 0 && count < max) {
+                shortage.put(categoryId, count);
+            }
+        });
+        return new CategoryFill(empty, shortage);
+    }
+
+    /**
+     * @param emptyCategoryIds 기사가 한 건도 없는 카테고리
+     * @param shortage         최대 수를 채우지 못한 카테고리별 기사 수(0건 제외)
+     */
+    public record CategoryFill(List<Long> emptyCategoryIds, Map<Long, Long> shortage) {
     }
 
     private CrawlResult await(Future<CrawlResult> result) {

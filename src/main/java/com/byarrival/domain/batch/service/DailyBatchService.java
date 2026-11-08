@@ -2,6 +2,7 @@ package com.byarrival.domain.batch.service;
 
 import com.byarrival.common.time.ServiceDay;
 import com.byarrival.domain.article.service.ArticleCollectService;
+import com.byarrival.domain.article.service.ArticleCollectService.CategoryFill;
 import com.byarrival.domain.feed.dto.FeedCollectResult;
 import com.byarrival.domain.feed.dto.FetchedFeed;
 import com.byarrival.domain.feed.service.FeedCollectService;
@@ -46,8 +47,18 @@ public class DailyBatchService {
             List<FetchedFeed> fetchedFeeds = collectResult.fetchedFeeds();
             List<Long> saveFailedFeedIds = saveArticles(fetchedFeeds, serviceDate);
             if (!saveFailedFeedIds.isEmpty()) {
-                // 저장 실패나 크롤링 장애. 다시 실행할 수 있도록 실패로 남긴다. 이미 저장된 기사는 재실행 때 건너뛴다.
-                batchRunService.fail(batchRunId.get(), "기사 저장·크롤링 실패 feedIds=" + saveFailedFeedIds);
+                // 다시 실행할 수 있도록 실패로 남긴다. 이미 저장된 기사는 재실행 때 건너뛴다.
+                batchRunService.fail(batchRunId.get(), "기사 저장 실패 feedIds=" + saveFailedFeedIds);
+                return;
+            }
+            CategoryFill fill = articleCollectService.checkCategoryFill(serviceDate);
+            if (!fill.shortage().isEmpty()) {
+                log.warn("[DailyBatch] serviceDate={} 최대 수를 채우지 못한 카테고리 categoryId=기사 수 {}",
+                    serviceDate, fill.shortage());
+            }
+            if (!fill.emptyCategoryIds().isEmpty()) {
+                // 그날 추천을 할 수 없는 카테고리. 다시 실행해 빈 카테고리를 채울 수 있도록 실패로 남긴다.
+                batchRunService.fail(batchRunId.get(), "기사 0건 카테고리 categoryIds=" + fill.emptyCategoryIds());
                 return;
             }
             batchRunService.complete(batchRunId.get());
@@ -58,7 +69,7 @@ public class DailyBatchService {
         }
     }
 
-    // 한 Feed의 저장이 실패하거나 크롤링 장애가 나도 나머지 Feed는 저장한다
+    // 한 Feed의 저장이 실패해도 나머지 Feed는 저장한다
     private List<Long> saveArticles(List<FetchedFeed> fetchedFeeds, LocalDate serviceDate) {
         List<Long> failedFeedIds = new ArrayList<>();
         int saved = 0;

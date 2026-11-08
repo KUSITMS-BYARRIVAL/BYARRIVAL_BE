@@ -1,7 +1,7 @@
 package com.byarrival.domain.article.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.entry;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
@@ -13,8 +13,7 @@ import com.byarrival.domain.article.entity.ArticleContent;
 import com.byarrival.domain.article.entity.ArticleProcessStatus;
 import com.byarrival.domain.article.repository.ArticleContentRepository;
 import com.byarrival.domain.article.repository.ArticleRepository;
-import com.byarrival.common.exception.BusinessException;
-import com.byarrival.domain.article.exception.ArticleErrorCode;
+import com.byarrival.domain.article.service.ArticleCollectService.CategoryFill;
 import com.byarrival.domain.article.service.ArticleCrawler.CrawlResult;
 import com.byarrival.domain.article.service.ArticleCrawler.CrawledArticle;
 import com.byarrival.domain.category.entity.CategoryMapping;
@@ -321,19 +320,44 @@ class ArticleCollectServiceTest {
     }
 
     @Test
-    void 시도한_크롤링이_모두_가져오기_실패면_크롤링_장애로_보고_아무것도_저장하지_않는다() {
+    void 원문을_하나도_가져오지_못하면_저장하지_않고_그_카테고리를_0건으로_알린다() {
         mapEconomy();
         given(articleCrawler.crawl(anyString())).willReturn(CrawlResult.fetchFailure());
 
-        assertThatThrownBy(() -> articleCollectService.collect(feed(items(1, 25)), SERVICE_DATE))
-            .isInstanceOf(BusinessException.class)
-            .extracting(e -> ((BusinessException) e).getErrorCode())
-            .isEqualTo(ArticleErrorCode.ARTICLE_CRAWL_FAILED);
-        assertThat(articleRepository.count()).isZero();
+        int saved = articleCollectService.collect(feed(items(1, 25)), SERVICE_DATE);
+
+        assertThat(saved).isZero();
+        CategoryFill fill = articleCollectService.checkCategoryFill(SERVICE_DATE);
+        assertThat(fill.emptyCategoryIds()).containsExactly(economyId);
+        assertThat(fill.shortage()).isEmpty();
     }
 
     @Test
-    void 원문을_받았지만_기준에_맞지_않아_모두_제외되면_장애가_아니다() {
+    void 최대_수를_채우지_못한_카테고리는_저장한_수와_함께_알린다() {
+        mapEconomy();
+        Long societyId = insertCategory("사회", 2);
+        categoryMappingRepository.save(CategoryMapping.create(feedId, "사회", societyId));
+
+        articleCollectService.collect(feed(items(1, 5)), SERVICE_DATE);
+
+        CategoryFill fill = articleCollectService.checkCategoryFill(SERVICE_DATE);
+        assertThat(fill.shortage()).containsExactly(entry(economyId, 5L));
+        assertThat(fill.emptyCategoryIds()).containsExactly(societyId);
+    }
+
+    @Test
+    void 최대_수를_채운_카테고리는_알리지_않는다() {
+        mapEconomy();
+
+        articleCollectService.collect(feed(items(1, 25)), SERVICE_DATE);
+
+        CategoryFill fill = articleCollectService.checkCategoryFill(SERVICE_DATE);
+        assertThat(fill.emptyCategoryIds()).isEmpty();
+        assertThat(fill.shortage()).isEmpty();
+    }
+
+    @Test
+    void 원문을_받았지만_기준에_맞지_않으면_저장하지_않는다() {
         mapEconomy();
         given(articleCrawler.crawl(anyString())).willReturn(CrawlResult.excluded());
 
@@ -343,7 +367,7 @@ class ArticleCollectServiceTest {
     }
 
     @Test
-    void 일부만_가져오기_실패면_장애가_아니다() {
+    void 일부만_원문을_가져오면_가져온_기사만_저장한다() {
         mapEconomy();
         given(articleCrawler.crawl(anyString())).willReturn(CrawlResult.fetchFailure());
         given(articleCrawler.crawl("https://news.example.com/3"))
