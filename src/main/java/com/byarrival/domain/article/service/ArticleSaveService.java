@@ -82,11 +82,11 @@ public class ArticleSaveService {
     }
 
     /**
-     * @return 매핑된 서비스 카테고리별로 이 서비스일에 저장된 기사 수. 저장된 기사가 없는 카테고리는 0
+     * @return 활성 서비스 카테고리별로 이 서비스일에 저장된 기사 수. 저장된 기사가 없는 카테고리는 0
      */
     @Transactional(readOnly = true)
-    public Map<Long, Long> countByMappedCategory(LocalDate serviceDate) {
-        Set<Long> categoryIds = categoryMappingService.getMappedCategoryIds();
+    public Map<Long, Long> countByActiveCategory(LocalDate serviceDate) {
+        Set<Long> categoryIds = categoryMappingService.getActiveCategoryIds();
         Map<Long, Long> counts = new HashMap<>();
         if (categoryIds.isEmpty()) {
             return counts;

@@ -28,12 +28,11 @@ public class CategoryMappingService {
     }
 
     /**
-     * @return 매핑 규칙이 하나라도 있는 서비스 카테고리 ID. 배치가 기사를 채워야 하는 카테고리다.
+     * @return 활성 서비스 카테고리 ID. 사용자가 온보딩에서 고를 수 있으므로 배치가 매일 기사를 채워야 하는 카테고리다.
+     *         매핑 규칙이 빠진 카테고리도 포함해, 매핑 누락이 0건으로 드러나게 한다.
      */
     @Transactional(readOnly = true)
-    public Set<Long> getMappedCategoryIds() {
-        return categoryMappingRepository.findAll().stream()
-            .map(CategoryMapping::getCategoryId)
-            .collect(Collectors.toUnmodifiableSet());
+    public Set<Long> getActiveCategoryIds() {
+        return Set.copyOf(categoryMappingRepository.findActiveCategoryIds());
     }
 }

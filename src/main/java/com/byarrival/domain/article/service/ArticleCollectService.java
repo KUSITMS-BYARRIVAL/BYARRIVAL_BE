@@ -188,11 +188,11 @@ public class ArticleCollectService {
     }
 
     /**
-     * 이 서비스일에 카테고리별로 채운 기사 수를 확인한다. 20건을 다 채우지 못해도 그날 추천은 할 수 있으므로 경고만 하고,
+     * 이 서비스일에 활성 카테고리별로 채운 기사 수를 확인한다. 20건을 다 채우지 못해도 그날 추천은 할 수 있으므로 경고만 하고,
      * 한 건도 없는 카테고리는 그날 추천을 할 수 없으므로 따로 돌려준다.
      */
     public CategoryFill checkCategoryFill(LocalDate serviceDate) {
-        Map<Long, Long> counts = articleSaveService.countByMappedCategory(serviceDate);
+        Map<Long, Long> counts = articleSaveService.countByActiveCategory(serviceDate);
         int max = selectionProperties.maxArticlesPerCategory();
         List<Long> empty = counts.entrySet().stream()
             .filter(entry -> entry.getValue() == 0)

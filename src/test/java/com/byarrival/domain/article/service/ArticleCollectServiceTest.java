@@ -346,6 +346,19 @@ class ArticleCollectServiceTest {
     }
 
     @Test
+    void 매핑이_없는_활성_카테고리도_0건으로_알리고_비활성_카테고리는_보지_않는다() {
+        mapEconomy();
+        Long unmappedId = insertCategory("과학·환경", 5);
+        Long inactiveId = insertCategory("예전 카테고리", 9);
+        jdbcTemplate.update("UPDATE category SET active = false WHERE id = ?", inactiveId);
+
+        articleCollectService.collect(feed(items(1, 25)), SERVICE_DATE);
+
+        CategoryFill fill = articleCollectService.checkCategoryFill(SERVICE_DATE);
+        assertThat(fill.emptyCategoryIds()).containsExactly(unmappedId);
+    }
+
+    @Test
     void 최대_수를_채운_카테고리는_알리지_않는다() {
         mapEconomy();
 
