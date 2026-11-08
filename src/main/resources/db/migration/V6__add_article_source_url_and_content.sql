@@ -13,9 +13,8 @@ CREATE UNIQUE INDEX uk_article_source_url ON article (source_url) WHERE source_u
 -- 배치에서 서비스일·카테고리별 저장 수와 이미 고른 기사를 조회
 CREATE INDEX ix_article_service_date_category ON article (service_date, category_id);
 
--- 원문 크롤링 전까지 쓰지 않던 컬럼. 본문은 article_content에 둔다.
-ALTER TABLE article
-    DROP COLUMN cleaned_content;
+-- article.cleaned_content는 더 이상 쓰지 않는다(본문은 article_content에 둔다). 값을 쓴 적이 없어 늘 NULL이다.
+-- 배포 전환·롤백 중 이전 버전 앱이 이 컬럼을 참조할 수 있으므로 여기서 지우지 않고, 롤백 기간이 지난 뒤 지운다.
 
 CREATE TABLE article_content (
     article_id BIGINT    PRIMARY KEY REFERENCES article (id) ON DELETE CASCADE,
