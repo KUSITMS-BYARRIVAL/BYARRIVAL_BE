@@ -3,6 +3,7 @@ package com.byarrival.domain.article.service;
 import com.byarrival.common.exception.BusinessException;
 import com.byarrival.domain.article.entity.Article;
 import com.byarrival.domain.article.exception.ArticleErrorCode;
+import com.byarrival.domain.article.service.ArticleCrawler.CrawlResult;
 import com.byarrival.domain.article.service.ArticleCrawler.CrawledArticle;
 import com.byarrival.domain.article.service.ArticleSaveService.ArticleCandidate;
 import com.byarrival.domain.article.service.ArticleSaveService.CollectPlan;
@@ -19,7 +20,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -58,6 +58,8 @@ public class ArticleCollectService {
      * 크롤링은 트랜잭션 밖에서 하고, 저장만 한 트랜잭션으로 묶는다. 저장에 실패하면 이 Feed의 기사만 저장되지 않는다.
      *
      * @return 새로 저장한 기사 수
+     * @throws BusinessException 시도한 크롤링이 모두 가져오기 실패면(구글 차단, 네트워크 장애 등) 크롤링 장애로 보고
+     *                           아무것도 저장하지 않는다. 배치를 실패로 남겨 다시 실행할 수 있게 한다.
      */
     public int collect(FetchedFeed feed, LocalDate serviceDate) {
         CollectPlan plan = articleSaveService.plan(feed, serviceDate);
@@ -83,6 +85,8 @@ public class ArticleCollectService {
         private final List<CollectedArticle> collected = new ArrayList<>();
         private int sameStory;
         private int sameSource;
+        private int attempts;
+        private int fetchFailures;
 
         private Selection(CollectPlan plan, LocalDate serviceDate) {
             this.serviceDate = serviceDate;
@@ -98,14 +102,23 @@ public class ArticleCollectService {
                     if (sameStory > 0 || sameSource > 0) {
                         log.info("[ArticleCollect] 같은 사건 {}건, 같은 원문 {}건 제외", sameStory, sameSource);
                     }
+                    if (attempts > 0 && fetchFailures == attempts) {
+                        throw new BusinessException(ArticleErrorCode.ARTICLE_CRAWL_FAILED,
+                            "크롤링 장애: 시도한 " + attempts + "건 모두 원문을 가져오지 못했습니다.");
+                    }
                     return collected;
                 }
-                List<Future<Optional<CrawledArticle>>> results = wave.stream()
+                List<Future<CrawlResult>> results = wave.stream()
                     .map(candidate -> crawlExecutor.submit(() -> articleCrawler.crawl(candidate.item().link())))
                     .toList();
                 List<CrawledArticle> crawled = new ArrayList<>();
-                for (Future<Optional<CrawledArticle>> result : results) {
-                    crawled.add(await(result).orElse(null));
+                for (Future<CrawlResult> result : results) {
+                    CrawlResult crawlResult = await(result);
+                    attempts++;
+                    if (crawlResult.fetchFailed()) {
+                        fetchFailures++;
+                    }
+                    crawled.add(crawlResult.article());
                 }
                 accept(wave, crawled);
             }
@@ -167,7 +180,7 @@ public class ArticleCollectService {
         }
     }
 
-    private Optional<CrawledArticle> await(Future<Optional<CrawledArticle>> result) {
+    private CrawlResult await(Future<CrawlResult> result) {
         try {
             return result.get();
         } catch (InterruptedException e) {
@@ -175,7 +188,7 @@ public class ArticleCollectService {
             throw new BusinessException(ArticleErrorCode.ARTICLE_CRAWL_FAILED, "기사 크롤링이 중단되었습니다.");
         } catch (ExecutionException e) {
             log.warn("[ArticleCollect] 크롤링 작업 실패 - {}", e.getCause().getMessage());
-            return Optional.empty();
+            return CrawlResult.fetchFailure();
         }
     }
 }

@@ -7,6 +7,7 @@ import static org.mockito.Mockito.mock;
 import com.byarrival.common.exception.BusinessException;
 import com.byarrival.domain.article.config.ArticleCrawlProperties;
 import com.byarrival.domain.article.exception.ArticleErrorCode;
+import com.byarrival.domain.article.service.ArticleCrawler.CrawlResult;
 import com.byarrival.domain.article.service.ArticleCrawler.CrawledArticle;
 import com.byarrival.domain.article.service.ArticlePageClient.Page;
 import java.nio.charset.StandardCharsets;
@@ -41,7 +42,7 @@ class ArticleCrawlerTest {
     void 원문_주소의_본문을_정제해_돌려준다() {
         given(pageClient.get(SOURCE_URL)).willReturn(page(SOURCE_URL, "<div><p>" + "가".repeat(30) + "</p></div>"));
 
-        assertThat(crawler.crawl(LINK)).contains(new CrawledArticle(SOURCE_URL, "가".repeat(30)));
+        assertThat(crawler.crawl(LINK)).isEqualTo(CrawlResult.success(new CrawledArticle(SOURCE_URL, "가".repeat(30))));
     }
 
     @Test
@@ -49,44 +50,44 @@ class ArticleCrawlerTest {
         given(pageClient.get(SOURCE_URL))
             .willReturn(page("https://m.press.example.com/1", "<div><p>" + "가".repeat(30) + "</p></div>"));
 
-        assertThat(crawler.crawl(LINK)).map(CrawledArticle::sourceUrl).contains("https://m.press.example.com/1");
+        assertThat(crawler.crawl(LINK).article().sourceUrl()).isEqualTo("https://m.press.example.com/1");
     }
 
     @Test
-    void 본문이_최소_길이보다_짧으면_실패로_본다() {
+    void 본문이_최소_길이보다_짧으면_제외한다() {
         given(pageClient.get(SOURCE_URL)).willReturn(page(SOURCE_URL, "<div><p>" + "가".repeat(19) + "</p></div>"));
 
-        assertThat(crawler.crawl(LINK)).isEmpty();
+        assertThat(crawler.crawl(LINK)).isEqualTo(CrawlResult.excluded());
     }
 
     @Test
-    void 본문이_한국어가_아니면_실패로_본다() {
+    void 본문이_한국어가_아니면_제외한다() {
         given(pageClient.get(SOURCE_URL)).willReturn(page(SOURCE_URL,
             "<div><p>Lợi ích của sữa chua đối với người mỡ máu cao 가나다</p></div>"));
 
-        assertThat(crawler.crawl(LINK)).isEmpty();
+        assertThat(crawler.crawl(LINK)).isEqualTo(CrawlResult.excluded());
     }
 
     @Test
-    void 원문_주소를_알아내지_못하면_실패로_본다() {
+    void 원문_주소를_알아내지_못하면_가져오기_실패로_본다() {
         given(resolver.resolve(LINK)).willThrow(new BusinessException(ArticleErrorCode.ARTICLE_CRAWL_FAILED));
 
-        assertThat(crawler.crawl(LINK)).isEmpty();
+        assertThat(crawler.crawl(LINK)).isEqualTo(CrawlResult.fetchFailure());
     }
 
     @Test
-    void 원문_호출이_실패하면_실패로_본다() {
+    void 원문_호출이_실패하면_가져오기_실패로_본다() {
         given(pageClient.get(SOURCE_URL)).willThrow(new BusinessException(ArticleErrorCode.ARTICLE_CRAWL_FAILED));
 
-        assertThat(crawler.crawl(LINK)).isEmpty();
+        assertThat(crawler.crawl(LINK)).isEqualTo(CrawlResult.fetchFailure());
     }
 
     @Test
-    void 원문_주소가_컬럼_길이를_넘으면_실패로_본다() {
+    void 원문_주소가_컬럼_길이를_넘으면_제외한다() {
         String longUrl = "https://press.example.com/" + "a".repeat(1000);
         given(pageClient.get(SOURCE_URL)).willReturn(page(longUrl, "<div><p>" + "가".repeat(30) + "</p></div>"));
 
-        assertThat(crawler.crawl(LINK)).isEmpty();
+        assertThat(crawler.crawl(LINK)).isEqualTo(CrawlResult.excluded());
     }
 
     private Page page(String url, String body) {

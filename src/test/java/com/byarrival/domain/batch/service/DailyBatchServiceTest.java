@@ -84,7 +84,7 @@ class DailyBatchServiceTest {
         service(LocalDateTime.of(2026, 11, 2, 23, 45)).run();
 
         verify(articleCollectService).collect(economy, SERVICE_DATE);
-        verify(batchRunService).fail(10L, "기사 저장 실패 feedIds=[1]");
+        verify(batchRunService).fail(10L, "기사 저장·크롤링 실패 feedIds=[1]");
         verify(batchRunService, never()).complete(anyLong());
     }
 

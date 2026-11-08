@@ -1,6 +1,7 @@
 package com.byarrival.domain.article.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
@@ -12,6 +13,9 @@ import com.byarrival.domain.article.entity.ArticleContent;
 import com.byarrival.domain.article.entity.ArticleProcessStatus;
 import com.byarrival.domain.article.repository.ArticleContentRepository;
 import com.byarrival.domain.article.repository.ArticleRepository;
+import com.byarrival.common.exception.BusinessException;
+import com.byarrival.domain.article.exception.ArticleErrorCode;
+import com.byarrival.domain.article.service.ArticleCrawler.CrawlResult;
 import com.byarrival.domain.article.service.ArticleCrawler.CrawledArticle;
 import com.byarrival.domain.category.entity.CategoryMapping;
 import com.byarrival.domain.category.repository.CategoryMappingRepository;
@@ -25,7 +29,6 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -75,7 +78,7 @@ class ArticleCollectServiceTest {
         feedId = rssFeedRepository.save(RssFeed.create("한국경제", "https://news.example.com/rss.xml", "경제")).getId();
         economyId = insertCategory("경제", 1);
         // 링크마다 다른 원문 주소를 돌려준다
-        given(articleCrawler.crawl(anyString())).willAnswer(invocation -> Optional.of(new CrawledArticle(
+        given(articleCrawler.crawl(anyString())).willAnswer(invocation -> CrawlResult.success(new CrawledArticle(
             "https://press.example.com/" + Integer.toHexString(invocation.getArgument(0, String.class).hashCode()),
             BODY)));
     }
@@ -273,7 +276,7 @@ class ArticleCollectServiceTest {
     void 카테고리가_매핑된_기사는_원문을_크롤링해_원문_주소와_본문과_읽기시간을_저장한다() {
         mapEconomy();
         given(articleCrawler.crawl("https://news.example.com/1"))
-            .willReturn(Optional.of(new CrawledArticle("https://press.example.com/1", BODY)));
+            .willReturn(CrawlResult.success(new CrawledArticle("https://press.example.com/1", BODY)));
 
         articleCollectService.collect(feed(item("guid-1", "https://news.example.com/1", "요약", List.of())),
             SERVICE_DATE);
@@ -305,8 +308,8 @@ class ArticleCollectServiceTest {
     @Test
     void 원문을_가져오지_못한_기사는_저장하지_않고_다음_순서_기사로_채운다() {
         mapEconomy();
-        given(articleCrawler.crawl("https://news.example.com/3")).willReturn(Optional.empty());
-        given(articleCrawler.crawl("https://news.example.com/7")).willReturn(Optional.empty());
+        given(articleCrawler.crawl("https://news.example.com/3")).willReturn(CrawlResult.fetchFailure());
+        given(articleCrawler.crawl("https://news.example.com/7")).willReturn(CrawlResult.fetchFailure());
 
         int saved = articleCollectService.collect(feed(items(1, 25)), SERVICE_DATE);
 
@@ -318,9 +321,43 @@ class ArticleCollectServiceTest {
     }
 
     @Test
+    void 시도한_크롤링이_모두_가져오기_실패면_크롤링_장애로_보고_아무것도_저장하지_않는다() {
+        mapEconomy();
+        given(articleCrawler.crawl(anyString())).willReturn(CrawlResult.fetchFailure());
+
+        assertThatThrownBy(() -> articleCollectService.collect(feed(items(1, 25)), SERVICE_DATE))
+            .isInstanceOf(BusinessException.class)
+            .extracting(e -> ((BusinessException) e).getErrorCode())
+            .isEqualTo(ArticleErrorCode.ARTICLE_CRAWL_FAILED);
+        assertThat(articleRepository.count()).isZero();
+    }
+
+    @Test
+    void 원문을_받았지만_기준에_맞지_않아_모두_제외되면_장애가_아니다() {
+        mapEconomy();
+        given(articleCrawler.crawl(anyString())).willReturn(CrawlResult.excluded());
+
+        int saved = articleCollectService.collect(feed(items(1, 5)), SERVICE_DATE);
+
+        assertThat(saved).isZero();
+    }
+
+    @Test
+    void 일부만_가져오기_실패면_장애가_아니다() {
+        mapEconomy();
+        given(articleCrawler.crawl(anyString())).willReturn(CrawlResult.fetchFailure());
+        given(articleCrawler.crawl("https://news.example.com/3"))
+            .willReturn(CrawlResult.success(new CrawledArticle("https://press.example.com/3", BODY)));
+
+        int saved = articleCollectService.collect(feed(items(1, 25)), SERVICE_DATE);
+
+        assertThat(saved).isEqualTo(1);
+    }
+
+    @Test
     void 후보가_모자라면_원문을_가져온_기사만_저장한다() {
         mapEconomy();
-        given(articleCrawler.crawl("https://news.example.com/2")).willReturn(Optional.empty());
+        given(articleCrawler.crawl("https://news.example.com/2")).willReturn(CrawlResult.fetchFailure());
 
         int saved = articleCollectService.collect(feed(items(1, 5)), SERVICE_DATE);
 
@@ -413,7 +450,7 @@ class ArticleCollectServiceTest {
     @Test
     void 같은_사건의_앞_기사가_크롤링에_실패하면_뒤_기사를_대신_고른다() {
         mapEconomy();
-        given(articleCrawler.crawl(GOOGLE + "A1")).willReturn(Optional.empty());
+        given(articleCrawler.crawl(GOOGLE + "A1")).willReturn(CrawlResult.fetchFailure());
         RssItem failed = new RssItem("A1", GOOGLE + "A1", "코스피 급락에 개인 투자자 매수세", cluster("A1", "B9"),
             PUBLISHED_AT, List.of(), null);
         RssItem sameStory = new RssItem("A2", GOOGLE + "A2", "증시 하락장 버틴 개미들 순매수", cluster("A2", "B9"),
@@ -432,11 +469,11 @@ class ArticleCollectServiceTest {
             SERVICE_DATE.minusDays(1));
         String savedSource = articleRepository.findAll().getFirst().getSourceUrl();
         given(articleCrawler.crawl("https://news.example.com/2"))
-            .willReturn(Optional.of(new CrawledArticle(savedSource, BODY)));
+            .willReturn(CrawlResult.success(new CrawledArticle(savedSource, BODY)));
         given(articleCrawler.crawl("https://news.example.com/3"))
-            .willReturn(Optional.of(new CrawledArticle("https://press.example.com/same", BODY)));
+            .willReturn(CrawlResult.success(new CrawledArticle("https://press.example.com/same", BODY)));
         given(articleCrawler.crawl("https://news.example.com/4"))
-            .willReturn(Optional.of(new CrawledArticle("https://press.example.com/same", BODY)));
+            .willReturn(CrawlResult.success(new CrawledArticle("https://press.example.com/same", BODY)));
 
         int saved = articleCollectService.collect(feed(items(2, 5)), SERVICE_DATE);
 
