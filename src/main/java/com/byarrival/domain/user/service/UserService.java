@@ -1,5 +1,9 @@
 package com.byarrival.domain.user.service;
 
+import com.byarrival.common.exception.BusinessException;
+import com.byarrival.common.exception.CommonErrorCode;
+import com.byarrival.domain.term.service.TermService;
+import com.byarrival.domain.user.dto.response.UserMeResponse;
 import com.byarrival.domain.user.entity.SocialProvider;
 import com.byarrival.domain.user.entity.User;
 import com.byarrival.domain.user.entity.UserStatus;
@@ -17,10 +21,26 @@ import org.springframework.transaction.annotation.Transactional;
 public class UserService {
 
     private final UserRepository userRepository;
+    private final TermService termService;
 
     @Transactional(readOnly = true)
     public Optional<User> findActiveUser(SocialProvider provider, String providerUserId) {
         return userRepository.findByProviderAndProviderUserIdAndStatus(provider, providerUserId, UserStatus.ACTIVE);
+    }
+
+    @Transactional(readOnly = true)
+    public boolean isActiveUser(Long userId) {
+        return userRepository.existsByIdAndStatus(userId, UserStatus.ACTIVE);
+    }
+
+    /**
+     * 탈퇴했거나 없는 회원이면 UNAUTHORIZED로 응답해 앱이 로그인 화면으로 이동하게 한다.
+     */
+    @Transactional(readOnly = true)
+    public UserMeResponse getMe(Long userId) {
+        User user = userRepository.findByIdAndStatus(userId, UserStatus.ACTIVE)
+            .orElseThrow(() -> new BusinessException(CommonErrorCode.UNAUTHORIZED));
+        return UserMeResponse.of(user, termService.hasAgreedRequiredTerms(userId));
     }
 
     /**

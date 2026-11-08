@@ -33,6 +33,12 @@ public class User extends BaseEntity {
     @Column(nullable = false)
     private String providerUserId;
 
+    @Column(length = 30)
+    private String nickname;
+
+    @Column(length = 500)
+    private String profileImageUrl;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private OnboardingStatus onboardingStatus;
