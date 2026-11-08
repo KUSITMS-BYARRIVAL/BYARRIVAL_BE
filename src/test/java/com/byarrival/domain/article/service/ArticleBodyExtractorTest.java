@@ -84,6 +84,14 @@ class ArticleBodyExtractorTest {
     }
 
     @Test
+    void meta_태그가_없으면_응답_헤더의_charset으로_읽는다() {
+        byte[] html = ("<html><body><div><p>" + PARAGRAPH + "</p></div></body></html>")
+            .getBytes(Charset.forName("EUC-KR"));
+
+        assertThat(extractor.extract(html, "EUC-KR", URL).flatMap(cleaner::clean)).contains(PARAGRAPH);
+    }
+
+    @Test
     void 글자가_없는_페이지는_본문을_찾지_못한다() {
         assertThat(extractor.extract(page("<div><img src=\"a.jpg\"></div>").getBytes(StandardCharsets.UTF_8), URL))
             .isEmpty();

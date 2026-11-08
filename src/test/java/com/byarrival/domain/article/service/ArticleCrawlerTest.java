@@ -31,7 +31,7 @@ class ArticleCrawlerTest {
     void setUp() {
         resolver = mock(GoogleNewsUrlResolver.class);
         pageClient = mock(ArticlePageClient.class);
-        ArticleCrawlProperties properties = new ArticleCrawlProperties(Duration.ofSeconds(1), Duration.ofSeconds(1),
+        ArticleCrawlProperties properties = new ArticleCrawlProperties(Duration.ofSeconds(1), Duration.ofSeconds(1), Duration.ofSeconds(5),
             DataSize.ofMegabytes(1), 3, 1, MIN_CONTENT_LENGTH, 0.5, "test-agent");
         crawler = new ArticleCrawler(resolver, pageClient, new ArticleBodyExtractor(JsonMapper.builder().build()),
             new ArticleContentCleaner(), new ArticleTextInspector(properties), properties);
@@ -88,6 +88,23 @@ class ArticleCrawlerTest {
         given(pageClient.get(SOURCE_URL)).willReturn(page(longUrl, "<div><p>" + "가".repeat(30) + "</p></div>"));
 
         assertThat(crawler.crawl(LINK)).isEqualTo(CrawlResult.excluded());
+    }
+
+    @Test
+    void 원문_주소에서_fragment를_뺀다() {
+        given(pageClient.get(SOURCE_URL))
+            .willReturn(page(SOURCE_URL + "#comment", "<div><p>" + "가".repeat(30) + "</p></div>"));
+
+        assertThat(crawler.crawl(LINK).article().sourceUrl()).isEqualTo(SOURCE_URL);
+    }
+
+    @Test
+    void 응답_헤더의_charset으로_본문을_읽는다() {
+        byte[] eucKr = ("<html><body><div><p>" + "가".repeat(30) + "</p></div></body></html>")
+            .getBytes(java.nio.charset.Charset.forName("EUC-KR"));
+        given(pageClient.get(SOURCE_URL)).willReturn(new Page(SOURCE_URL, eucKr, "EUC-KR"));
+
+        assertThat(crawler.crawl(LINK).article().cleanedContent()).isEqualTo("가".repeat(30));
     }
 
     private Page page(String url, String body) {

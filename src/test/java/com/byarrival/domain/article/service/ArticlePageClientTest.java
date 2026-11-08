@@ -65,6 +65,27 @@ class ArticlePageClientTest {
         server.createContext("/to-blocked", exchange -> redirect(exchange, "http://blocked.test/article"));
         server.createContext("/loop", exchange -> redirect(exchange, "/loop"));
         server.createContext("/no-location", exchange -> respond(exchange, 302, ""));
+        server.createContext("/euc-kr", exchange -> {
+            byte[] bytes = PAGE.getBytes(java.nio.charset.Charset.forName("EUC-KR"));
+            exchange.getResponseHeaders().add("Content-Type", "text/html; charset=EUC-KR");
+            exchange.sendResponseHeaders(200, bytes.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(bytes);
+            }
+        });
+        server.createContext("/drip", exchange -> {
+            // read timeout(300ms)보다 짧은 간격으로 조금씩 보내 전체 시간 상한(800ms)을 넘긴다
+            exchange.sendResponseHeaders(200, 0);
+            try (OutputStream out = exchange.getResponseBody()) {
+                for (int i = 0; i < 10; i++) {
+                    out.write('x');
+                    out.flush();
+                    sleep(Duration.ofMillis(200));
+                }
+            } catch (IOException ignored) {
+                // 클라이언트가 먼저 끊는다
+            }
+        });
         server.createContext("/slow", exchange -> {
             sleep(Duration.ofSeconds(1));
             respond(exchange, 200, PAGE);
@@ -84,7 +105,7 @@ class ArticlePageClientTest {
             }
             return URI.create(url);
         });
-        ArticleCrawlProperties properties = new ArticleCrawlProperties(Duration.ofSeconds(1), Duration.ofMillis(300),
+        ArticleCrawlProperties properties = new ArticleCrawlProperties(Duration.ofSeconds(1), Duration.ofMillis(300), Duration.ofMillis(800),
             DataSize.ofBytes(MAX_BYTES), 3, 1, 200, 0.5, USER_AGENT);
         client = new ArticlePageClient(validator, properties);
     }
@@ -159,6 +180,17 @@ class ArticlePageClientTest {
     @Test
     void 응답이_read_timeout보다_늦으면_실패한다() {
         assertErrorCode(() -> client.get(baseUrl + "/slow"), ArticleErrorCode.ARTICLE_CRAWL_FAILED);
+    }
+
+    @Test
+    void 응답이_조금씩_오래_이어지면_전체_시간_상한에서_끊는다() {
+        assertErrorCode(() -> client.get(baseUrl + "/drip"), ArticleErrorCode.ARTICLE_CRAWL_FAILED);
+    }
+
+    @Test
+    void 응답_헤더의_charset을_돌려준다() {
+        assertThat(client.get(baseUrl + "/euc-kr").charset()).isEqualTo("EUC-KR");
+        assertThat(client.get(baseUrl + "/article").charset()).isNull();
     }
 
     @Test

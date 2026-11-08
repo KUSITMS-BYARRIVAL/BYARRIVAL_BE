@@ -36,12 +36,14 @@ public class ArticleCrawler {
             log.warn("[ArticleCrawl] 원문을 가져오지 못함 - link={} {}", link, e.getMessage());
             return CrawlResult.fetchFailure();
         }
+        // #뒤(fragment)는 같은 문서 안의 위치라 원문 주소에서 뺀다. 같은 원문이 중복 저장되지 않게 한다.
+        String sourceUrl = withoutFragment(page.url());
         try {
-            if (page.url().length() > Article.MAX_SOURCE_URL_LENGTH) {
+            if (sourceUrl.length() > Article.MAX_SOURCE_URL_LENGTH) {
                 log.warn("[ArticleCrawl] 원문 주소가 너무 길어 제외 - link={}", link);
                 return CrawlResult.excluded();
             }
-            Optional<String> content = bodyExtractor.extract(page.body(), page.url())
+            Optional<String> content = bodyExtractor.extract(page.body(), page.charset(), page.url())
                 .flatMap(contentCleaner::clean)
                 .filter(text -> text.codePointCount(0, text.length()) >= properties.minContentLength());
             if (content.isEmpty()) {
@@ -52,7 +54,7 @@ public class ArticleCrawler {
                 log.warn("[ArticleCrawl] 한국어 본문이 아니라 제외 - sourceUrl={}", page.url());
                 return CrawlResult.excluded();
             }
-            return CrawlResult.success(new CrawledArticle(page.url(), content.get()));
+            return CrawlResult.success(new CrawledArticle(sourceUrl, content.get()));
         } catch (RuntimeException e) {
             // 받은 페이지를 해석하다 난 오류는 이 기사만의 문제로 본다
             log.warn("[ArticleCrawl] 본문을 해석하지 못해 제외 - sourceUrl={} {}", page.url(), e.getMessage());
@@ -60,8 +62,13 @@ public class ArticleCrawler {
         }
     }
 
+    static String withoutFragment(String url) {
+        int hash = url.indexOf('#');
+        return hash < 0 ? url : url.substring(0, hash);
+    }
+
     /**
-     * @param sourceUrl      리다이렉트를 따라간 뒤의 언론사 원문 주소
+     * @param sourceUrl      리다이렉트를 따라간 뒤의 언론사 원문 주소(fragment 제외)
      * @param cleanedContent 정제한 본문
      */
     public record CrawledArticle(String sourceUrl, String cleanedContent) {

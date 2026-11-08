@@ -1,6 +1,7 @@
 package com.byarrival.domain.article.service;
 
 import com.byarrival.domain.article.config.ArticleCrawlProperties;
+import java.util.Set;
 import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -11,6 +12,9 @@ import org.springframework.stereotype.Component;
 @Component
 @RequiredArgsConstructor
 public class ArticleTextInspector {
+
+    private static final Set<Character.UnicodeScript> CHARACTER_SCRIPTS = Set.of(
+        Character.UnicodeScript.HAN, Character.UnicodeScript.HIRAGANA, Character.UnicodeScript.KATAKANA);
 
     // 제목의 [사진]·[포토]·【화보】 같은 말머리. 사진 위주 기사라 본문이 없어 요약할 내용이 없다.
     private static final Pattern PHOTO_TAG = Pattern.compile(
@@ -42,6 +46,7 @@ public class ArticleTextInspector {
 
     // 한글은 음절 하나를, 외국어는 이어진 단어 하나를 한 단위로 센 한글 비율. 숫자·기호는 세지 않는다.
     // "Discord, Electron을 버리고"처럼 영어 단어가 섞인 한국어 제목이 글자 수 때문에 외국어로 보이지 않게 한다.
+    // 한자·가나는 띄어쓰기 없이 이어 쓰므로 글자 하나를 한 단위로 센다(중국어·일본어 본문이 한 단어로 세지지 않게).
     static double hangulRatio(String text) {
         long units = 0;
         long hangul = 0;
@@ -51,9 +56,13 @@ public class ArticleTextInspector {
                 inForeignWord = false;
                 continue;
             }
-            if (Character.UnicodeScript.of(c) == Character.UnicodeScript.HANGUL) {
+            Character.UnicodeScript script = Character.UnicodeScript.of(c);
+            if (script == Character.UnicodeScript.HANGUL) {
                 units++;
                 hangul++;
+                inForeignWord = false;
+            } else if (CHARACTER_SCRIPTS.contains(script)) {
+                units++;
                 inForeignWord = false;
             } else if (!inForeignWord) {
                 units++;

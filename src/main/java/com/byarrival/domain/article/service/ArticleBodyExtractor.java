@@ -37,15 +37,20 @@ public class ArticleBodyExtractor {
     private static final Set<String> TEXT_CHILDREN = Set.of(
         "p", "span", "b", "strong", "em", "i", "u", "font", "mark", "sub", "sup", "br");
 
-    /**
-     * @param html    응답 본문. charset은 meta 태그로 판단하고, 없으면 UTF-8로 읽는다.
-     * @param pageUrl 상대 주소를 풀 기준 주소
-     * @return 본문 영역의 HTML. 찾지 못하면 empty
-     */
     private final JsonMapper jsonMapper;
 
     public Optional<String> extract(byte[] html, String pageUrl) {
-        Document document = parse(html, pageUrl);
+        return extract(html, null, pageUrl);
+    }
+
+    /**
+     * @param html    응답 본문
+     * @param charset 응답 헤더의 charset. null이면 meta 태그로 판단하고, 없으면 UTF-8로 읽는다.
+     * @param pageUrl 상대 주소를 풀 기준 주소
+     * @return 본문 영역의 HTML. 찾지 못하면 empty
+     */
+    public Optional<String> extract(byte[] html, String charset, String pageUrl) {
+        Document document = parse(html, charset, pageUrl);
         Optional<String> arcBody = arcBody(document);
         document.select(NOISE).remove();
 
@@ -75,9 +80,9 @@ public class ArticleBodyExtractor {
         return Optional.ofNullable(best).map(Element::html);
     }
 
-    private Document parse(byte[] html, String pageUrl) {
+    private Document parse(byte[] html, String charset, String pageUrl) {
         try {
-            return Jsoup.parse(new ByteArrayInputStream(html), null, pageUrl);
+            return Jsoup.parse(new ByteArrayInputStream(html), charset, pageUrl);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }

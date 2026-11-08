@@ -113,13 +113,19 @@ public class ArticleCollectService {
                     .map(candidate -> crawlExecutor.submit(() -> articleCrawler.crawl(candidate.item().link())))
                     .toList();
                 List<CrawledArticle> crawled = new ArrayList<>();
-                for (Future<CrawlResult> result : results) {
-                    CrawlResult crawlResult = await(result);
-                    attempts++;
-                    if (crawlResult.fetchFailed()) {
-                        fetchFailures++;
+                try {
+                    for (Future<CrawlResult> result : results) {
+                        CrawlResult crawlResult = await(result);
+                        attempts++;
+                        if (crawlResult.fetchFailed()) {
+                            fetchFailures++;
+                        }
+                        crawled.add(crawlResult.article());
                     }
-                    crawled.add(crawlResult.article());
+                } catch (RuntimeException e) {
+                    // 수집이 중단되면 남은 크롤링이 워커를 붙잡지 않도록 취소한다
+                    results.forEach(result -> result.cancel(true));
+                    throw e;
                 }
                 accept(wave, crawled);
             }
