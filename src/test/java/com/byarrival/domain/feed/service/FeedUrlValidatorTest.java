@@ -90,6 +90,16 @@ class FeedUrlValidatorTest {
         assertInvalid(validator, "https://news.example.com/" + "a".repeat(500));
     }
 
+    @Test
+    void 최대_길이를_지정하면_그_길이까지_허용한다() {
+        FeedUrlValidator validator = resolvingTo("203.0.113.10");
+        String url = "https://news.example.com/" + "a".repeat(900);
+
+        assertThat(validator.validate(url, 1000).toString()).isEqualTo(url);
+        assertThatThrownBy(() -> validator.validate(url + "a".repeat(100), 1000))
+            .isInstanceOf(BusinessException.class);
+    }
+
     private void assertInvalid(FeedUrlValidator validator, String url) {
         assertThatThrownBy(() -> validator.validate(url))
             .isInstanceOf(BusinessException.class)

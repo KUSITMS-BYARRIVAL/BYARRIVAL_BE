@@ -9,6 +9,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import com.byarrival.domain.article.service.ArticleCollectService;
+import com.byarrival.domain.article.service.ArticleCollectService.CategoryFill;
 import com.byarrival.domain.feed.dto.FeedCollectResult;
 import com.byarrival.domain.feed.dto.FetchedFeed;
 import com.byarrival.domain.feed.service.FeedCollectService;
@@ -17,6 +18,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -35,6 +37,7 @@ class DailyBatchServiceTest {
         batchRunService = mock(BatchRunService.class);
         feedCollectService = mock(FeedCollectService.class);
         articleCollectService = mock(ArticleCollectService.class);
+        given(articleCollectService.checkCategoryFill(any())).willReturn(new CategoryFill(List.of(), Map.of()));
     }
 
     @Test
@@ -67,8 +70,8 @@ class DailyBatchServiceTest {
 
         service(LocalDateTime.of(2026, 11, 2, 23, 45)).run();
 
-        verify(articleCollectService).saveCollected(economy, SERVICE_DATE);
-        verify(articleCollectService).saveCollected(society, SERVICE_DATE);
+        verify(articleCollectService).collect(economy, SERVICE_DATE);
+        verify(articleCollectService).collect(society, SERVICE_DATE);
         verify(batchRunService).complete(10L);
     }
 
@@ -78,12 +81,12 @@ class DailyBatchServiceTest {
         FetchedFeed economy = fetchedFeed(2L);
         given(batchRunService.start(SERVICE_DATE)).willReturn(Optional.of(10L));
         given(feedCollectService.collect(SERVICE_DATE)).willReturn(collected(broken, economy));
-        given(articleCollectService.saveCollected(broken, SERVICE_DATE))
+        given(articleCollectService.collect(broken, SERVICE_DATE))
             .willThrow(new IllegalStateException("DB 연결 실패"));
 
         service(LocalDateTime.of(2026, 11, 2, 23, 45)).run();
 
-        verify(articleCollectService).saveCollected(economy, SERVICE_DATE);
+        verify(articleCollectService).collect(economy, SERVICE_DATE);
         verify(batchRunService).fail(10L, "기사 저장 실패 feedIds=[1]");
         verify(batchRunService, never()).complete(anyLong());
     }
@@ -97,7 +100,7 @@ class DailyBatchServiceTest {
 
         verify(batchRunService).fail(10L, "모든 Feed 수집 실패 feedIds=[1, 2]");
         verify(batchRunService, never()).complete(anyLong());
-        verify(articleCollectService, never()).saveCollected(any(), any());
+        verify(articleCollectService, never()).collect(any(), any());
     }
 
     @Test
@@ -108,8 +111,34 @@ class DailyBatchServiceTest {
 
         service(LocalDateTime.of(2026, 11, 2, 23, 45)).run();
 
-        verify(articleCollectService).saveCollected(economy, SERVICE_DATE);
+        verify(articleCollectService).collect(economy, SERVICE_DATE);
         verify(batchRunService).complete(10L);
+    }
+
+    @Test
+    void 기사가_0건인_카테고리가_있으면_배치를_실패로_남긴다() {
+        given(batchRunService.start(SERVICE_DATE)).willReturn(Optional.of(10L));
+        given(feedCollectService.collect(SERVICE_DATE)).willReturn(collected(fetchedFeed(1L)));
+        given(articleCollectService.checkCategoryFill(SERVICE_DATE))
+            .willReturn(new CategoryFill(List.of(3L), Map.of(1L, 14L)));
+
+        service(LocalDateTime.of(2026, 11, 2, 23, 45)).run();
+
+        verify(batchRunService).fail(10L, "기사 0건 카테고리 categoryIds=[3]");
+        verify(batchRunService, never()).complete(anyLong());
+    }
+
+    @Test
+    void 최대_수를_채우지_못한_카테고리만_있으면_경고하고_완료한다() {
+        given(batchRunService.start(SERVICE_DATE)).willReturn(Optional.of(10L));
+        given(feedCollectService.collect(SERVICE_DATE)).willReturn(collected(fetchedFeed(1L)));
+        given(articleCollectService.checkCategoryFill(SERVICE_DATE))
+            .willReturn(new CategoryFill(List.of(), Map.of(1L, 14L)));
+
+        service(LocalDateTime.of(2026, 11, 2, 23, 45)).run();
+
+        verify(batchRunService).complete(10L);
+        verify(batchRunService, never()).fail(anyLong(), anyString());
     }
 
     @Test
