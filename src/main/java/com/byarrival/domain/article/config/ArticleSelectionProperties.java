@@ -15,5 +15,8 @@ public record ArticleSelectionProperties(int maxArticlesPerCategory, double simi
         if (maxArticlesPerCategory <= 0) {
             throw new IllegalArgumentException("rss.selection.max-articles-per-category는 0보다 커야 합니다.");
         }
+        if (similarTitleThreshold < 0 || similarTitleThreshold > 1) {
+            throw new IllegalArgumentException("rss.selection.similar-title-threshold는 0 이상 1 이하여야 합니다.");
+        }
     }
 }

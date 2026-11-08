@@ -41,6 +41,7 @@ rss:
   crawl:
     connect-timeout: 5s
     read-timeout: 10s
+    request-timeout: 30s
     max-response-size: 5MB
     max-redirects: 3
     concurrency: 8

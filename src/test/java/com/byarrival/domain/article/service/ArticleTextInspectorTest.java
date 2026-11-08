@@ -12,7 +12,8 @@ import org.springframework.util.unit.DataSize;
 class ArticleTextInspectorTest {
 
     private final ArticleTextInspector inspector = new ArticleTextInspector(new ArticleCrawlProperties(
-        Duration.ofSeconds(1), Duration.ofSeconds(1), DataSize.ofMegabytes(1), 3, 1, 200, 0.5, "test-agent"));
+        Duration.ofSeconds(1), Duration.ofSeconds(1), Duration.ofSeconds(5), DataSize.ofMegabytes(1), 3, 1, 200, 0.5,
+        "test-agent"));
 
     @ParameterizedTest
     @ValueSource(strings = {
@@ -76,5 +77,12 @@ class ArticleTextInspectorTest {
         assertThat(ArticleTextInspector.hangulRatio("AI 반도체")).isEqualTo(0.75);
         // Electron을: Electron(1) + 을(1)
         assertThat(ArticleTextInspector.hangulRatio("Electron을")).isEqualTo(0.5);
+    }
+
+    @Test
+    void 한자와_가나는_글자마다_센다() {
+        assertThat(ArticleTextInspector.hangulRatio("中国经济增长放缓 한국")).isEqualTo(0.2);
+        assertThat(ArticleTextInspector.hangulRatio("日本の株価が上昇 한국")).isEqualTo(0.2);
+        assertThat(ArticleTextInspector.hangulRatio("美 증시 급락")).isEqualTo(0.8);
     }
 }
