@@ -18,7 +18,6 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.io.OutputStream;
-import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -48,7 +47,8 @@ class ArticlePageClientTest {
 
     @BeforeEach
     void setUp() throws IOException {
-        server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+        // 요청 주소(127.0.0.1)와 같은 IPv4 루프백에 띄운다. IPv6 우선 JVM에서도 주소가 어긋나지 않게 한다.
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/article", exchange -> {
             receivedUserAgent.set(exchange.getRequestHeaders().getFirst("User-Agent"));
             respond(exchange, 200, PAGE);
@@ -184,7 +184,12 @@ class ArticlePageClientTest {
 
     @Test
     void 응답이_조금씩_오래_이어지면_전체_시간_상한에서_끊는다() {
+        long start = System.nanoTime();
+
         assertErrorCode(() -> client.get(baseUrl + "/drip"), ArticleErrorCode.ARTICLE_CRAWL_FAILED);
+
+        // 응답을 끝까지 받으면 2초가 걸린다. 상한(800ms) + 조각 하나의 read timeout(300ms) 안에 끊어야 한다.
+        assertThat(Duration.ofNanos(System.nanoTime() - start)).isLessThan(Duration.ofMillis(1500));
     }
 
     @Test

@@ -36,11 +36,22 @@ class ArticlePropertiesTest {
             .isInstanceOf(IllegalArgumentException.class);
     }
 
+    @Test
+    void 응답_크기_상한이_없거나_int_범위를_넘으면_거부한다() {
+        assertThatThrownBy(() -> crawlWithMaxSize(null)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> crawlWithMaxSize(DataSize.ofGigabytes(3))).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> crawlWithMaxSize(DataSize.ofBytes(0))).isInstanceOf(IllegalArgumentException.class);
+    }
+
     @ParameterizedTest
     @ValueSource(doubles = {-0.1, 1.1, 37})
     void 제목_유사도_기준이_0에서_1_밖이면_거부한다(double threshold) {
         assertThatThrownBy(() -> new ArticleSelectionProperties(20, threshold))
             .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    private static ArticleCrawlProperties crawlWithMaxSize(DataSize maxSize) {
+        return new ArticleCrawlProperties(ONE_SECOND, ONE_SECOND, ONE_SECOND, maxSize, 3, 1, 200, 0.5, "test");
     }
 
     private static ArticleCrawlProperties crawl(Duration connect, Duration read, Duration request, double ratio) {

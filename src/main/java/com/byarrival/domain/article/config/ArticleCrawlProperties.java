@@ -33,6 +33,10 @@ public record ArticleCrawlProperties(
         requirePositiveMillis(connectTimeout, "connect-timeout");
         requirePositiveMillis(readTimeout, "read-timeout");
         requirePositiveMillis(requestTimeout, "request-timeout");
+        if (maxResponseSize == null || maxResponseSize.toBytes() < 1 || maxResponseSize.toBytes() >= Integer.MAX_VALUE) {
+            // 응답을 byte 배열 하나로 읽으므로 int 범위 안이어야 한다
+            throw new IllegalArgumentException("rss.crawl.max-response-size는 1B 이상 2GB 미만이어야 합니다.");
+        }
         if (concurrency <= 0) {
             throw new IllegalArgumentException("rss.crawl.concurrency는 0보다 커야 합니다.");
         }
