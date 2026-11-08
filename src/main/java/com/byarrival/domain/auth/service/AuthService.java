@@ -3,7 +3,9 @@ package com.byarrival.domain.auth.service;
 import com.byarrival.domain.auth.client.SocialAuthClients;
 import com.byarrival.domain.auth.dto.request.SocialLoginRequest;
 import com.byarrival.domain.auth.dto.response.SocialLoginResponse;
+import com.byarrival.domain.term.service.TermService;
 import com.byarrival.domain.user.entity.SocialProvider;
+import com.byarrival.domain.user.entity.User;
 import com.byarrival.domain.user.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -11,6 +13,7 @@ import org.springframework.stereotype.Service;
 
 /**
  * 소셜 로그인·가입. 소셜 토큰 검증은 트랜잭션 밖에서 하고 회원 조회·생성만 UserService 트랜잭션으로 처리한다.
+ * 로그인에 성공하면 서비스 토큰을 발급한다.
  */
 @Service
 @RequiredArgsConstructor
@@ -18,24 +21,32 @@ public class AuthService {
 
     private final SocialAuthClients socialAuthClients;
     private final UserService userService;
+    private final TokenService tokenService;
+    private final TermService termService;
 
     public SocialLoginResponse socialLogin(SocialLoginRequest request) {
         SocialProvider provider = request.provider();
         String providerUserId = socialAuthClients.get(provider).getProviderUserId(request.token());
 
-        return userService.findActiveUser(provider, providerUserId)
-            .map(user -> SocialLoginResponse.of(user, false))
+        LoginUser loginUser = userService.findActiveUser(provider, providerUserId)
+            .map(user -> new LoginUser(user, false))
             .orElseGet(() -> signUp(provider, providerUserId));
+        User user = loginUser.user();
+        return SocialLoginResponse.of(user, loginUser.isNewUser(), termService.hasAgreedRequiredTerms(user.getId()),
+            tokenService.issue(user.getId()));
     }
 
     // 같은 계정의 가입 요청이 동시에 들어와 먼저 가입된 경우 기존 회원으로 응답한다.
-    private SocialLoginResponse signUp(SocialProvider provider, String providerUserId) {
+    private LoginUser signUp(SocialProvider provider, String providerUserId) {
         try {
-            return SocialLoginResponse.of(userService.signUp(provider, providerUserId), true);
+            return new LoginUser(userService.signUp(provider, providerUserId), true);
         } catch (DataIntegrityViolationException e) {
             return userService.findActiveUser(provider, providerUserId)
-                .map(user -> SocialLoginResponse.of(user, false))
+                .map(user -> new LoginUser(user, false))
                 .orElseThrow(() -> e);
         }
+    }
+
+    private record LoginUser(User user, boolean isNewUser) {
     }
 }
