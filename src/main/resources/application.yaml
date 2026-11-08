@@ -40,3 +40,11 @@ jwt:
   secret: ${JWT_SECRET:}
   access-token-validity: 24h
   refresh-token-validity: 30d
+
+notification:
+  push:
+    # false면 FCM 대신 로그만 남긴다(로컬·테스트). 운영 서버는 FCM_ENABLED=true
+    fcm-enabled: ${FCM_ENABLED:false}
+    # Firebase 서비스 계정 키 JSON 파일을 base64로 인코딩한 한 줄
+    fcm-credentials-base64: ${FCM_CREDENTIALS_BASE64:}
+    android-channel-id: default

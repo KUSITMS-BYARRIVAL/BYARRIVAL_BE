@@ -60,7 +60,7 @@ GHCR 로그인은 워크플로의 `GITHUB_TOKEN`을 쓰므로 따로 등록하�
 
 ### `.env` 키 목록
 
-값을 추가하거나 바꿀 때 참고합니다. 앱이 읽는 값(`DB_*`, `REDIS_*`, `KAKAO_*`, `APPLE_*`, `JWT_SECRET`, `JAVA_OPTS`)은 수정 후 다음 배포부터 적용됩니다. `POSTGRES_*`는 아래 "DB·Redis 설정 변경"을 따릅니다.
+값을 추가하거나 바꿀 때 참고합니다. 앱이 읽는 값(`DB_*`, `REDIS_*`, `KAKAO_*`, `APPLE_*`, `JWT_SECRET`, `FCM_*`, `JAVA_OPTS`)은 수정 후 다음 배포부터 적용됩니다. `POSTGRES_*`는 아래 "DB·Redis 설정 변경"을 따릅니다.
 
 | 키 | 값 |
 |---|---|
@@ -71,6 +71,8 @@ GHCR 로그인은 워크플로의 `GITHUB_TOKEN`을 쓰므로 따로 등록하�
 | `REDIS_HOST`, `REDIS_PORT` | `redis`, `6379` |
 | `KAKAO_APP_ID` | 카카오 앱 ID |
 | `APPLE_CLIENT_ID` | iOS 앱 Bundle ID |
+| `FCM_ENABLED` | `true`면 FCM으로 푸시를 보냅니다. 없거나 `false`면 로그만 남깁니다 |
+| `FCM_CREDENTIALS_BASE64` | Firebase 서비스 계정 키 JSON 파일을 base64로 인코딩한 한 줄 (`base64 -w0 키파일.json`) |
 | `JWT_SECRET` | JWT 서명 키. 32바이트 이상 무작위 문자열(예: `openssl rand -base64 48`). 없으면 앱이 시작되지 않고, 바꾸면 발급된 액세스 토큰이 모두 무효가 됨 |
 | `JAVA_OPTS` | `-Xms256m -Xmx768m` (전환 중 앱 두 개가 같이 뜨므로 4GB 서버 기준으로 제한) |
 
