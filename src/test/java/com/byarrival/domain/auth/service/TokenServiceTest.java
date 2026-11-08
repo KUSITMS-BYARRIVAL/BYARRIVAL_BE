@@ -18,6 +18,7 @@ import com.byarrival.common.security.JwtTokenProvider;
 import com.byarrival.domain.auth.dto.response.TokenResponse;
 import com.byarrival.domain.auth.entity.RefreshToken;
 import com.byarrival.domain.auth.repository.RefreshTokenRepository;
+import com.byarrival.domain.notification.service.DeviceTokenService;
 import com.byarrival.domain.user.service.UserService;
 import java.time.Clock;
 import java.time.Duration;
@@ -37,18 +38,21 @@ class TokenServiceTest {
 
     private RefreshTokenRepository refreshTokenRepository;
     private UserService userService;
+    private DeviceTokenService deviceTokenService;
     private TokenService tokenService;
 
     @BeforeEach
     void setUp() {
         refreshTokenRepository = mock(RefreshTokenRepository.class);
         userService = mock(UserService.class);
+        deviceTokenService = mock(DeviceTokenService.class);
         JwtTokenProvider jwtTokenProvider = mock(JwtTokenProvider.class);
         given(jwtTokenProvider.createAccessToken(anyLong())).willReturn("access-token");
         ZoneId kst = ZoneId.of("Asia/Seoul");
         Clock clock = Clock.fixed(ZonedDateTime.of(NOW, kst).toInstant(), kst);
         JwtProperties properties = new JwtProperties("secret", Duration.ofHours(24), Duration.ofHours(24));
-        tokenService = new TokenService(refreshTokenRepository, jwtTokenProvider, properties, userService, clock);
+        tokenService = new TokenService(refreshTokenRepository, jwtTokenProvider, properties, userService,
+            deviceTokenService, clock);
     }
 
     @Test
@@ -93,6 +97,7 @@ class TokenServiceTest {
 
         assertUnauthorized("expired");
         verify(refreshTokenRepository, never()).revokeIfActive(anyLong(), any());
+        verify(deviceTokenService, never()).unregister(anyLong(), anyString());
     }
 
     @Test
@@ -130,16 +135,28 @@ class TokenServiceTest {
         given(refreshTokenRepository.findByTokenHashAndUserId(anyString(), eq(USER_ID)))
             .willReturn(Optional.of(storedToken(NOW.plusHours(1), null)));
 
-        tokenService.logout(USER_ID, "refresh-token");
+        tokenService.logout(USER_ID, "refresh-token", null);
 
         verify(refreshTokenRepository).revokeIfActive(10L, NOW);
+        verify(deviceTokenService, never()).unregister(anyLong(), anyString());
+    }
+
+    @Test
+    void 로그아웃할_때_FCM_토큰을_보내면_그_기기_토큰도_지운다() {
+        given(refreshTokenRepository.findByTokenHashAndUserId(anyString(), eq(USER_ID)))
+            .willReturn(Optional.of(storedToken(NOW.plusHours(1), null)));
+
+        tokenService.logout(USER_ID, "refresh-token", "fcm-token");
+
+        verify(refreshTokenRepository).revokeIfActive(10L, NOW);
+        verify(deviceTokenService).unregister(USER_ID, "fcm-token");
     }
 
     @Test
     void 로그아웃할_토큰이_없어도_성공한다() {
         given(refreshTokenRepository.findByTokenHashAndUserId(anyString(), eq(USER_ID))).willReturn(Optional.empty());
 
-        tokenService.logout(USER_ID, "unknown");
+        tokenService.logout(USER_ID, "unknown", " ");
 
         verify(refreshTokenRepository, never()).revokeIfActive(anyLong(), any());
     }

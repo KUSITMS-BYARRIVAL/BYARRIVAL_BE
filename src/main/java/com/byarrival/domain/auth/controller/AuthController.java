@@ -2,6 +2,7 @@ package com.byarrival.domain.auth.controller;
 
 import com.byarrival.common.response.ApiResponse;
 import com.byarrival.common.security.LoginUserId;
+import com.byarrival.domain.auth.dto.request.LogoutRequest;
 import com.byarrival.domain.auth.dto.request.RefreshTokenRequest;
 import com.byarrival.domain.auth.dto.request.SocialLoginRequest;
 import com.byarrival.domain.auth.dto.response.SocialLoginResponse;
@@ -38,10 +39,10 @@ public class AuthController {
         return ApiResponse.ok(tokenService.reissue(request.refreshToken()));
     }
 
-    @Operation(summary = "로그아웃", description = "현재 기기의 리프레시 토큰을 폐기한다.")
+    @Operation(summary = "로그아웃", description = "현재 기기의 리프레시 토큰을 폐기한다. fcmToken을 함께 보내면 이 기기의 푸시 토큰도 지운다.")
     @PostMapping("/logout")
-    public ApiResponse<Void> logout(@LoginUserId Long userId, @Valid @RequestBody RefreshTokenRequest request) {
-        tokenService.logout(userId, request.refreshToken());
+    public ApiResponse<Void> logout(@LoginUserId Long userId, @Valid @RequestBody LogoutRequest request) {
+        tokenService.logout(userId, request.refreshToken(), request.fcmToken());
         return ApiResponse.ok();
     }
 }

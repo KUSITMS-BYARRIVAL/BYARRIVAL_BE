@@ -7,6 +7,7 @@ import com.byarrival.common.security.JwtTokenProvider;
 import com.byarrival.domain.auth.dto.response.TokenResponse;
 import com.byarrival.domain.auth.entity.RefreshToken;
 import com.byarrival.domain.auth.repository.RefreshTokenRepository;
+import com.byarrival.domain.notification.service.DeviceTokenService;
 import com.byarrival.domain.user.service.UserService;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -19,6 +20,7 @@ import java.util.HexFormat;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 /**
  * 서비스 토큰 발급·재발급·폐기. 재발급 때마다 리프레시 토큰도 새로 발급하고 기존 토큰은 폐기한다(Rotation).
@@ -33,6 +35,7 @@ public class TokenService {
     private final JwtTokenProvider jwtTokenProvider;
     private final JwtProperties jwtProperties;
     private final UserService userService;
+    private final DeviceTokenService deviceTokenService;
     private final Clock clock;
     private final SecureRandom secureRandom = new SecureRandom();
 
@@ -65,11 +68,15 @@ public class TokenService {
 
     /**
      * 현재 기기의 리프레시 토큰만 폐기한다. 이미 폐기됐거나 없는 토큰이어도 성공으로 처리한다.
+     * fcmToken이 있으면 로그아웃한 기기로 푸시가 가지 않도록 그 기기 토큰도 지운다.
      */
     @Transactional
-    public void logout(Long userId, String refreshToken) {
+    public void logout(Long userId, String refreshToken, String fcmToken) {
         refreshTokenRepository.findByTokenHashAndUserId(hash(refreshToken), userId)
             .ifPresent(token -> refreshTokenRepository.revokeIfActive(token.getId(), LocalDateTime.now(clock)));
+        if (StringUtils.hasText(fcmToken)) {
+            deviceTokenService.unregister(userId, fcmToken);
+        }
     }
 
     private String generateRefreshToken() {
