@@ -74,6 +74,23 @@ class FcmPushSenderTest {
     }
 
     @Test
+    void 오류_코드가_없는_기기_실패는_무효_토큰으로_보지_않고_나머지_결과를_돌려준다() throws Exception {
+        SendResponse success = mock(SendResponse.class);
+        given(success.isSuccessful()).willReturn(true);
+        SendResponse unknownFailure = sendFailure(null);
+        SendResponse unregistered = sendFailure(MessagingErrorCode.UNREGISTERED);
+        BatchResponse response = mock(BatchResponse.class);
+        given(response.getSuccessCount()).willReturn(1);
+        given(response.getResponses()).willReturn(List.of(success, unknownFailure, unregistered));
+        given(firebaseMessaging.sendEachForMulticast(any())).willReturn(response);
+
+        PushResult result = sender.send(List.of("ok", "unknown", "gone"), MESSAGE);
+
+        assertThat(result.successCount()).isEqualTo(1);
+        assertThat(result.invalidTokens()).containsExactly("gone");
+    }
+
+    @Test
     void 토큰이_없으면_발송하지_않는다() throws Exception {
         PushResult result = sender.send(List.of(), MESSAGE);
 
@@ -101,17 +118,21 @@ class FcmPushSenderTest {
             responses.add(success);
         }
         for (int i = 0; i < unregisteredCount; i++) {
-            FirebaseMessagingException exception = mock(FirebaseMessagingException.class);
-            given(exception.getMessagingErrorCode()).willReturn(MessagingErrorCode.UNREGISTERED);
-            SendResponse failure = mock(SendResponse.class);
-            given(failure.isSuccessful()).willReturn(false);
-            given(failure.getException()).willReturn(exception);
-            responses.add(failure);
+            responses.add(sendFailure(MessagingErrorCode.UNREGISTERED));
         }
         BatchResponse response = mock(BatchResponse.class);
         given(response.getSuccessCount()).willReturn(successCount);
         given(response.getResponses()).willReturn(responses);
         return response;
+    }
+
+    private SendResponse sendFailure(MessagingErrorCode errorCode) {
+        FirebaseMessagingException exception = mock(FirebaseMessagingException.class);
+        given(exception.getMessagingErrorCode()).willReturn(errorCode);
+        SendResponse failure = mock(SendResponse.class);
+        given(failure.isSuccessful()).willReturn(false);
+        given(failure.getException()).willReturn(exception);
+        return failure;
     }
 
     private FirebaseMessagingException firebaseException() {

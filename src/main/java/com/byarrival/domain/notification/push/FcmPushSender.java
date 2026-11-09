@@ -86,8 +86,9 @@ public class FcmPushSender implements PushSender {
             if (response.isSuccessful()) {
                 continue;
             }
+            // 알 수 없는 오류면 코드가 null이다. Set.of는 contains(null)에서 NPE를 던지므로 먼저 확인한다
             MessagingErrorCode errorCode = response.getException().getMessagingErrorCode();
-            if (INVALID_TOKEN_ERRORS.contains(errorCode)) {
+            if (errorCode != null && INVALID_TOKEN_ERRORS.contains(errorCode)) {
                 invalid.add(tokens.get(i));
             } else {
                 log.warn("FCM 기기 발송 실패: errorCode={}", errorCode);
