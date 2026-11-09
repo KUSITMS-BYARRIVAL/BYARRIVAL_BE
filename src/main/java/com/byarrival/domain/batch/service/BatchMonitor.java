@@ -2,6 +2,7 @@ package com.byarrival.domain.batch.service;
 
 import com.byarrival.common.monitoring.BatchAlertNotifier;
 import com.byarrival.domain.article.service.ArticleCollectService.CategoryFill;
+import com.byarrival.domain.category.service.CategoryMappingService;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Tags;
@@ -10,6 +11,8 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
@@ -31,13 +34,16 @@ public class BatchMonitor {
 
     private final MeterRegistry meterRegistry;
     private final BatchAlertNotifier batchAlertNotifier;
+    private final CategoryMappingService categoryMappingService;
     private final Clock clock;
     private final AtomicLong lastSuccessEpochSeconds = new AtomicLong();
     private final Map<Long, AtomicLong> categoryArticles = new ConcurrentHashMap<>();
 
-    public BatchMonitor(MeterRegistry meterRegistry, BatchAlertNotifier batchAlertNotifier, Clock clock) {
+    public BatchMonitor(MeterRegistry meterRegistry, BatchAlertNotifier batchAlertNotifier,
+        CategoryMappingService categoryMappingService, Clock clock) {
         this.meterRegistry = meterRegistry;
         this.batchAlertNotifier = batchAlertNotifier;
+        this.categoryMappingService = categoryMappingService;
         this.clock = clock;
         // 마지막 성공 시각. 이 값이 하루 넘게 그대로면 배치가 돌지 않은 것이다
         Gauge.builder(LAST_SUCCESS_METRIC, lastSuccessEpochSeconds, AtomicLong::get)
@@ -67,13 +73,14 @@ public class BatchMonitor {
         lastSuccessEpochSeconds.set(clock.instant().getEpochSecond());
         fill.counts().forEach(this::recordCategoryArticles);
 
+        Map<Long, String> names = categoryNames();
         StringBuilder content = new StringBuilder()
             .append("✅ **일일 배치 완료** 서비스일 ").append(serviceDate)
             .append(" · ").append(format(duration)).append('\n')
-            .append("저장 기사 ").append(fill.totalCount()).append("건 (카테고리ID=건수) ")
-            .append(join(fill.counts()));
+            .append("저장 기사 ").append(fill.totalCount()).append("건\n")
+            .append(join(fill.counts(), names));
         if (!fill.shortage().isEmpty()) {
-            content.append("\n⚠️ 최대 수 미달 카테고리: ").append(join(fill.shortage()));
+            content.append("\n⚠️ 최대 수 미달: ").append(join(fill.shortage(), names));
         }
         batchAlertNotifier.send(content.toString());
     }
@@ -119,10 +126,23 @@ public class BatchMonitor {
         return seconds / 60 + "분 " + seconds % 60 + "초";
     }
 
-    private static String join(Map<Long, Long> counts) {
-        return counts.entrySet().stream()
-            .sorted(Map.Entry.comparingByKey())
-            .map(entry -> entry.getKey() + "=" + entry.getValue())
-            .collect(Collectors.joining(", "));
+    // 이름을 못 가져와도 완료 알림은 보내야 하므로 ID로 대신 표시한다
+    private Map<Long, String> categoryNames() {
+        try {
+            return categoryMappingService.getActiveCategoryNames();
+        } catch (RuntimeException e) {
+            log.warn("[BatchMonitor] 카테고리 이름 조회 실패 - {}", e.getMessage());
+            return Map.of();
+        }
+    }
+
+    // 화면 순서(이름 조회 순서)대로 나열하고, 이름이 없는 카테고리는 ID 순으로 뒤에 붙인다
+    private static String join(Map<Long, Long> counts, Map<Long, String> names) {
+        List<Long> order = new ArrayList<>();
+        names.keySet().stream().filter(counts::containsKey).forEach(order::add);
+        counts.keySet().stream().filter(id -> !names.containsKey(id)).sorted().forEach(order::add);
+        return order.stream()
+            .map(id -> names.getOrDefault(id, "카테고리 " + id) + " " + counts.get(id))
+            .collect(Collectors.joining(" · "));
     }
 }

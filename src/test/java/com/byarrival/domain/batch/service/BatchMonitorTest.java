@@ -3,12 +3,14 @@ package com.byarrival.domain.batch.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
 import com.byarrival.common.monitoring.BatchAlertNotifier;
 import com.byarrival.domain.article.service.ArticleCollectService.CategoryFill;
+import com.byarrival.domain.category.service.CategoryMappingService;
 import io.micrometer.core.instrument.Timer;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Clock;
@@ -17,6 +19,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -33,13 +36,20 @@ class BatchMonitorTest {
 
     private SimpleMeterRegistry meterRegistry;
     private BatchAlertNotifier batchAlertNotifier;
+    private CategoryMappingService categoryMappingService;
     private BatchMonitor batchMonitor;
 
     @BeforeEach
     void setUp() {
         meterRegistry = new SimpleMeterRegistry();
         batchAlertNotifier = mock(BatchAlertNotifier.class);
-        batchMonitor = new BatchMonitor(meterRegistry, batchAlertNotifier, Clock.fixed(ENDED_AT, KST));
+        categoryMappingService = mock(CategoryMappingService.class);
+        Map<Long, String> names = new LinkedHashMap<>();
+        names.put(2L, "경제");
+        names.put(1L, "정치");
+        given(categoryMappingService.getActiveCategoryNames()).willReturn(names);
+        batchMonitor = new BatchMonitor(meterRegistry, batchAlertNotifier, categoryMappingService,
+            Clock.fixed(ENDED_AT, KST));
     }
 
     @Test
@@ -60,8 +70,17 @@ class BatchMonitorTest {
         batchMonitor.completed(SERVICE_DATE, STARTED_AT, fill());
 
         assertThat(sentContent())
-            .contains("일일 배치 완료", "2026-11-10", "3분 12초", "저장 기사 35건", "1=20, 2=15",
-                "최대 수 미달 카테고리: 2=15");
+            .contains("일일 배치 완료", "2026-11-10", "3분 12초", "저장 기사 35건", "경제 15 · 정치 20",
+                "최대 수 미달: 경제 15");
+    }
+
+    @Test
+    void 카테고리_이름을_가져오지_못하면_ID로_표시한다() {
+        given(categoryMappingService.getActiveCategoryNames()).willThrow(new IllegalStateException("DB 오류"));
+
+        batchMonitor.completed(SERVICE_DATE, STARTED_AT, fill());
+
+        assertThat(sentContent()).contains("카테고리 1 20 · 카테고리 2 15");
     }
 
     @Test
