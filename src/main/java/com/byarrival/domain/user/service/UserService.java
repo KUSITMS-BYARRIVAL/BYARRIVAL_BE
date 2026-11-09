@@ -8,8 +8,12 @@ import com.byarrival.domain.user.dto.response.UserMeResponse;
 import com.byarrival.domain.user.entity.NotificationPermission;
 import com.byarrival.domain.user.entity.SocialProvider;
 import com.byarrival.domain.user.entity.User;
+import com.byarrival.domain.user.entity.UserInterestCategory;
 import com.byarrival.domain.user.entity.UserStatus;
+import com.byarrival.domain.user.repository.UserInterestCategoryRepository;
 import com.byarrival.domain.user.repository.UserRepository;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -23,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class UserService {
 
     private final UserRepository userRepository;
+    private final UserInterestCategoryRepository userInterestCategoryRepository;
     private final TermService termService;
 
     @Transactional(readOnly = true)
@@ -67,7 +72,28 @@ public class UserService {
         return userRepository.saveAndFlush(User.signUp(provider, providerUserId));
     }
 
-    private User getActiveUser(Long userId) {
+    @Transactional(readOnly = true)
+    public List<Long> findInterestCategoryIds(Long userId) {
+        return userInterestCategoryRepository.findCategoryIdsByUserId(userId);
+    }
+
+    /**
+     * 관심 분야를 통째로 바꾼다. 카테고리 존재 여부는 호출하는 쪽에서 확인한다.
+     */
+    @Transactional
+    public void replaceInterestCategories(Long userId, Collection<Long> categoryIds) {
+        userInterestCategoryRepository.deleteAllByUserIdInBatch(userId);
+        userInterestCategoryRepository.saveAll(categoryIds.stream()
+            .distinct()
+            .map(categoryId -> UserInterestCategory.of(userId, categoryId))
+            .toList());
+    }
+
+    /**
+     * 탈퇴했거나 없는 회원이면 UNAUTHORIZED로 응답해 앱이 로그인 화면으로 이동하게 한다.
+     * 엔티티를 바꾸려면 호출하는 쪽의 트랜잭션 안에서 부른다.
+     */
+    public User getActiveUser(Long userId) {
         return userRepository.findByIdAndStatus(userId, UserStatus.ACTIVE)
             .orElseThrow(() -> new BusinessException(CommonErrorCode.UNAUTHORIZED));
     }
