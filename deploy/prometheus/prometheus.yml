@@ -1,0 +1,14 @@
+# 앱 메트릭 수집 설정. blue/green 중 쉬고 있는 쪽은 꺼져 있으므로 그쪽 대상은 DOWN으로 보이는 것이 정상이다.
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+
+scrape_configs:
+  - job_name: byarrival
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["app-blue:8080", "app-green:8080"]
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

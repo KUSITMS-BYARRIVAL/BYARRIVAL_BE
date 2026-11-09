@@ -12,7 +12,22 @@ management:
   endpoints:
     web:
       exposure:
-        include: health
+        # 외부 접근은 Nginx에서 막는다. prometheus는 서버 안의 Prometheus만 수집한다
+        include: health, prometheus
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+monitoring:
+  # 웹훅 URL이 비어 있으면 그 채널 알림은 보내지 않는다(로컬·테스트)
+  discord:
+    error-webhook-url: ${DISCORD_ERROR_WEBHOOK_URL:}
+    batch-webhook-url: ${DISCORD_BATCH_WEBHOOK_URL:}
+    error-dedup-window: 5m
+    connect-timeout: 3s
+    read-timeout: 5s
+  # 알림에 어느 서버(blue/green)에서 났는지 표시한다
+  instance-name: ${HOSTNAME:local}
 
 auth:
   social:

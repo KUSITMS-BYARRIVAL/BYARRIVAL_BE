@@ -55,6 +55,12 @@ public class BatchRunService {
         getBatchRun(batchRunId).fail(LocalDateTime.now(clock), errorMessage);
     }
 
+    @Transactional(readOnly = true)
+    public Optional<LocalDateTime> findLastCompletedAt() {
+        return batchRunRepository.findFirstByStatusOrderByFinishedAtDesc(BatchRunStatus.COMPLETED)
+            .map(BatchRun::getFinishedAt);
+    }
+
     private BatchRun getBatchRun(Long batchRunId) {
         return batchRunRepository.findById(batchRunId)
             .orElseThrow(() -> new BusinessException(BatchErrorCode.BATCH_RUN_NOT_FOUND));

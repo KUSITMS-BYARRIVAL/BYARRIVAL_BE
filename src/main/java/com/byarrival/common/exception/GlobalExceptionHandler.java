@@ -1,8 +1,10 @@
 package com.byarrival.common.exception;
 
+import com.byarrival.common.monitoring.ServerErrorNotifier;
 import com.byarrival.common.response.ApiResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -15,11 +17,14 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /**
- * 전역 예외 처리. 4xx는 warn, 5xx는 error 로그를 남긴다.
+ * 전역 예외 처리. 4xx는 warn, 5xx는 error 로그를 남기고 5xx는 디스코드 서버 에러 채널에도 알린다.
  */
 @Slf4j
 @RestControllerAdvice
+@RequiredArgsConstructor
 public class GlobalExceptionHandler {
+
+    private final ServerErrorNotifier serverErrorNotifier;
 
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ApiResponse<Void>> handleBusinessException(
@@ -28,6 +33,7 @@ public class GlobalExceptionHandler {
         if (errorCode.getStatus().is5xxServerError()) {
             log.error("[BusinessException] {} {} - {}", request.getMethod(), request.getRequestURI(), e.getMessage(),
                 e);
+            serverErrorNotifier.notify(request.getMethod(), request.getRequestURI(), e);
         } else {
             log.warn("[BusinessException] {} {} - {}", request.getMethod(), request.getRequestURI(), e.getMessage());
         }
@@ -78,6 +84,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleException(Exception e, HttpServletRequest request) {
         log.error("[UnhandledException] {} {}", request.getMethod(), request.getRequestURI(), e);
+        serverErrorNotifier.notify(request.getMethod(), request.getRequestURI(), e);
         return toResponse(CommonErrorCode.INTERNAL_SERVER_ERROR, null);
     }
 
