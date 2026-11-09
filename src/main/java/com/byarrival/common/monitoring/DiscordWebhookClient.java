@@ -3,6 +3,7 @@ package com.byarrival.common.monitoring;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -12,7 +13,6 @@ import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
-import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 
 /**
@@ -45,26 +45,30 @@ public class DiscordWebhookClient implements DisposableBean {
             });
     }
 
-    public void send(String webhookUrl, String content) {
+    /**
+     * @return 전송에 성공하면 true. 대기열이 넘치거나 전송에 실패하면 false. 예외로 끝나지 않는다.
+     */
+    public CompletableFuture<Boolean> send(String webhookUrl, String content) {
         if (webhookUrl == null || webhookUrl.isBlank()) {
-            return;
+            return CompletableFuture.completedFuture(false);
         }
-        String body = truncate(content);
+        String body = truncate(content, MAX_CONTENT_LENGTH);
         try {
-            executor.execute(() -> post(webhookUrl, body));
+            return CompletableFuture.supplyAsync(() -> post(webhookUrl, body), executor);
         } catch (RejectedExecutionException e) {
             log.warn("[Discord] 알림 대기열이 가득 차 알림 1건을 버림");
+            return CompletableFuture.completedFuture(false);
         }
     }
 
-    static String truncate(String content) {
-        if (content.length() <= MAX_CONTENT_LENGTH) {
+    static String truncate(String content, int maxLength) {
+        if (content.length() <= maxLength) {
             return content;
         }
-        return content.substring(0, MAX_CONTENT_LENGTH - ELLIPSIS.length()) + ELLIPSIS;
+        return content.substring(0, Math.max(0, maxLength - ELLIPSIS.length())) + ELLIPSIS;
     }
 
-    private void post(String webhookUrl, String content) {
+    private boolean post(String webhookUrl, String content) {
         try {
             restClient.post()
                 .uri(webhookUrl)
@@ -73,11 +77,14 @@ public class DiscordWebhookClient implements DisposableBean {
                 .body(Map.of("content", content, "allowed_mentions", Map.of("parse", List.of())))
                 .retrieve()
                 .toBodilessEntity();
+            return true;
         } catch (RestClientResponseException e) {
             log.warn("[Discord] 알림 전송 실패 - status={}", e.getStatusCode().value());
-        } catch (RestClientException e) {
-            // 예외 메시지에 웹훅 토큰이 든 URL이 포함되므로 종류만 남긴다
+            return false;
+        } catch (RuntimeException e) {
+            // URI 생성 실패 등 예외 메시지에 웹훅 토큰이 든 URL이 포함될 수 있으므로 종류만 남긴다
             log.warn("[Discord] 알림 전송 실패 - {}", e.getClass().getSimpleName());
+            return false;
         }
     }
 

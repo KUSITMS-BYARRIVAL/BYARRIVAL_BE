@@ -7,25 +7,29 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
  * 5xx 에러를 디스코드 서버 에러 채널에 알린다. 같은 에러(예외 종류·메서드·URI)는 정해진 시간 동안 한 번만 보내고,
  * 그사이 생략한 횟수는 다음 알림에 붙인다.
+ * 예외 메시지에는 사용자 값이 섞일 수 있으므로 보내지 않는다. 원인은 서버 로그에서 확인한다.
  */
 @Slf4j
 @Component
 public class ServerErrorNotifier {
 
-    static final int MAX_MESSAGE_LENGTH = 500;
-    private static final int CLEANUP_THRESHOLD = 1_000;
+    static final int MAX_KEYS = 1_000;
+    static final String OVERFLOW_KEY = "__overflow__";
+    private static final Duration CLEANUP_INTERVAL = Duration.ofMinutes(1);
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final DiscordWebhookClient discordWebhookClient;
     private final MonitoringProperties properties;
     private final Clock clock;
     private final ConcurrentHashMap<String, Window> windows = new ConcurrentHashMap<>();
+    private final AtomicReference<Instant> lastCleanup = new AtomicReference<>(Instant.EPOCH);
 
     public ServerErrorNotifier(DiscordWebhookClient discordWebhookClient, MonitoringProperties properties,
         Clock clock) {
@@ -42,7 +46,7 @@ public class ServerErrorNotifier {
         try {
             notifyOnce(method, uri, error);
         } catch (RuntimeException e) {
-            log.warn("[ServerErrorNotifier] 서버 에러 알림 실패 - {}", e.getMessage(), e);
+            log.warn("[ServerErrorNotifier] 서버 에러 알림 실패 - {}", e.getClass().getSimpleName());
         }
     }
 
@@ -50,38 +54,59 @@ public class ServerErrorNotifier {
         Instant now = clock.instant();
         Duration dedupWindow = properties.discord().errorDedupWindow();
         String errorName = errorName(error);
-        String key = errorName + " " + method + " " + uri;
+        cleanUpIfLarge(now, dedupWindow);
+        String key = keyOf(errorName + " " + method + " " + uri);
 
         // 새 구간을 열 때만 알린다. 열린 구간 안이면 생략 횟수만 센다
         long[] suppressedBefore = {-1};
-        windows.compute(key, (k, window) -> {
+        Window opened = windows.compute(key, (k, window) -> {
             if (window == null || window.isExpired(now, dedupWindow)) {
                 suppressedBefore[0] = window == null ? 0 : window.suppressed();
                 return new Window(now, 0);
             }
             return window.suppressOne();
         });
-        cleanUpIfLarge(now, dedupWindow);
         if (suppressedBefore[0] < 0) {
             return;
         }
-        discordWebhookClient.send(properties.discord().errorWebhookUrl(),
-            format(method, uri, errorName, error.getMessage(), suppressedBefore[0], dedupWindow));
+        String content = format(method, uri, errorName, suppressedBefore[0], dedupWindow,
+            OVERFLOW_KEY.equals(key));
+        discordWebhookClient.send(properties.discord().errorWebhookUrl(), content)
+            .thenAccept(sent -> {
+                if (!sent) {
+                    release(key, opened);
+                }
+            });
     }
 
-    private String format(String method, String uri, String errorName, String message, long suppressed,
-        Duration dedupWindow) {
+    // 상한을 넘으면 새 에러는 하나의 키로 묶어 알림이 폭주하지 않게 한다
+    private String keyOf(String key) {
+        if (windows.containsKey(key) || windows.size() < MAX_KEYS) {
+            return key;
+        }
+        return OVERFLOW_KEY;
+    }
+
+    // 전송에 실패하면 구간을 닫아 다음 같은 에러를 바로 알리고, 이번 건은 생략 건수에 넣는다
+    private void release(String key, Window opened) {
+        windows.computeIfPresent(key, (k, window) -> window.startedAt().equals(opened.startedAt())
+            ? new Window(Instant.EPOCH, window.suppressed() + 1)
+            : window);
+    }
+
+    private String format(String method, String uri, String errorName, long suppressed, Duration dedupWindow,
+        boolean overflow) {
         StringBuilder content = new StringBuilder()
             .append("🚨 **서버 에러** `").append(properties.instanceName()).append("`\n")
             .append('`').append(method).append(' ').append(sanitize(uri)).append("`\n")
-            .append('`').append(errorName).append('`');
-        if (message != null && !message.isBlank()) {
-            content.append(": ").append(sanitize(abbreviate(message)));
-        }
-        content.append('\n').append(LocalDateTime.now(clock).format(TIME_FORMAT)).append(" KST");
+            .append('`').append(errorName).append('`')
+            .append('\n').append(LocalDateTime.now(clock).format(TIME_FORMAT)).append(" KST");
         if (suppressed > 0) {
             content.append(" · 직전 ").append(dedupWindow.toMinutes()).append("분 동안 같은 에러 ")
                 .append(suppressed).append("건 생략");
+        }
+        if (overflow) {
+            content.append("\n서로 다른 에러가 너무 많아 이후 새 에러는 이 알림 하나로 묶습니다. 서버 로그를 확인하세요.");
         }
         return content.toString();
     }
@@ -93,22 +118,25 @@ public class ServerErrorNotifier {
         return error.getClass().getName();
     }
 
-    private static String abbreviate(String message) {
-        if (message.length() <= MAX_MESSAGE_LENGTH) {
-            return message;
-        }
-        return message.substring(0, MAX_MESSAGE_LENGTH) + "…";
-    }
-
     // 코드 블록이 깨지지 않게 백틱을 바꾼다
     private static String sanitize(String text) {
         return text.replace('`', '\'');
     }
 
+    // 장애 중 매 요청이 맵 전체를 돌지 않도록 정리는 1분에 한 스레드만 한다.
+    // 생략 건수가 남은 구간은 다음 알림에 붙여야 하므로 지우지 않는다.
     private void cleanUpIfLarge(Instant now, Duration dedupWindow) {
-        if (windows.size() > CLEANUP_THRESHOLD) {
-            windows.values().removeIf(window -> window.isExpired(now, dedupWindow));
+        Instant last = lastCleanup.get();
+        if (windows.size() < MAX_KEYS || now.isBefore(last.plus(CLEANUP_INTERVAL))
+            || !lastCleanup.compareAndSet(last, now)) {
+            return;
         }
+        windows.entrySet().removeIf(entry -> entry.getValue().isExpired(now, dedupWindow)
+            && entry.getValue().suppressed() == 0);
+    }
+
+    int windowCount() {
+        return windows.size();
     }
 
     private record Window(Instant startedAt, long suppressed) {

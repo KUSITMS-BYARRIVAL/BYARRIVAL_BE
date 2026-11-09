@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
@@ -19,6 +20,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -35,6 +37,7 @@ class ServerErrorNotifierTest {
     @BeforeEach
     void setUp() {
         discordWebhookClient = mock(DiscordWebhookClient.class);
+        given(discordWebhookClient.send(anyString(), anyString())).willReturn(CompletableFuture.completedFuture(true));
         clock = new MutableClock(NOW.atZone(KST).toInstant());
     }
 
@@ -42,10 +45,16 @@ class ServerErrorNotifierTest {
     void 서버_에러를_요청_정보와_함께_알린다() {
         notifier(WEBHOOK).notify("GET", "/api/v1/users/me", new IllegalStateException("DB 연결 실패"));
 
-        String content = sentContents().getFirst();
-        assertThat(content)
+        assertThat(sentContents().getFirst())
             .contains("서버 에러", "byarrival-app-blue", "GET /api/v1/users/me",
-                "java.lang.IllegalStateException", "DB 연결 실패", "2026-11-09 08:30:00 KST");
+                "java.lang.IllegalStateException", "2026-11-09 08:30:00 KST");
+    }
+
+    @Test
+    void 예외_메시지는_보내지_않는다() {
+        notifier(WEBHOOK).notify("GET", "/api/v1/terms", new IllegalStateException("user@example.com 조회 실패"));
+
+        assertThat(sentContents().getFirst()).doesNotContain("user@example.com");
     }
 
     @Test
@@ -76,6 +85,22 @@ class ServerErrorNotifierTest {
     }
 
     @Test
+    void 전송에_실패하면_다음_같은_에러를_바로_알린다() {
+        given(discordWebhookClient.send(anyString(), anyString()))
+            .willReturn(CompletableFuture.completedFuture(false))
+            .willReturn(CompletableFuture.completedFuture(true));
+        ServerErrorNotifier notifier = notifier(WEBHOOK);
+
+        notifier.notify("GET", "/api/v1/users/me", new IllegalStateException("1"));
+        clock.plus(Duration.ofMinutes(1));
+        notifier.notify("GET", "/api/v1/users/me", new IllegalStateException("2"));
+
+        List<String> contents = sentContents();
+        assertThat(contents).hasSize(2);
+        assertThat(contents.get(1)).contains("같은 에러 1건 생략");
+    }
+
+    @Test
     void URI나_예외_종류가_다르면_따로_알린다() {
         ServerErrorNotifier notifier = notifier(WEBHOOK);
 
@@ -87,20 +112,43 @@ class ServerErrorNotifierTest {
     }
 
     @Test
+    void 서로_다른_에러가_상한을_넘으면_하나로_묶어_알린다() {
+        ServerErrorNotifier notifier = notifier(WEBHOOK);
+        for (int i = 0; i < ServerErrorNotifier.MAX_KEYS; i++) {
+            notifier.notify("GET", "/api/v1/articles/" + i, new IllegalStateException("x"));
+        }
+
+        notifier.notify("GET", "/api/v1/articles/overflow-1", new IllegalStateException("x"));
+        notifier.notify("GET", "/api/v1/articles/overflow-2", new IllegalStateException("x"));
+
+        verify(discordWebhookClient, times(ServerErrorNotifier.MAX_KEYS + 1)).send(anyString(), anyString());
+        assertThat(notifier.windowCount()).isEqualTo(ServerErrorNotifier.MAX_KEYS + 1);
+        assertThat(sentContents().getLast()).contains("하나로 묶습니다");
+    }
+
+    @Test
+    void 정리할_때_생략_건수가_남은_구간은_지우지_않는다() {
+        ServerErrorNotifier notifier = notifier(WEBHOOK);
+        notifier.notify("GET", "/api/v1/users/me", new IllegalStateException("1"));
+        notifier.notify("GET", "/api/v1/users/me", new IllegalStateException("2"));
+        for (int i = 0; i < ServerErrorNotifier.MAX_KEYS; i++) {
+            notifier.notify("GET", "/api/v1/articles/" + i, new IllegalStateException("x"));
+        }
+        clock.plus(Duration.ofMinutes(10));
+
+        notifier.notify("GET", "/api/v1/terms", new IllegalStateException("x"));
+        notifier.notify("GET", "/api/v1/users/me", new IllegalStateException("3"));
+
+        assertThat(notifier.windowCount()).isEqualTo(2);
+        assertThat(sentContents().getLast()).contains("GET /api/v1/users/me", "같은 에러 1건 생략");
+    }
+
+    @Test
     void BusinessException은_에러_코드를_함께_표시한다() {
         notifier(WEBHOOK).notify("POST", "/api/v1/auth/login",
             new BusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR));
 
         assertThat(sentContents().getFirst()).contains("BusinessException(INTERNAL_SERVER_ERROR)");
-    }
-
-    @Test
-    void 긴_예외_메시지는_잘라서_보낸다() {
-        notifier(WEBHOOK).notify("GET", "/api/test", new IllegalStateException("가".repeat(800)));
-
-        assertThat(sentContents().getFirst())
-            .contains("가".repeat(ServerErrorNotifier.MAX_MESSAGE_LENGTH) + "…")
-            .doesNotContain("가".repeat(ServerErrorNotifier.MAX_MESSAGE_LENGTH + 1));
     }
 
     @Test
