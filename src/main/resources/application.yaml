@@ -35,6 +35,19 @@ rss:
     max-consecutive-failures: 3
   reading:
     chars-per-minute: 500
+  selection:
+    max-articles-per-category: 20
+    similar-title-threshold: 0.37
+  crawl:
+    connect-timeout: 5s
+    read-timeout: 10s
+    request-timeout: 30s
+    max-response-size: 5MB
+    max-redirects: 3
+    concurrency: 8
+    min-content-length: 200
+    min-hangul-ratio: 0.5
+    user-agent: "Mozilla/5.0 (compatible; ByArrival/1.0)"
 
 jwt:
   secret: ${JWT_SECRET:}

@@ -18,7 +18,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 /**
- * RSS로 수집한 기사. 원본을 보존하고 가공 결과(정제 본문, 읽기시간, 카테고리)를 함께 둔다.
+ * RSS로 수집한 기사. 원본을 보존하고 가공 결과(원문 주소, 읽기시간, 카테고리)를 함께 둔다.
+ * 원문 본문은 조회 성능을 위해 {@link ArticleContent}에 따로 둔다.
  */
 @Entity
 @Table(name = "article")
@@ -28,6 +29,7 @@ public class Article extends BaseEntity {
 
     public static final int MAX_GUID_LENGTH = 500;
     public static final int MAX_ORIGINAL_URL_LENGTH = 1000;
+    public static final int MAX_SOURCE_URL_LENGTH = 1000;
     public static final int MAX_TITLE_LENGTH = 300;
     public static final int MAX_RSS_CATEGORY_LENGTH = 50;
     public static final int MAX_PRESS_NAME_LENGTH = 50;
@@ -48,6 +50,10 @@ public class Article extends BaseEntity {
     @Column(nullable = false, length = MAX_ORIGINAL_URL_LENGTH)
     private String originalUrl;
 
+    // 크롤링한 언론사 원문 주소. 원문을 가져오지 못했으면 NULL
+    @Column(length = MAX_SOURCE_URL_LENGTH)
+    private String sourceUrl;
+
     @Column(nullable = false, length = MAX_TITLE_LENGTH)
     private String title;
 
@@ -62,9 +68,6 @@ public class Article extends BaseEntity {
 
     @Column(columnDefinition = "TEXT")
     private String rawContent;
-
-    @Column(columnDefinition = "TEXT")
-    private String cleanedContent;
 
     @Column(nullable = false)
     private LocalDate serviceDate;
@@ -92,8 +95,8 @@ public class Article extends BaseEntity {
         this.processStatus = ArticleProcessStatus.COLLECTED;
     }
 
-    public void markCleaned(String cleanedContent, BigDecimal readingMinutes) {
-        this.cleanedContent = cleanedContent;
+    public void markCleaned(String sourceUrl, BigDecimal readingMinutes) {
+        this.sourceUrl = sourceUrl;
         this.readingMinutes = readingMinutes;
         this.processStatus = ArticleProcessStatus.CLEANED;
     }

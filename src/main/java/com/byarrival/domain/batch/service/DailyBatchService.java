@@ -2,6 +2,7 @@ package com.byarrival.domain.batch.service;
 
 import com.byarrival.common.time.ServiceDay;
 import com.byarrival.domain.article.service.ArticleCollectService;
+import com.byarrival.domain.article.service.ArticleCollectService.CategoryFill;
 import com.byarrival.domain.feed.dto.FeedCollectResult;
 import com.byarrival.domain.feed.dto.FetchedFeed;
 import com.byarrival.domain.feed.service.FeedCollectService;
@@ -15,7 +16,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 /**
- * 매일 23:45 일일 배치. 다음 서비스일에 노출할 기사를 수집해 저장한다.
+ * 매일 23:45 일일 배치. 다음 서비스일에 노출할 기사를 수집하고, 카테고리별로 고른 기사의 원문을 크롤링해 저장한다.
  */
 @Slf4j
 @Service
@@ -50,6 +51,16 @@ public class DailyBatchService {
                 batchRunService.fail(batchRunId.get(), "기사 저장 실패 feedIds=" + saveFailedFeedIds);
                 return;
             }
+            CategoryFill fill = articleCollectService.checkCategoryFill(serviceDate);
+            if (!fill.shortage().isEmpty()) {
+                log.warn("[DailyBatch] serviceDate={} 최대 수를 채우지 못한 카테고리 categoryId=기사 수 {}",
+                    serviceDate, fill.shortage());
+            }
+            if (!fill.emptyCategoryIds().isEmpty()) {
+                // 그날 추천을 할 수 없는 카테고리. 다시 실행해 빈 카테고리를 채울 수 있도록 실패로 남긴다.
+                batchRunService.fail(batchRunId.get(), "기사 0건 카테고리 categoryIds=" + fill.emptyCategoryIds());
+                return;
+            }
             batchRunService.complete(batchRunId.get());
             log.info("[DailyBatch] serviceDate={} 완료 - 수집 Feed {}개", serviceDate, fetchedFeeds.size());
         } catch (RuntimeException e) {
@@ -64,7 +75,7 @@ public class DailyBatchService {
         int saved = 0;
         for (FetchedFeed feed : fetchedFeeds) {
             try {
-                saved += articleCollectService.saveCollected(feed, serviceDate);
+                saved += articleCollectService.collect(feed, serviceDate);
             } catch (RuntimeException e) {
                 failedFeedIds.add(feed.feedId());
                 log.error("[DailyBatch] serviceDate={} feedId={} 기사 저장 실패 - {}",
