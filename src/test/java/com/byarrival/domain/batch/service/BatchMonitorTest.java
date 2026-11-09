@@ -22,6 +22,7 @@ import java.time.ZoneId;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -37,6 +38,7 @@ class BatchMonitorTest {
     private SimpleMeterRegistry meterRegistry;
     private BatchAlertNotifier batchAlertNotifier;
     private CategoryMappingService categoryMappingService;
+    private BatchRunService batchRunService;
     private BatchMonitor batchMonitor;
 
     @BeforeEach
@@ -48,7 +50,8 @@ class BatchMonitorTest {
         names.put(2L, "경제");
         names.put(1L, "정치");
         given(categoryMappingService.getActiveCategoryNames()).willReturn(names);
-        batchMonitor = new BatchMonitor(meterRegistry, batchAlertNotifier, categoryMappingService,
+        batchRunService = mock(BatchRunService.class);
+        batchMonitor = new BatchMonitor(meterRegistry, batchAlertNotifier, categoryMappingService, batchRunService,
             Clock.fixed(ENDED_AT, KST));
     }
 
@@ -70,7 +73,7 @@ class BatchMonitorTest {
         batchMonitor.completed(SERVICE_DATE, STARTED_AT, fill());
 
         assertThat(sentContent())
-            .contains("일일 배치 완료", "2026-11-10", "3분 12초", "저장 기사 35건", "경제 15 · 정치 20",
+            .contains("일일 배치 완료", "2026-11-10", "3분 12초", "추천 대상 기사 35건", "경제 15 · 정치 20",
                 "최대 수 미달: 경제 15");
     }
 
@@ -97,7 +100,8 @@ class BatchMonitorTest {
     void 비정상_종료는_예외_정보와_함께_알린다() {
         batchMonitor.crashed(new IllegalStateException("DB 연결 실패"));
 
-        assertThat(sentContent()).contains("비정상 종료", "java.lang.IllegalStateException", "DB 연결 실패");
+        assertThat(sentContent()).contains("비정상 종료", "java.lang.IllegalStateException")
+            .doesNotContain("DB 연결 실패");
     }
 
     @Test
@@ -107,6 +111,44 @@ class BatchMonitorTest {
         assertThatCode(() -> batchMonitor.completed(SERVICE_DATE, STARTED_AT, fill())).doesNotThrowAnyException();
         assertThatCode(() -> batchMonitor.failed(SERVICE_DATE, STARTED_AT, "사유")).doesNotThrowAnyException();
         assertThatCode(() -> batchMonitor.crashed(new IllegalStateException("x"))).doesNotThrowAnyException();
+    }
+
+    @Test
+    void 기사_0건으로_실패하면_빈_카테고리와_미달_카테고리를_이름으로_알린다() {
+        CategoryFill fill = new CategoryFill(List.of(1L), Map.of(2L, 15L), Map.of(1L, 0L, 2L, 15L));
+
+        batchMonitor.failed(SERVICE_DATE, STARTED_AT, "기사 0건 카테고리 categoryIds=[1]", fill);
+
+        assertThat(sentContent()).contains("기사 0건: 정치", "최대 수 미달: 경제 15");
+    }
+
+    @Test
+    void 이번_결과에_없는_카테고리의_게이지는_지운다() {
+        batchMonitor.completed(SERVICE_DATE, STARTED_AT, fill());
+        batchMonitor.completed(SERVICE_DATE, STARTED_AT, new CategoryFill(List.of(), Map.of(), Map.of(1L, 20L)));
+
+        assertThat(meterRegistry.find(BatchMonitor.CATEGORY_ARTICLES_METRIC).tag("categoryId", "2").gauge())
+            .isNull();
+        assertThat(meterRegistry.get(BatchMonitor.CATEGORY_ARTICLES_METRIC).tag("categoryId", "1").gauge().value())
+            .isEqualTo(20);
+    }
+
+    @Test
+    void 재시작하면_마지막_성공_시각을_완료_이력으로_채운다() {
+        LocalDateTime finishedAt = LocalDateTime.of(2026, 11, 8, 23, 50);
+        given(batchRunService.findLastCompletedAt()).willReturn(Optional.of(finishedAt));
+
+        batchMonitor.restoreLastSuccess();
+
+        assertThat(meterRegistry.get(BatchMonitor.LAST_SUCCESS_METRIC).gauge().value())
+            .isEqualTo(finishedAt.atZone(KST).toEpochSecond());
+    }
+
+    @Test
+    void 완료_이력_조회가_실패해도_예외를_던지지_않는다() {
+        given(batchRunService.findLastCompletedAt()).willThrow(new IllegalStateException("DB 오류"));
+
+        assertThatCode(() -> batchMonitor.restoreLastSuccess()).doesNotThrowAnyException();
     }
 
     private CategoryFill fill() {

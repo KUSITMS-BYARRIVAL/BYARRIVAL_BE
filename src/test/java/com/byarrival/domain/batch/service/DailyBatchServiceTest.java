@@ -200,13 +200,13 @@ class DailyBatchServiceTest {
     }
 
     @Test
-    void 배치가_예외로_끝나면_예외_종류와_함께_모니터에_남긴다() {
+    void 배치가_예외로_끝나면_예외_메시지_없이_종류만_모니터에_남긴다() {
         given(batchRunService.start(SERVICE_DATE)).willReturn(Optional.of(10L));
         given(feedCollectService.collect(any())).willThrow(new IllegalStateException("DB 연결 실패"));
 
         service(LocalDateTime.of(2026, 11, 2, 23, 45)).run();
 
-        verify(batchMonitor).failed(eq(SERVICE_DATE), any(), eq("IllegalStateException: DB 연결 실패"));
+        verify(batchMonitor).failed(eq(SERVICE_DATE), any(), eq("java.lang.IllegalStateException"));
     }
 
     @Test
@@ -217,6 +217,18 @@ class DailyBatchServiceTest {
 
         verify(batchMonitor, never()).start();
         verify(batchMonitor, never()).failed(any(), any(), anyString());
+    }
+
+    @Test
+    void 기사가_0건인_카테고리로_실패하면_카테고리_현황과_함께_모니터에_남긴다() {
+        CategoryFill fill = new CategoryFill(List.of(3L), Map.of(1L, 14L), Map.of(1L, 14L, 3L, 0L));
+        given(batchRunService.start(SERVICE_DATE)).willReturn(Optional.of(10L));
+        given(feedCollectService.collect(SERVICE_DATE)).willReturn(collected(fetchedFeed(1L)));
+        given(articleCollectService.checkCategoryFill(SERVICE_DATE)).willReturn(fill);
+
+        service(LocalDateTime.of(2026, 11, 2, 23, 45)).run();
+
+        verify(batchMonitor).failed(eq(SERVICE_DATE), any(), eq("기사 0건 카테고리 categoryIds=[3]"), eq(fill));
     }
 
     private FeedCollectResult collected(FetchedFeed... feeds) {

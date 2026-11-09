@@ -62,8 +62,9 @@ public class DailyBatchService {
             }
             if (!fill.emptyCategoryIds().isEmpty()) {
                 // 그날 추천을 할 수 없는 카테고리. 다시 실행해 빈 카테고리를 채울 수 있도록 실패로 남긴다.
-                fail(batchRunId.get(), serviceDate, startedAt,
-                    "기사 0건 카테고리 categoryIds=" + fill.emptyCategoryIds());
+                String reason = "기사 0건 카테고리 categoryIds=" + fill.emptyCategoryIds();
+                batchRunService.fail(batchRunId.get(), reason);
+                batchMonitor.failed(serviceDate, startedAt, reason, fill);
                 return;
             }
             batchRunService.complete(batchRunId.get());
@@ -72,7 +73,8 @@ public class DailyBatchService {
         } catch (RuntimeException e) {
             log.error("[DailyBatch] serviceDate={} 실패 - {}", serviceDate, e.getMessage(), e);
             batchRunService.fail(batchRunId.get(), e.getMessage());
-            batchMonitor.failed(serviceDate, startedAt, e.getClass().getSimpleName() + ": " + e.getMessage());
+            // 예외 메시지에는 외부 URL이나 사용자 값이 섞일 수 있어 알림에는 종류만 보낸다
+            batchMonitor.failed(serviceDate, startedAt, e.getClass().getName());
         }
     }
 

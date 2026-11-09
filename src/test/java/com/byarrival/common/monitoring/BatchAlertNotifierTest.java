@@ -1,12 +1,15 @@
 package com.byarrival.common.monitoring;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import java.time.Duration;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 class BatchAlertNotifierTest {
 
@@ -26,6 +29,17 @@ class BatchAlertNotifierTest {
         notifier("").send("✅ 일일 배치 완료");
 
         verify(discordWebhookClient, never()).send(anyString(), anyString());
+    }
+
+    @Test
+    void 본문이_길어도_서버_이름은_잘리지_않는다() {
+        notifier(WEBHOOK).send("feedIds=" + "1, ".repeat(1000));
+
+        ArgumentCaptor<String> content = ArgumentCaptor.forClass(String.class);
+        verify(discordWebhookClient).send(eq(WEBHOOK), content.capture());
+        assertThat(content.getValue())
+            .hasSizeLessThanOrEqualTo(DiscordWebhookClient.MAX_CONTENT_LENGTH)
+            .endsWith("\n`byarrival-app-green`");
     }
 
     private BatchAlertNotifier notifier(String batchWebhookUrl) {
