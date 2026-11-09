@@ -1,8 +1,10 @@
 package com.byarrival.common.monitoring;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -106,6 +108,14 @@ class ServerErrorNotifierTest {
         notifier("").notify("GET", "/api/test", new IllegalStateException("x"));
 
         verify(discordWebhookClient, never()).send(anyString(), anyString());
+    }
+
+    @Test
+    void 알림이_실패해도_예외를_던지지_않는다() {
+        willThrow(new IllegalStateException("대기열 오류")).given(discordWebhookClient).send(anyString(), anyString());
+
+        assertThatCode(() -> notifier(WEBHOOK).notify("GET", "/api/test", new IllegalStateException("x")))
+            .doesNotThrowAnyException();
     }
 
     private ServerErrorNotifier notifier(String webhookUrl) {

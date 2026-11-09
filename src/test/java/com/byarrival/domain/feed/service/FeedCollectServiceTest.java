@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -146,6 +147,20 @@ class FeedCollectServiceTest {
 
         assertThat(meterRegistry.counter(FeedCollectService.DEACTIVATED_METRIC).count()).isEqualTo(1.0);
         verify(batchAlertNotifier).send(contains("feedIds=[1]"));
+    }
+
+    @Test
+    void 비활성화_알림이_실패해도_수집_결과를_돌려준다() {
+        RssFeed broken = feed(1L, "https://broken.example.com/rss.xml");
+        given(feedService.getActiveFeeds()).willReturn(List.of(broken));
+        given(rssFeedFetcher.fetch(broken.getFeedUrl()))
+            .willThrow(new BusinessException(FeedErrorCode.FEED_FETCH_FAILED));
+        given(feedService.recordFailures(List.of(1L), SERVICE_DATE)).willReturn(List.of(1L));
+        willThrow(new IllegalStateException("알림 실패")).given(batchAlertNotifier).send(any());
+
+        FeedCollectResult result = feedCollectService.collect(SERVICE_DATE);
+
+        assertThat(result.failedFeedIds()).containsExactly(1L);
     }
 
     private RssItem item() {

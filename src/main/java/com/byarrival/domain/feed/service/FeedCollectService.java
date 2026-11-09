@@ -52,14 +52,25 @@ public class FeedCollectService {
 
         feedService.markFetched(fetchedFeeds.stream().map(FetchedFeed::feedId).toList(), LocalDateTime.now(clock));
         List<Long> deactivatedFeedIds = feedService.recordFailures(failedFeedIds, serviceDate);
-        meterRegistry.counter(FETCH_FAILURE_METRIC).increment(failedFeedIds.size());
         if (!deactivatedFeedIds.isEmpty()) {
             log.warn("[FeedCollect] 연속 실패로 비활성화한 feedIds={}", deactivatedFeedIds);
-            meterRegistry.counter(DEACTIVATED_METRIC).increment(deactivatedFeedIds.size());
-            batchAlertNotifier.send("⚠️ **RSS Feed 자동 비활성화** 연속 수집 실패로 비활성화했습니다. "
-                + "어드민에서 확인 후 다시 활성화하세요.\nfeedIds=" + deactivatedFeedIds);
         }
+        recordMonitoring(failedFeedIds, deactivatedFeedIds);
         log.info("[FeedCollect] 활성 Feed {}개 중 {}개 수집", feeds.size(), fetchedFeeds.size());
         return FeedCollectResult.of(fetchedFeeds, failedFeedIds);
+    }
+
+    // 모니터링이 실패해도 수집 결과는 그대로 돌려준다
+    private void recordMonitoring(List<Long> failedFeedIds, List<Long> deactivatedFeedIds) {
+        try {
+            meterRegistry.counter(FETCH_FAILURE_METRIC).increment(failedFeedIds.size());
+            if (!deactivatedFeedIds.isEmpty()) {
+                meterRegistry.counter(DEACTIVATED_METRIC).increment(deactivatedFeedIds.size());
+                batchAlertNotifier.send("⚠️ **RSS Feed 자동 비활성화** 연속 수집 실패로 비활성화했습니다. "
+                    + "어드민에서 확인 후 다시 활성화하세요.\nfeedIds=" + deactivatedFeedIds);
+            }
+        } catch (RuntimeException e) {
+            log.warn("[FeedCollect] 모니터링 기록 실패 - {}", e.getMessage(), e);
+        }
     }
 }

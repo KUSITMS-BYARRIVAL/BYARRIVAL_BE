@@ -7,12 +7,14 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.concurrent.ConcurrentHashMap;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
  * 5xx 에러를 디스코드 서버 에러 채널에 알린다. 같은 에러(예외 종류·메서드·URI)는 정해진 시간 동안 한 번만 보내고,
  * 그사이 생략한 횟수는 다음 알림에 붙인다.
  */
+@Slf4j
 @Component
 public class ServerErrorNotifier {
 
@@ -32,10 +34,19 @@ public class ServerErrorNotifier {
         this.clock = clock;
     }
 
+    // 알림이 실패해도 원래 에러 응답은 나가야 하므로 예외를 밖으로 던지지 않는다
     public void notify(String method, String uri, Throwable error) {
         if (!properties.discord().errorEnabled()) {
             return;
         }
+        try {
+            notifyOnce(method, uri, error);
+        } catch (RuntimeException e) {
+            log.warn("[ServerErrorNotifier] 서버 에러 알림 실패 - {}", e.getMessage(), e);
+        }
+    }
+
+    private void notifyOnce(String method, String uri, Throwable error) {
         Instant now = clock.instant();
         Duration dedupWindow = properties.discord().errorDedupWindow();
         String errorName = errorName(error);

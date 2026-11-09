@@ -1,6 +1,9 @@
 package com.byarrival.domain.batch.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
@@ -76,6 +79,15 @@ class BatchMonitorTest {
         batchMonitor.crashed(new IllegalStateException("DB 연결 실패"));
 
         assertThat(sentContent()).contains("비정상 종료", "java.lang.IllegalStateException", "DB 연결 실패");
+    }
+
+    @Test
+    void 알림이_실패해도_예외를_던지지_않는다() {
+        willThrow(new IllegalStateException("알림 실패")).given(batchAlertNotifier).send(anyString());
+
+        assertThatCode(() -> batchMonitor.completed(SERVICE_DATE, STARTED_AT, fill())).doesNotThrowAnyException();
+        assertThatCode(() -> batchMonitor.failed(SERVICE_DATE, STARTED_AT, "사유")).doesNotThrowAnyException();
+        assertThatCode(() -> batchMonitor.crashed(new IllegalStateException("x"))).doesNotThrowAnyException();
     }
 
     private CategoryFill fill() {

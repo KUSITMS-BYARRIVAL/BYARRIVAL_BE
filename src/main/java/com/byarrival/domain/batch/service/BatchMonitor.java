@@ -14,11 +14,14 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
  * 일일 배치 결과를 메트릭으로 남기고 디스코드 배치 채널에 알린다.
+ * 모니터링이 실패해도 배치 결과(batch_run)가 바뀌지 않도록 예외를 밖으로 던지지 않는다.
  */
+@Slf4j
 @Component
 public class BatchMonitor {
 
@@ -47,6 +50,19 @@ public class BatchMonitor {
     }
 
     public void completed(LocalDate serviceDate, Instant startedAt, CategoryFill fill) {
+        guard(() -> recordCompleted(serviceDate, startedAt, fill));
+    }
+
+    public void failed(LocalDate serviceDate, Instant startedAt, String reason) {
+        guard(() -> recordFailed(serviceDate, startedAt, reason));
+    }
+
+    public void crashed(Throwable error) {
+        guard(() -> batchAlertNotifier.send("🔥 **일일 배치 비정상 종료** 배치 상태를 기록하지 못했을 수 있습니다. "
+            + "batch_run을 확인하세요.\n" + error.getClass().getName() + ": " + error.getMessage()));
+    }
+
+    private void recordCompleted(LocalDate serviceDate, Instant startedAt, CategoryFill fill) {
         Duration duration = recordDuration(startedAt, "success");
         lastSuccessEpochSeconds.set(clock.instant().getEpochSecond());
         fill.counts().forEach(this::recordCategoryArticles);
@@ -62,16 +78,19 @@ public class BatchMonitor {
         batchAlertNotifier.send(content.toString());
     }
 
-    public void failed(LocalDate serviceDate, Instant startedAt, String reason) {
+    private void recordFailed(LocalDate serviceDate, Instant startedAt, String reason) {
         Duration duration = recordDuration(startedAt, "failure");
         batchAlertNotifier.send("❌ **일일 배치 실패** 서비스일 " + serviceDate + " · " + format(duration) + '\n'
             + "사유: " + reason + '\n'
             + "실패로 기록했으므로 같은 서비스일로 다시 실행할 수 있습니다.");
     }
 
-    public void crashed(Throwable error) {
-        batchAlertNotifier.send("🔥 **일일 배치 비정상 종료** 배치 상태를 기록하지 못했을 수 있습니다. batch_run을 확인하세요.\n"
-            + error.getClass().getName() + ": " + error.getMessage());
+    private void guard(Runnable action) {
+        try {
+            action.run();
+        } catch (RuntimeException e) {
+            log.warn("[BatchMonitor] 배치 모니터링 기록 실패 - {}", e.getMessage(), e);
+        }
     }
 
     private Duration recordDuration(Instant startedAt, String result) {
