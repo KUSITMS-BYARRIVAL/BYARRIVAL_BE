@@ -47,6 +47,10 @@ public class User extends BaseEntity {
     @Column(nullable = false, length = 20)
     private UserStatus status;
 
+    @Enumerated(EnumType.STRING)
+    @Column(length = 10)
+    private NotificationPermission notificationPermission;
+
     private User(SocialProvider provider, String providerUserId) {
         this.provider = provider;
         this.providerUserId = providerUserId;
@@ -56,6 +60,10 @@ public class User extends BaseEntity {
 
     public static User signUp(SocialProvider provider, String providerUserId) {
         return new User(provider, providerUserId);
+    }
+
+    public void updateNotificationPermission(NotificationPermission permission) {
+        this.notificationPermission = permission;
     }
 
     public boolean isOnboardingCompleted() {
