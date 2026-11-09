@@ -1,16 +1,21 @@
 package com.byarrival.domain.feed.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import com.byarrival.common.exception.BusinessException;
+import com.byarrival.common.monitoring.BatchAlertNotifier;
 import com.byarrival.domain.feed.dto.FeedCollectResult;
 import com.byarrival.domain.feed.dto.FetchedFeed;
 import com.byarrival.domain.feed.dto.RssItem;
 import com.byarrival.domain.feed.entity.RssFeed;
 import com.byarrival.domain.feed.exception.FeedErrorCode;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -31,6 +36,8 @@ class FeedCollectServiceTest {
     private FeedService feedService;
     private RssFeedFetcher rssFeedFetcher;
     private RssParser rssParser;
+    private SimpleMeterRegistry meterRegistry;
+    private BatchAlertNotifier batchAlertNotifier;
     private FeedCollectService feedCollectService;
 
     @BeforeEach
@@ -38,8 +45,11 @@ class FeedCollectServiceTest {
         feedService = mock(FeedService.class);
         rssFeedFetcher = mock(RssFeedFetcher.class);
         rssParser = mock(RssParser.class);
+        meterRegistry = new SimpleMeterRegistry();
+        batchAlertNotifier = mock(BatchAlertNotifier.class);
         Clock clock = Clock.fixed(NOW.atZone(KST).toInstant(), KST);
-        feedCollectService = new FeedCollectService(feedService, rssFeedFetcher, rssParser, clock);
+        feedCollectService = new FeedCollectService(feedService, rssFeedFetcher, rssParser, meterRegistry,
+            batchAlertNotifier, clock);
     }
 
     @Test
@@ -108,6 +118,34 @@ class FeedCollectServiceTest {
         assertThat(result.allFailed()).isTrue();
         verify(feedService).markFetched(List.of(), NOW);
         verify(feedService).recordFailures(List.of(1L), SERVICE_DATE);
+    }
+
+    @Test
+    void 수집에_실패한_Feed_수를_메트릭으로_남긴다() {
+        RssFeed broken = feed(1L, "https://broken.example.com/rss.xml");
+        given(feedService.getActiveFeeds()).willReturn(List.of(broken));
+        given(rssFeedFetcher.fetch(broken.getFeedUrl()))
+            .willThrow(new BusinessException(FeedErrorCode.FEED_FETCH_FAILED));
+        given(feedService.recordFailures(List.of(1L), SERVICE_DATE)).willReturn(List.of());
+
+        feedCollectService.collect(SERVICE_DATE);
+
+        assertThat(meterRegistry.counter(FeedCollectService.FETCH_FAILURE_METRIC).count()).isEqualTo(1.0);
+        verify(batchAlertNotifier, never()).send(any());
+    }
+
+    @Test
+    void 연속_실패로_비활성화한_Feed는_배치_채널에_알린다() {
+        RssFeed broken = feed(1L, "https://broken.example.com/rss.xml");
+        given(feedService.getActiveFeeds()).willReturn(List.of(broken));
+        given(rssFeedFetcher.fetch(broken.getFeedUrl()))
+            .willThrow(new BusinessException(FeedErrorCode.FEED_FETCH_FAILED));
+        given(feedService.recordFailures(List.of(1L), SERVICE_DATE)).willReturn(List.of(1L));
+
+        feedCollectService.collect(SERVICE_DATE);
+
+        assertThat(meterRegistry.counter(FeedCollectService.DEACTIVATED_METRIC).count()).isEqualTo(1.0);
+        verify(batchAlertNotifier).send(contains("feedIds=[1]"));
     }
 
     private RssItem item() {

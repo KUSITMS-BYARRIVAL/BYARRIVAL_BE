@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.byarrival.common.exception.BusinessException;
 import com.byarrival.common.exception.CommonErrorCode;
 import com.byarrival.common.exception.GlobalExceptionHandler;
+import com.byarrival.common.monitoring.ServerErrorNotifier;
 import com.byarrival.domain.auth.dto.response.SocialLoginResponse;
 import com.byarrival.domain.auth.dto.response.TokenResponse;
 import com.byarrival.domain.auth.exception.AuthErrorCode;
@@ -32,7 +33,7 @@ class AuthControllerTest {
         authService = mock(AuthService.class);
         tokenService = mock(TokenService.class);
         mockMvc = MockMvcBuilders.standaloneSetup(new AuthController(authService, tokenService))
-            .setControllerAdvice(new GlobalExceptionHandler())
+            .setControllerAdvice(new GlobalExceptionHandler(mock(ServerErrorNotifier.class)))
             .build();
     }
 
