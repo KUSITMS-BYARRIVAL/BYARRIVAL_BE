@@ -42,6 +42,19 @@ log "현재: ${active:-없음(첫 배포)} → 배포 대상: $target ($APP_IMAG
 # DB와 Redis가 떠 있는지 확인한다. 이미 떠 있으면 설정이 바뀌었어도 재생성하지 않는다
 # (구 앱이 서비스 중이므로 DB·Redis 설정 변경은 README의 별도 절차로 적용한다)
 "${COMPOSE[@]}" up -d --wait --no-recreate postgres redis
+
+# 모니터링. 설정 파일이 바뀌었을 수 있으므로 매번 다시 만든다(수집한 데이터는 볼륨에 남는다).
+# 모니터링이 실패해도 앱 배포는 계속한다.
+if ! "${COMPOSE[@]}" up -d --force-recreate prometheus; then
+  log "Prometheus를 띄우지 못했습니다. 앱 배포는 계속합니다."
+fi
+if grep -Eq '^GRAFANA_ADMIN_PASSWORD=.+' .env; then
+  if ! "${COMPOSE[@]}" up -d --force-recreate grafana; then
+    log "Grafana를 띄우지 못했습니다. 앱 배포는 계속합니다."
+  fi
+else
+  log ".env에 GRAFANA_ADMIN_PASSWORD가 없어 Grafana를 띄우지 않습니다."
+fi
 "${COMPOSE[@]}" up -d certbot
 
 # Nginx는 인증서 파일이 없으면 뜨지 않는다. 처음에는 임시 자체 서명 인증서를 두고,
