@@ -76,3 +76,11 @@ notification:
     # Firebase 서비스 계정 키 JSON 파일을 base64로 인코딩한 한 줄
     fcm-credentials-base64: ${FCM_CREDENTIALS_BASE64:}
     android-channel-id: default
+
+onboarding:
+  # 기획 확정 전 가정값. 기본 이동시간은 DB 제약(5~90분, 5분 단위)과 같아야 한다
+  nickname-min-length: 1
+  nickname-max-length: 10
+  commute-minutes-min: 5
+  commute-minutes-max: 90
+  commute-minutes-step: 5
