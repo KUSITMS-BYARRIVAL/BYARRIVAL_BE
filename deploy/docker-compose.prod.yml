@@ -108,9 +108,21 @@ services:
     logging: *default-logging
 
   # 서버 localhost에만 연다. 개발자는 SSH 터널로 접속한다(README 참고)
+  # 비밀번호 없이 뜨면 기본 계정(admin/admin)이 생기므로, 비밀번호가 없으면 시작하지 않는다.
+  # profile을 둬서 이름을 지정해 띄울 때만(deploy.sh) 시작한다.
   grafana:
     image: grafana/grafana:12.1.0
     container_name: byarrival-grafana
+    profiles: ["monitoring"]
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        if [ -z "$$GF_SECURITY_ADMIN_PASSWORD" ]; then
+          echo "GRAFANA_ADMIN_PASSWORD가 없어 Grafana를 시작하지 않습니다." >&2
+          exit 1
+        fi
+        exec /run.sh
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-}
       GF_USERS_ALLOW_SIGN_UP: "false"
@@ -125,7 +137,7 @@ services:
     depends_on:
       - prometheus
     mem_limit: 256m
-    restart: unless-stopped
+    restart: on-failure:3
     logging: *default-logging
 
 volumes:
