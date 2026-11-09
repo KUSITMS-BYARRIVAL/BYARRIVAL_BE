@@ -34,14 +34,16 @@ HTTP(80) 요청은 HTTPS(443)로 리다이렉트합니다. 80에서는 인증서
 
 | 채널 | 키 | 보내는 내용 |
 |---|---|---|
-| 서버 에러 | `DISCORD_ERROR_WEBHOOK_URL` | 500 에러(처리되지 않은 예외, 5xx BusinessException). 같은 예외·메서드·URI는 5분에 한 번만 보내고, 그사이 생략한 건수를 다음 알림에 붙입니다. |
-| 배치·운영 | `DISCORD_BATCH_WEBHOOK_URL` | 일일 배치 완료 요약(카테고리별 저장 건수, 최대 수 미달 카테고리, 소요 시간), 배치 실패와 사유, 배치 비정상 종료, RSS Feed 자동 비활성화 |
+| 서버 에러 | `DISCORD_ERROR_WEBHOOK_URL` | 500 에러(처리되지 않은 예외, 5xx BusinessException, 필터에서 난 예외). 같은 예외·메서드·URI는 5분에 한 번만 보내고, 그사이 생략한 건수를 다음 알림에 붙입니다. 서로 다른 에러가 1,000가지를 넘으면 새 에러는 알림 하나로 묶습니다. |
+| 배치·운영 | `DISCORD_BATCH_WEBHOOK_URL` | 일일 배치 완료 요약(카테고리 이름별 추천 대상 기사 수, 최대 수 미달 카테고리, 소요 시간), 배치 실패와 사유(0건 실패면 빈·미달 카테고리 이름), 배치 비정상 종료, RSS Feed 자동 비활성화 |
+
+예외 메시지에는 사용자 값이나 외부 URL이 섞일 수 있어 알림에는 예외 종류만 넣습니다. 원인은 서버 로그(`docker compose -f docker-compose.prod.yml logs app-blue`)에서 확인합니다.
 
 웹훅은 디스코드 채널 설정 → 연동 → 웹후크에서 만듭니다. 웹훅 URL에는 토큰이 들어 있으므로 `.env`에만 두고 공유하지 않습니다.
 
 ### Prometheus·Grafana
 
-배포할 때 `deploy.sh`가 Prometheus와 Grafana를 함께 띄웁니다. 둘 다 메모리 256MB로 제한하고, Prometheus는 15일(최대 1GB)만 보관합니다. 모니터링이 실패해도 앱 배포는 계속합니다. Grafana는 `.env`에 `GRAFANA_ADMIN_PASSWORD`가 있을 때만 띄웁니다.
+배포할 때 `deploy.sh`가 Prometheus와 Grafana를 함께 띄웁니다. 둘 다 메모리 256MB로 제한하고, Prometheus는 15일(최대 1GB)만 보관합니다. 모니터링이 실패해도 앱 배포는 계속합니다. Grafana는 `.env`에 `GRAFANA_ADMIN_PASSWORD`가 있을 때만 띄웁니다. 비밀번호 없이 뜨면 기본 계정(admin/admin)이 생기므로, compose에서도 `monitoring` profile로 분리하고 비밀번호가 비어 있으면 시작하지 않게 막았습니다. 직접 띄울 때는 `docker compose -f docker-compose.prod.yml up -d grafana`처럼 서비스 이름을 지정합니다.
 
 Grafana 접속:
 
