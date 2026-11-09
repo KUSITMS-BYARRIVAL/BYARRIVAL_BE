@@ -31,6 +31,7 @@ dependencies {
 	implementation 'com.google.firebase:firebase-admin:9.10.0'
 	implementation 'org.jsoup:jsoup:1.23.2'
 	compileOnly 'org.projectlombok:lombok'
+	runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
 	runtimeOnly 'org.flywaydb:flyway-database-postgresql'
 	runtimeOnly 'org.postgresql:postgresql'
 	annotationProcessor 'org.projectlombok:lombok'

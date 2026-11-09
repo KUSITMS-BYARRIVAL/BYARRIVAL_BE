@@ -205,14 +205,19 @@ public class ArticleCollectService {
                 shortage.put(categoryId, count);
             }
         });
-        return new CategoryFill(empty, shortage);
+        return new CategoryFill(empty, shortage, new TreeMap<>(counts));
     }
 
     /**
      * @param emptyCategoryIds 기사가 한 건도 없는 카테고리
      * @param shortage         최대 수를 채우지 못한 카테고리별 기사 수(0건 제외)
+     * @param counts           활성 카테고리별 저장된 기사 수(0건 포함)
      */
-    public record CategoryFill(List<Long> emptyCategoryIds, Map<Long, Long> shortage) {
+    public record CategoryFill(List<Long> emptyCategoryIds, Map<Long, Long> shortage, Map<Long, Long> counts) {
+
+        public long totalCount() {
+            return counts.values().stream().mapToLong(Long::longValue).sum();
+        }
     }
 
     private CrawlResult await(Future<CrawlResult> result) {

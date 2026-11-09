@@ -1,0 +1,209 @@
+package com.byarrival.common.monitoring;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+
+import com.byarrival.common.exception.BusinessException;
+import com.byarrival.common.exception.CommonErrorCode;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+
+class ServerErrorNotifierTest {
+
+    private static final ZoneId KST = ZoneId.of("Asia/Seoul");
+    private static final String WEBHOOK = "https://discord.com/api/webhooks/1/error";
+    private static final LocalDateTime NOW = LocalDateTime.of(2026, 11, 9, 8, 30);
+
+    private DiscordWebhookClient discordWebhookClient;
+    private MutableClock clock;
+
+    @BeforeEach
+    void setUp() {
+        discordWebhookClient = mock(DiscordWebhookClient.class);
+        given(discordWebhookClient.send(anyString(), anyString())).willReturn(CompletableFuture.completedFuture(true));
+        clock = new MutableClock(NOW.atZone(KST).toInstant());
+    }
+
+    @Test
+    void 서버_에러를_요청_정보와_함께_알린다() {
+        notifier(WEBHOOK).notify("GET", "/api/v1/users/me", new IllegalStateException("DB 연결 실패"));
+
+        assertThat(sentContents().getFirst())
+            .contains("서버 에러", "byarrival-app-blue", "GET /api/v1/users/me",
+                "java.lang.IllegalStateException", "2026-11-09 08:30:00 KST");
+    }
+
+    @Test
+    void 예외_메시지는_보내지_않는다() {
+        notifier(WEBHOOK).notify("GET", "/api/v1/terms", new IllegalStateException("user@example.com 조회 실패"));
+
+        assertThat(sentContents().getFirst()).doesNotContain("user@example.com");
+    }
+
+    @Test
+    void 같은_에러는_정해진_시간_동안_한_번만_알린다() {
+        ServerErrorNotifier notifier = notifier(WEBHOOK);
+
+        notifier.notify("GET", "/api/v1/users/me", new IllegalStateException("1"));
+        clock.plus(Duration.ofMinutes(4));
+        notifier.notify("GET", "/api/v1/users/me", new IllegalStateException("2"));
+        notifier.notify("GET", "/api/v1/users/me", new IllegalStateException("3"));
+
+        verify(discordWebhookClient, times(1)).send(anyString(), anyString());
+    }
+
+    @Test
+    void 시간이_지나면_다시_알리고_그사이_생략한_횟수를_붙인다() {
+        ServerErrorNotifier notifier = notifier(WEBHOOK);
+
+        notifier.notify("GET", "/api/v1/users/me", new IllegalStateException("1"));
+        notifier.notify("GET", "/api/v1/users/me", new IllegalStateException("2"));
+        notifier.notify("GET", "/api/v1/users/me", new IllegalStateException("3"));
+        clock.plus(Duration.ofMinutes(5));
+        notifier.notify("GET", "/api/v1/users/me", new IllegalStateException("4"));
+
+        List<String> contents = sentContents();
+        assertThat(contents).hasSize(2);
+        assertThat(contents.get(1)).contains("직전 5분 동안 같은 에러 2건 생략");
+    }
+
+    @Test
+    void 전송에_실패하면_다음_같은_에러를_바로_알린다() {
+        given(discordWebhookClient.send(anyString(), anyString()))
+            .willReturn(CompletableFuture.completedFuture(false))
+            .willReturn(CompletableFuture.completedFuture(true));
+        ServerErrorNotifier notifier = notifier(WEBHOOK);
+
+        notifier.notify("GET", "/api/v1/users/me", new IllegalStateException("1"));
+        clock.plus(Duration.ofMinutes(1));
+        notifier.notify("GET", "/api/v1/users/me", new IllegalStateException("2"));
+
+        List<String> contents = sentContents();
+        assertThat(contents).hasSize(2);
+        assertThat(contents.get(1)).contains("같은 에러 1건 생략");
+    }
+
+    @Test
+    void URI나_예외_종류가_다르면_따로_알린다() {
+        ServerErrorNotifier notifier = notifier(WEBHOOK);
+
+        notifier.notify("GET", "/api/v1/users/me", new IllegalStateException("1"));
+        notifier.notify("GET", "/api/v1/terms", new IllegalStateException("1"));
+        notifier.notify("GET", "/api/v1/users/me", new NullPointerException("1"));
+
+        verify(discordWebhookClient, times(3)).send(anyString(), anyString());
+    }
+
+    @Test
+    void 서로_다른_에러가_상한을_넘으면_하나로_묶어_알린다() {
+        ServerErrorNotifier notifier = notifier(WEBHOOK);
+        for (int i = 0; i < ServerErrorNotifier.MAX_KEYS; i++) {
+            notifier.notify("GET", "/api/v1/articles/" + i, new IllegalStateException("x"));
+        }
+
+        notifier.notify("GET", "/api/v1/articles/overflow-1", new IllegalStateException("x"));
+        notifier.notify("GET", "/api/v1/articles/overflow-2", new IllegalStateException("x"));
+
+        verify(discordWebhookClient, times(ServerErrorNotifier.MAX_KEYS + 1)).send(anyString(), anyString());
+        assertThat(notifier.windowCount()).isEqualTo(ServerErrorNotifier.MAX_KEYS + 1);
+        assertThat(sentContents().getLast()).contains("하나로 묶습니다");
+    }
+
+    @Test
+    void 정리할_때_생략_건수가_남은_구간은_지우지_않는다() {
+        ServerErrorNotifier notifier = notifier(WEBHOOK);
+        notifier.notify("GET", "/api/v1/users/me", new IllegalStateException("1"));
+        notifier.notify("GET", "/api/v1/users/me", new IllegalStateException("2"));
+        for (int i = 0; i < ServerErrorNotifier.MAX_KEYS; i++) {
+            notifier.notify("GET", "/api/v1/articles/" + i, new IllegalStateException("x"));
+        }
+        clock.plus(Duration.ofMinutes(10));
+
+        notifier.notify("GET", "/api/v1/terms", new IllegalStateException("x"));
+        notifier.notify("GET", "/api/v1/users/me", new IllegalStateException("3"));
+
+        assertThat(notifier.windowCount()).isEqualTo(2);
+        assertThat(sentContents().getLast()).contains("GET /api/v1/users/me", "같은 에러 1건 생략");
+    }
+
+    @Test
+    void BusinessException은_에러_코드를_함께_표시한다() {
+        notifier(WEBHOOK).notify("POST", "/api/v1/auth/login",
+            new BusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR));
+
+        assertThat(sentContents().getFirst()).contains("BusinessException(INTERNAL_SERVER_ERROR)");
+    }
+
+    @Test
+    void 웹훅이_없으면_알리지_않는다() {
+        notifier("").notify("GET", "/api/test", new IllegalStateException("x"));
+
+        verify(discordWebhookClient, never()).send(anyString(), anyString());
+    }
+
+    @Test
+    void 알림이_실패해도_예외를_던지지_않는다() {
+        willThrow(new IllegalStateException("대기열 오류")).given(discordWebhookClient).send(anyString(), anyString());
+
+        assertThatCode(() -> notifier(WEBHOOK).notify("GET", "/api/test", new IllegalStateException("x")))
+            .doesNotThrowAnyException();
+    }
+
+    private ServerErrorNotifier notifier(String webhookUrl) {
+        MonitoringProperties properties = new MonitoringProperties("byarrival-app-blue",
+            new MonitoringProperties.Discord(webhookUrl, "", Duration.ofMinutes(5), Duration.ofSeconds(3),
+                Duration.ofSeconds(5)));
+        return new ServerErrorNotifier(discordWebhookClient, properties, clock);
+    }
+
+    private List<String> sentContents() {
+        ArgumentCaptor<String> content = ArgumentCaptor.forClass(String.class);
+        verify(discordWebhookClient, atLeastOnce()).send(eq(WEBHOOK), content.capture());
+        return content.getAllValues();
+    }
+
+    private static class MutableClock extends Clock {
+
+        private Instant instant;
+
+        MutableClock(Instant instant) {
+            this.instant = instant;
+        }
+
+        void plus(Duration duration) {
+            instant = instant.plus(duration);
+        }
+
+        @Override
+        public ZoneId getZone() {
+            return KST;
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            return this;
+        }
+
+        @Override
+        public Instant instant() {
+            return instant;
+        }
+    }
+}

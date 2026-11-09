@@ -1,11 +1,17 @@
 package com.byarrival.common.exception;
 
 import static org.hamcrest.Matchers.hasSize;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.byarrival.common.monitoring.ServerErrorNotifier;
 import com.byarrival.common.response.ApiResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -22,11 +28,13 @@ import org.springframework.web.bind.annotation.RestController;
 class GlobalExceptionHandlerTest {
 
     private MockMvc mockMvc;
+    private ServerErrorNotifier serverErrorNotifier;
 
     @BeforeEach
     void setUp() {
+        serverErrorNotifier = mock(ServerErrorNotifier.class);
         mockMvc = MockMvcBuilders.standaloneSetup(new TestController())
-            .setControllerAdvice(new GlobalExceptionHandler())
+            .setControllerAdvice(new GlobalExceptionHandler(serverErrorNotifier))
             .build();
     }
 
@@ -83,6 +91,29 @@ class GlobalExceptionHandlerTest {
             .andExpect(jsonPath("$.code").value("INTERNAL_SERVER_ERROR"));
     }
 
+    @Test
+    void 처리되지_않은_예외는_서버_에러_알림을_보낸다() throws Exception {
+        mockMvc.perform(get("/test/unhandled"));
+
+        verify(serverErrorNotifier).notify(eq("GET"), eq("/test/unhandled"), any(IllegalStateException.class));
+    }
+
+    @Test
+    void 서버_오류_BusinessException은_서버_에러_알림을_보낸다() throws Exception {
+        mockMvc.perform(get("/test/business-server-error"))
+            .andExpect(status().isInternalServerError());
+
+        verify(serverErrorNotifier).notify(eq("GET"), eq("/test/business-server-error"), any(BusinessException.class));
+    }
+
+    @Test
+    void 클라이언트_오류는_서버_에러_알림을_보내지_않는다() throws Exception {
+        mockMvc.perform(get("/test/business"));
+        mockMvc.perform(post("/test/validation").contentType(MediaType.APPLICATION_JSON).content("{\"name\": \"\"}"));
+
+        verify(serverErrorNotifier, never()).notify(any(), any(), any());
+    }
+
     @RestController
     static class TestController {
 
@@ -94,6 +125,11 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/test/business")
         void business() {
             throw new BusinessException(CommonErrorCode.FORBIDDEN);
+        }
+
+        @GetMapping("/test/business-server-error")
+        void businessServerError() {
+            throw new BusinessException(CommonErrorCode.INTERNAL_SERVER_ERROR);
         }
 
         @PostMapping("/test/validation")

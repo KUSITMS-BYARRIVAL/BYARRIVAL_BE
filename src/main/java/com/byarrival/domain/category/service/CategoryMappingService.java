@@ -2,6 +2,8 @@ package com.byarrival.domain.category.service;
 
 import com.byarrival.domain.category.entity.CategoryMapping;
 import com.byarrival.domain.category.repository.CategoryMappingRepository;
+import com.byarrival.domain.category.repository.CategoryMappingRepository.CategoryName;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -34,5 +36,17 @@ public class CategoryMappingService {
     @Transactional(readOnly = true)
     public Set<Long> getActiveCategoryIds() {
         return Set.copyOf(categoryMappingRepository.findActiveCategoryIds());
+    }
+
+    /**
+     * @return 활성 서비스 카테고리 ID → 이름. 화면 순서(display_order)대로 담는다.
+     */
+    @Transactional(readOnly = true)
+    public Map<Long, String> getActiveCategoryNames() {
+        Map<Long, String> names = new LinkedHashMap<>();
+        for (CategoryName category : categoryMappingRepository.findActiveCategoryNames()) {
+            names.put(category.getId(), category.getName());
+        }
+        return names;
     }
 }
