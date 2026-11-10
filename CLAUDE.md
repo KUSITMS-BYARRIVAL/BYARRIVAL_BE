@@ -35,6 +35,7 @@
 | `archive.md` | LIB-xx, PICK-xx, STAT-xx |
 | `my.md` | MY-xx |
 | `content-admin.md` | RSS-xx, AI-xx, TALK-01 |
+| `admin.md` | ADM-xx, ARTICLE-xx, EDITOR-xx, MEMBER-xx, NOTI-xx (어드민) |
 
 ## 도메인 핵심 규칙
 
