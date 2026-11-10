@@ -59,6 +59,8 @@ public class User extends BaseEntity {
     @Column(nullable = false, length = 20)
     private UserStatus status;
 
+    private LocalDateTime withdrawnAt;
+
     @Enumerated(EnumType.STRING)
     @Column(length = 10)
     private NotificationPermission notificationPermission;
@@ -103,6 +105,22 @@ public class User extends BaseEntity {
         }
         this.onboardingStatus = OnboardingStatus.COMPLETED;
         this.onboardedAt = now;
+    }
+
+    /**
+     * 탈퇴 상태로 바꾼다. 프로필·설정과 이용 이력은 지우지 않고 보관한다.
+     */
+    public void withdraw(LocalDateTime now) {
+        this.status = UserStatus.WITHDRAWN;
+        this.withdrawnAt = now;
+    }
+
+    /**
+     * 보관 기간 안에 재가입하면 보관한 데이터를 그대로 쓰도록 다시 활성화한다.
+     */
+    public void restore() {
+        this.status = UserStatus.ACTIVE;
+        this.withdrawnAt = null;
     }
 
     public boolean isOnboardingCompleted() {
