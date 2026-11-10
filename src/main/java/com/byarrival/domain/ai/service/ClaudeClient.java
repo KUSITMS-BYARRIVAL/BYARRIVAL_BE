@@ -51,14 +51,23 @@ public class ClaudeClient {
             // max_tokens면 JSON이 잘렸고, refusal이면 내용이 없다
             throw new BusinessException(AiErrorCode.AI_RESPONSE_INVALID, "stop_reason=" + stopReason);
         }
-        List<T> outputs = response.content().stream()
-            .flatMap(block -> block.text().stream())
-            .map(block -> block.text())
-            .toList();
+        List<T> outputs = extractOutputs(response);
         if (outputs.size() != 1) {
             throw new BusinessException(AiErrorCode.AI_RESPONSE_INVALID, "응답 JSON 개수=" + outputs.size());
         }
         return new ClaudeResult<>(outputs.getFirst(), usage);
+    }
+
+    // 구조화 출력 JSON은 text()를 부를 때 타입으로 바뀐다. 변환 실패 메시지에는 응답 본문이 들어 있어 종류만 남긴다
+    private <T> List<T> extractOutputs(StructuredMessage<T> response) {
+        try {
+            return response.content().stream()
+                .flatMap(block -> block.text().stream())
+                .map(block -> block.text())
+                .toList();
+        } catch (AnthropicInvalidDataException e) {
+            throw new BusinessException(AiErrorCode.AI_RESPONSE_INVALID, e.getClass().getSimpleName());
+        }
     }
 
     // 비용 추적용. 생각 토큰은 출력 토큰에 포함된다

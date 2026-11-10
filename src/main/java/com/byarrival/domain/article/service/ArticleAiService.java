@@ -82,6 +82,11 @@ public class ArticleAiService {
                 failedCategoryIds.add(categoryId);
                 log.warn("[AI 가공] serviceDate={} categoryId={} 난이도 판정 실패 - {}",
                     serviceDate, categoryId, e.getMessage());
+            } catch (RuntimeException e) {
+                // 예상하지 못한 오류도 이 카테고리만 건너뛰고 나머지 카테고리는 계속 가공한다
+                failedCategoryIds.add(categoryId);
+                log.error("[AI 가공] serviceDate={} categoryId={} 난이도 판정 중 오류 - {}",
+                    serviceDate, categoryId, e.getClass().getSimpleName(), e);
             }
         }
 

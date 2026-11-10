@@ -84,6 +84,20 @@ class ArticleAiServiceTest {
     }
 
     @Test
+    void 난이도_판정_중_예상하지_못한_오류가_나도_그_카테고리만_건너뛴다() {
+        given(store.loadPending(SERVICE_DATE)).willReturn(List.of(pending(1L, 10L), pending(2L, 20L)));
+        given(scorer.score(any()))
+            .willThrow(new IllegalStateException("unexpected"))
+            .willReturn(new ScoreResult(Map.of(2L, 5), 1, new TokenUsage(1000, 100)));
+        given(summaryService.summarize(any())).willReturn(summary(List.of()));
+
+        AiProcessResult result = service.process(SERVICE_DATE);
+
+        assertThat(result.failedCategoryIds()).containsExactly(10L);
+        verify(summaryService).summarize(List.of(new SummaryTarget(2L, ArticleDifficulty.HARD)));
+    }
+
+    @Test
     void 끝나면_난이도_판정과_요약의_호출_토큰_예상_비용을_한_번_알린다() {
         given(store.loadPending(SERVICE_DATE)).willReturn(List.of(pending(1L, 10L), pending(2L, 10L)));
         given(scorer.score(any())).willReturn(new ScoreResult(Map.of(1L, 3, 2L, 7), 1, new TokenUsage(2000, 500)));

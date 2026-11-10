@@ -88,6 +88,20 @@ class ClaudeClientTest {
     }
 
     @Test
+    void 정상_종료했지만_JSON이_출력_타입과_맞지_않으면_응답_오류로_본다() {
+        respond("end_turn", "{\"title\":\"제목\",\"summary\":{\"first\":\"하나\"}}");
+
+        assertError(AiErrorCode.AI_RESPONSE_INVALID);
+    }
+
+    @Test
+    void 정상_종료했지만_JSON이_깨져_있으면_응답_오류로_본다() {
+        respond("end_turn", "{\"title\":\"제목\",\"summ");
+
+        assertError(AiErrorCode.AI_RESPONSE_INVALID);
+    }
+
+    @Test
     void 응답을_거절하면_응답_오류로_본다() {
         respond("refusal", "");
 
