@@ -74,6 +74,7 @@ class OnboardingFlowIntegrationTest {
     @AfterEach
     void tearDown() {
         jdbcTemplate.update("DELETE FROM user_interest_category");
+        jdbcTemplate.update("DELETE FROM user_job_group");
     }
 
     @Test
@@ -175,6 +176,51 @@ class OnboardingFlowIntegrationTest {
     }
 
     @Test
+    void 직군은_보낸_순서대로_통째로_바꾸고_중복은_처음_순서로_한_번만_저장한다() throws Exception {
+        perform(patch(ONBOARDING), "{\"jobGroups\":[\"IT_DATA\",\"FINANCE_ACCOUNTING\"]}")
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.jobGroups[0]").value("IT_DATA"))
+            .andExpect(jsonPath("$.data.jobGroups[1]").value("FINANCE_ACCOUNTING"));
+
+        perform(patch(ONBOARDING), "{\"jobGroups\":[\"DESIGN\",\"DESIGN\"]}")
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.jobGroups.length()").value(1))
+            .andExpect(jsonPath("$.data.jobGroups[0]").value("DESIGN"));
+
+        perform(get(ONBOARDING), null)
+            .andExpect(jsonPath("$.data.jobGroups.length()").value(1))
+            .andExpect(jsonPath("$.data.jobGroups[0]").value("DESIGN"));
+    }
+
+    @Test
+    void 직군을_비우거나_3개_이상_보내면_INVALID_INPUT_VALUE로_응답한다() throws Exception {
+        perform(patch(ONBOARDING), "{\"jobGroups\":[]}")
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.code").value("INVALID_INPUT_VALUE"));
+        perform(patch(ONBOARDING), "{\"jobGroups\":[\"DESIGN\",\"MEDICAL\",\"IT_DATA\"]}")
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.code").value("INVALID_INPUT_VALUE"));
+    }
+
+    @Test
+    void 없는_직군_코드를_보내면_INVALID_REQUEST_BODY로_응답한다() throws Exception {
+        perform(patch(ONBOARDING), "{\"jobGroups\":[\"ASTRONAUT\"]}")
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.code").value("INVALID_REQUEST_BODY"));
+    }
+
+    @Test
+    void 직군이_없으면_나머지_필수값이_있어도_온보딩을_완료할_수_없다() throws Exception {
+        perform(patch(ONBOARDING), "{\"travelType\":\"WORKER\",\"commuteStartTime\":\"08:00\","
+            + "\"defaultCommuteMinutes\":30,\"categoryIds\":[%d]}".formatted(economyId))
+            .andExpect(status().isOk());
+
+        perform(post(ONBOARDING + "/complete"), null)
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.code").value("ONBOARDING_INCOMPLETE"));
+    }
+
+    @Test
     void 필수값이_빠졌으면_온보딩을_완료할_수_없다() throws Exception {
         perform(patch(ONBOARDING), "{\"travelType\":\"WORKER\",\"commuteStartTime\":\"08:00\","
             + "\"defaultCommuteMinutes\":30}").andExpect(status().isOk());
@@ -188,12 +234,13 @@ class OnboardingFlowIntegrationTest {
     @Test
     void 필수값을_모두_저장하면_온보딩을_완료하고_다시_요청해도_처음_완료_시각을_유지한다() throws Exception {
         perform(patch(ONBOARDING), "{\"travelType\":\"WORKER\",\"commuteStartTime\":\"07:50\","
-            + "\"defaultCommuteMinutes\":30,\"categoryIds\":[%d]}".formatted(economyId))
+            + "\"defaultCommuteMinutes\":30,\"categoryIds\":[%d],\"jobGroups\":[\"ETC_FREELANCE\"]}".formatted(economyId))
             .andExpect(status().isOk());
 
         perform(post(ONBOARDING + "/complete"), null)
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.onboardingCompleted").value(true));
+            .andExpect(jsonPath("$.data.onboardingCompleted").value(true))
+            .andExpect(jsonPath("$.data.jobGroups[0]").value("ETC_FREELANCE"));
         User completed = userRepository.findById(userId).orElseThrow();
         LocalDateTime onboardedAt = completed.getOnboardedAt();
         assertThat(onboardedAt).isNotNull();
