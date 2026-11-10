@@ -1,6 +1,8 @@
 package com.byarrival.domain.article.repository;
 
 import com.byarrival.domain.article.entity.Article;
+import com.byarrival.domain.article.entity.ArticleDifficulty;
+import com.byarrival.domain.article.entity.ArticleProcessStatus;
 import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
@@ -26,6 +28,27 @@ public interface ArticleRepository extends JpaRepository<Article, Long> {
         + "WHERE a.serviceDate = :serviceDate AND a.categoryId IN :categoryIds GROUP BY a.categoryId")
     List<CategoryArticleCount> countByCategory(@Param("serviceDate") LocalDate serviceDate,
         @Param("categoryIds") Collection<Long> categoryIds);
+
+    @Query("SELECT a.categoryId AS categoryId, a.difficulty AS difficulty, COUNT(a) AS articleCount FROM Article a "
+        + "WHERE a.serviceDate = :serviceDate AND a.processStatus = :status AND a.categoryId IS NOT NULL "
+        + "GROUP BY a.categoryId, a.difficulty")
+    List<CategoryDifficultyCount> countDifficultyByCategory(@Param("serviceDate") LocalDate serviceDate,
+        @Param("status") ArticleProcessStatus status);
+
+    @Query("SELECT a.categoryId AS categoryId, COUNT(a) AS articleCount FROM Article a "
+        + "WHERE a.serviceDate = :serviceDate AND a.recommendable = true AND a.categoryId IN :categoryIds "
+        + "GROUP BY a.categoryId")
+    List<CategoryArticleCount> countRecommendableByCategory(@Param("serviceDate") LocalDate serviceDate,
+        @Param("categoryIds") Collection<Long> categoryIds);
+
+    interface CategoryDifficultyCount {
+
+        Long getCategoryId();
+
+        ArticleDifficulty getDifficulty();
+
+        long getArticleCount();
+    }
 
     interface CategoryArticleCount {
 
