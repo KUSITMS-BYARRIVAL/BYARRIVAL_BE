@@ -101,7 +101,7 @@ GHCR 로그인은 워크플로의 `GITHUB_TOKEN`을 쓰므로 따로 등록하�
 
 ### `.env` 키 목록
 
-값을 추가하거나 바꿀 때 참고합니다. 앱이 읽는 값(`DB_*`, `REDIS_*`, `KAKAO_*`, `APPLE_*`, `JWT_SECRET`, `JAVA_OPTS`, `DISCORD_*`, `FCM_*`)은 수정 후 다음 배포부터 적용됩니다. `POSTGRES_*`는 아래 "DB·Redis 설정 변경"을 따릅니다.
+값을 추가하거나 바꿀 때 참고합니다. 앱이 읽는 값(`DB_*`, `REDIS_*`, `KAKAO_*`, `APPLE_*`, `JWT_SECRET`, `JAVA_OPTS`, `DISCORD_*`, `FCM_*`, `ANTHROPIC_API_KEY`)은 수정 후 다음 배포부터 적용됩니다. `POSTGRES_*`는 아래 "DB·Redis 설정 변경"을 따릅니다.
 
 | 키 | 값 |
 |---|---|
@@ -118,6 +118,7 @@ GHCR 로그인은 워크플로의 `GITHUB_TOKEN`을 쓰므로 따로 등록하�
 | `JAVA_OPTS` | `-Xms256m -Xmx768m` (전환 중 앱 두 개가 같이 뜨므로 4GB 서버 기준으로 제한) |
 | `DISCORD_ERROR_WEBHOOK_URL` | 서버 에러 채널 디스코드 웹훅 URL. 비우면 알림 끔 |
 | `DISCORD_BATCH_WEBHOOK_URL` | 배치·운영 채널 디스코드 웹훅 URL. 비우면 알림 끔 |
+| `ANTHROPIC_API_KEY` | AI 요약에 쓰는 Claude API 키(운영 전용 키, `sk-ant-`로 시작). 없으면 앱은 뜨지만 요약이 모두 실패함. 키의 만료일을 팀 캘린더에 적어 둠 |
 | `GRAFANA_ADMIN_PASSWORD` | Grafana `admin` 비밀번호. 없으면 Grafana를 띄우지 않음. Grafana를 처음 띄울 때만 적용되므로 이후 변경은 Grafana 화면에서 함 |
 
 ## 서버를 새로 만들 때만
