@@ -2,6 +2,7 @@ package com.byarrival.domain.route.config;
 
 import com.byarrival.domain.route.entity.RouteCondition;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.EnumMap;
 import java.util.Map;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -41,6 +42,20 @@ public record RouteProperties(
             }
         }
         difficultyRatios = new EnumMap<>(difficultyRatios);
+    }
+
+    /**
+     * 시작하기 최소 시간(분). 합계는 올림한 정수로 판정하므로 T×최소 비율을 올림한다.
+     */
+    public int minMinutes(int targetMinutes) {
+        return BigDecimal.valueOf(targetMinutes).multiply(minTimeRatio).setScale(0, RoundingMode.CEILING).intValue();
+    }
+
+    /**
+     * 담을 수 있는 최대 시간(분). 합계는 올림한 정수로 판정하므로 T×최대 비율을 내림한다.
+     */
+    public int maxMinutes(int targetMinutes) {
+        return BigDecimal.valueOf(targetMinutes).multiply(maxTimeRatio).setScale(0, RoundingMode.FLOOR).intValue();
     }
 
     public DifficultyRatio ratioOf(RouteCondition condition) {

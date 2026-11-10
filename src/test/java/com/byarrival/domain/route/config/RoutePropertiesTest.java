@@ -44,4 +44,14 @@ class RoutePropertiesTest {
 
         assertThat(properties.ratioOf(RouteCondition.CLOUDY)).isEqualTo(new DifficultyRatio(1, 4));
     }
+
+    @Test
+    void 최소_시간은_올림하고_최대_시간은_내림한다() {
+        RouteProperties properties = new RouteProperties(new BigDecimal("0.7"), new BigDecimal("1.2"), 2, RATIOS);
+
+        assertThat(properties.minMinutes(11)).isEqualTo(8);
+        assertThat(properties.maxMinutes(11)).isEqualTo(13);
+        assertThat(properties.minMinutes(10)).isEqualTo(7);
+        assertThat(properties.maxMinutes(10)).isEqualTo(12);
+    }
 }

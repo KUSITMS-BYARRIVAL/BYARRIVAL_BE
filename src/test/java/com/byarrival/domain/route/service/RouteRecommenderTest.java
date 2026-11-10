@@ -5,8 +5,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.byarrival.domain.article.entity.ArticleDifficulty;
 import com.byarrival.domain.route.config.RouteProperties;
 import com.byarrival.domain.route.config.RouteProperties.DifficultyRatio;
+import com.byarrival.domain.route.entity.RouteCard;
 import com.byarrival.domain.route.entity.RouteCondition;
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -133,6 +135,42 @@ class RouteRecommenderTest {
 
         assertThat(result.selected()).hasSize(5);
         assertThat(result.pool()).hasSize(6);
+    }
+
+    @Test
+    void T의_120퍼센트가_정수가_아니면_내림한_상한까지만_고른다() {
+        // T=11: 상한 13.2를 내림한 13분. 6.55분 두 건(13.1분, 올림 14분)은 함께 담을 수 없다
+        RouteRecommender recommender = new RouteRecommender(PROPERTIES, new Random(1));
+        List<RouteCandidate> candidates = candidates(ArticleDifficulty.EASY, "6.55", 2);
+
+        RouteRecommendation result = recommender.recommend(candidates, 11, RouteCondition.RAINY);
+
+        assertThat(result.selected()).hasSize(1);
+        assertThat(result.fallbackStep()).isEqualTo(2);
+    }
+
+    @RepeatedTest(20)
+    void 추천_구성은_담기_정책으로도_모두_담고_시작할_수_있다() {
+        RouteRecommender recommender = new RouteRecommender(PROPERTIES, new Random());
+        RouteCartPolicy policy = new RouteCartPolicy(PROPERTIES);
+        List<RouteCandidate> candidates = new ArrayList<>();
+        candidates.addAll(candidates(ArticleDifficulty.HARD, "2.35", 10));
+        candidates.addAll(candidates(ArticleDifficulty.EASY, "1.85", 10));
+
+        RouteRecommendation result = recommender.recommend(candidates, 11, RouteCondition.SUNNY);
+
+        List<RouteCard> cards = new ArrayList<>();
+        int order = 1;
+        for (RouteCandidate candidate : result.selected()) {
+            RouteCard card = RouteCard.builder()
+                .routeId(1L).articleId(candidate.articleId()).poolOrder(order).difficulty(candidate.difficulty())
+                .readingMinutes(candidate.readingMinutes()).recommended(true).build();
+            card.addToCart(order++, LocalDateTime.of(2026, 11, 10, 8, 0));
+            cards.add(card);
+        }
+        RouteCartPolicy.CartStatus cart = policy.evaluate(11, cards);
+        assertThat(cart.totalMinutes()).isLessThanOrEqualTo(cart.maxMinutes());
+        assertThat(cart.startable()).isTrue();
     }
 
     private List<RouteCandidate> candidates(ArticleDifficulty difficulty, String minutes, int count) {

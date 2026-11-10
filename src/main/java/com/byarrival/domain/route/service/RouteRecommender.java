@@ -5,6 +5,7 @@ import com.byarrival.domain.route.config.RouteProperties;
 import com.byarrival.domain.route.config.RouteProperties.DifficultyRatio;
 import com.byarrival.domain.route.entity.RouteCondition;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
@@ -33,9 +34,10 @@ public class RouteRecommender {
 
     public RouteRecommendation recommend(List<RouteCandidate> candidates, int targetMinutes, RouteCondition condition) {
         DifficultyRatio ratio = properties.ratioOf(condition);
+        // 담기·시작하기 판정(RouteCartPolicy)과 같은 정수 상·하한을 써서 추천 구성을 그대로 담고 시작할 수 있게 한다
         BigDecimal target = BigDecimal.valueOf(targetMinutes);
-        BigDecimal min = target.multiply(properties.minTimeRatio());
-        BigDecimal max = target.multiply(properties.maxTimeRatio());
+        BigDecimal min = BigDecimal.valueOf(properties.minMinutes(targetMinutes));
+        BigDecimal max = BigDecimal.valueOf(properties.maxMinutes(targetMinutes));
 
         List<RouteCandidate> hardPool = shuffled(filter(candidates, ArticleDifficulty.HARD));
         List<RouteCandidate> easyPool = shuffled(filter(candidates, ArticleDifficulty.EASY));
@@ -56,7 +58,7 @@ public class RouteRecommender {
         }
 
         int fallbackStep = FALLBACK_NONE;
-        if (total.compareTo(min) < 0) {
+        if (ceil(total).compareTo(min) < 0) {
             // 폴백 1: 난이도 비율을 풀고 남은 관심 분야 기사로 채운다. 상한은 그대로 둔다
             List<RouteCandidate> rest = new ArrayList<>(hardPool);
             rest.addAll(easyPool);
@@ -73,7 +75,7 @@ public class RouteRecommender {
                 }
             }
             // 폴백 2: 그래도 모자라면 고른 기사만으로 확정한다
-            fallbackStep = total.compareTo(min) >= 0 ? FALLBACK_FILLED : FALLBACK_SHORT;
+            fallbackStep = ceil(total).compareTo(min) >= 0 ? FALLBACK_FILLED : FALLBACK_SHORT;
         }
 
         if (selected.isEmpty()) {
@@ -140,8 +142,13 @@ public class RouteRecommender {
         return null;
     }
 
+    // 올림한 합계가 최대 시간 이하인지 본다. 최대 시간이 정수라 소수 합계로 비교해도 결과가 같다
     private boolean fits(BigDecimal total, RouteCandidate candidate, BigDecimal max) {
-        return total.add(candidate.readingMinutes()).compareTo(max) <= 0;
+        return ceil(total.add(candidate.readingMinutes())).compareTo(max) <= 0;
+    }
+
+    private static BigDecimal ceil(BigDecimal minutes) {
+        return minutes.setScale(0, RoundingMode.CEILING);
     }
 
     private List<RouteCandidate> filter(List<RouteCandidate> candidates, ArticleDifficulty difficulty) {

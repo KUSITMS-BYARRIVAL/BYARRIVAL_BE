@@ -18,9 +18,8 @@ public class RouteCartPolicy {
     private final RouteProperties properties;
 
     public CartStatus evaluate(int targetMinutes, List<RouteCard> cards) {
-        BigDecimal target = BigDecimal.valueOf(targetMinutes);
-        int minMinutes = target.multiply(properties.minTimeRatio()).setScale(0, RoundingMode.CEILING).intValue();
-        int maxMinutes = target.multiply(properties.maxTimeRatio()).setScale(0, RoundingMode.FLOOR).intValue();
+        int minMinutes = properties.minMinutes(targetMinutes);
+        int maxMinutes = properties.maxMinutes(targetMinutes);
 
         List<RouteCard> carted = cards.stream().filter(RouteCard::isCarted).toList();
         BigDecimal exactMinutes = carted.stream()
