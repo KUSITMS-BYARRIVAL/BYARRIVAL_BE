@@ -94,6 +94,36 @@ class AuthServiceTest {
     }
 
     @Test
+    void 보관_기간_안에_탈퇴한_계정이면_복원하고_신규_회원이_아니다() {
+        User user = userWithId(4L);
+        given(kakaoClient.getProviderUserId(TOKEN)).willReturn(PROVIDER_USER_ID);
+        given(userService.findActiveUser(SocialProvider.KAKAO, PROVIDER_USER_ID)).willReturn(Optional.empty());
+        given(userService.restoreWithdrawnUser(SocialProvider.KAKAO, PROVIDER_USER_ID)).willReturn(Optional.of(user));
+
+        SocialLoginResponse response = authService.socialLogin(new SocialLoginRequest(SocialProvider.KAKAO, TOKEN));
+
+        assertThat(response.userId()).isEqualTo(4L);
+        assertThat(response.isNewUser()).isFalse();
+        verify(userService, never()).signUp(any(), any());
+    }
+
+    @Test
+    void 복원하는_동안_같은_계정이_활성화되면_그_회원으로_응답한다() {
+        User user = userWithId(5L);
+        given(kakaoClient.getProviderUserId(TOKEN)).willReturn(PROVIDER_USER_ID);
+        given(userService.findActiveUser(SocialProvider.KAKAO, PROVIDER_USER_ID))
+            .willReturn(Optional.empty(), Optional.of(user));
+        given(userService.restoreWithdrawnUser(SocialProvider.KAKAO, PROVIDER_USER_ID))
+            .willThrow(new DataIntegrityViolationException("uk_users_provider_active"));
+
+        SocialLoginResponse response = authService.socialLogin(new SocialLoginRequest(SocialProvider.KAKAO, TOKEN));
+
+        assertThat(response.userId()).isEqualTo(5L);
+        assertThat(response.isNewUser()).isFalse();
+        verify(userService, never()).signUp(any(), any());
+    }
+
+    @Test
     void 동시_가입으로_유니크_제약에_걸리면_먼저_가입된_회원으로_응답한다() {
         User user = userWithId(3L);
         given(kakaoClient.getProviderUserId(TOKEN)).willReturn(PROVIDER_USER_ID);
