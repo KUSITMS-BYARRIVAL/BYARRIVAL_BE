@@ -21,4 +21,11 @@ public final class ServiceDay {
     public static LocalDate today(Clock clock) {
         return of(LocalDateTime.now(clock));
     }
+
+    /**
+     * @return 서비스일이 끝나는 시각 (다음 날 04:00)
+     */
+    public static LocalDateTime endOf(LocalDate serviceDate) {
+        return serviceDate.plusDays(1).atTime(START_HOUR, 0);
+    }
 }
