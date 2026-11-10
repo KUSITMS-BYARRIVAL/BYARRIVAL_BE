@@ -79,6 +79,14 @@ public class TokenService {
         }
     }
 
+    /**
+     * 모든 기기의 리프레시 토큰을 폐기한다(탈퇴).
+     */
+    @Transactional
+    public void revokeAll(Long userId) {
+        refreshTokenRepository.revokeAllActiveByUserId(userId, LocalDateTime.now(clock));
+    }
+
     private String generateRefreshToken() {
         byte[] bytes = new byte[REFRESH_TOKEN_BYTES];
         secureRandom.nextBytes(bytes);
