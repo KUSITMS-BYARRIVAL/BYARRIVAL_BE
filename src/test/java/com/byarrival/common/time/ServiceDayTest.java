@@ -32,4 +32,9 @@ class ServiceDayTest {
 
         assertThat(ServiceDay.today(clock)).isEqualTo(LocalDate.of(2026, 11, 2));
     }
+
+    @Test
+    void 서비스일은_다음_날_04시에_끝난다() {
+        assertThat(ServiceDay.endOf(LocalDate.of(2026, 11, 2))).isEqualTo(LocalDateTime.of(2026, 11, 3, 4, 0));
+    }
 }

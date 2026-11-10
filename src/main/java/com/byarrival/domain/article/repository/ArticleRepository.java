@@ -41,6 +41,13 @@ public interface ArticleRepository extends JpaRepository<Article, Long> {
     List<CategoryArticleCount> countRecommendableByCategory(@Param("serviceDate") LocalDate serviceDate,
         @Param("categoryIds") Collection<Long> categoryIds);
 
+    // 노선 추천 후보 풀: 그 서비스일의 추천 가능 기사 중 관심 분야에 속하고 숨기지 않은 기사.
+    // visibility는 아직 엔티티에 매핑하지 않아 네이티브 쿼리로 거른다(ix_article_recommend 인덱스 조건과 같다)
+    @Query(value = "SELECT * FROM article WHERE service_date = :serviceDate AND recommendable "
+        + "AND visibility = 'VISIBLE' AND category_id IN (:categoryIds)", nativeQuery = true)
+    List<Article> findRecommendable(@Param("serviceDate") LocalDate serviceDate,
+        @Param("categoryIds") Collection<Long> categoryIds);
+
     interface CategoryDifficultyCount {
 
         Long getCategoryId();
