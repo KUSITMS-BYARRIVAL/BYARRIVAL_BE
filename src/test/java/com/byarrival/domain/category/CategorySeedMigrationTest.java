@@ -16,7 +16,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 
 /**
- * 서비스 카테고리 seed 마이그레이션(V9)을 직접 다시 실행해 결과를 확인한다.
+ * 서비스 카테고리 seed 마이그레이션(V10)을 직접 다시 실행해 결과를 확인한다.
  * 다른 테스트가 category를 지울 수 있어 Flyway가 넣은 행 대신 스크립트를 실행한다.
  */
 @SpringBootTest
@@ -68,7 +68,7 @@ class CategorySeedMigrationTest {
     }
 
     private void runSeed() {
-        new ResourceDatabasePopulator(new ClassPathResource("db/migration/V9__insert_service_categories.sql"))
+        new ResourceDatabasePopulator(new ClassPathResource("db/migration/V10__insert_service_categories.sql"))
             .execute(dataSource);
     }
 
