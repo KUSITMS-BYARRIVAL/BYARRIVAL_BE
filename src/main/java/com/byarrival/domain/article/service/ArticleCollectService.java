@@ -192,7 +192,17 @@ public class ArticleCollectService {
      * 한 건도 없는 카테고리는 그날 추천을 할 수 없으므로 따로 돌려준다.
      */
     public CategoryFill checkCategoryFill(LocalDate serviceDate) {
-        Map<Long, Long> counts = articleSaveService.countByActiveCategory(serviceDate);
+        return toFill(articleSaveService.countByActiveCategory(serviceDate));
+    }
+
+    /**
+     * AI 가공까지 끝나 추천 후보가 된 기사 수로 같은 확인을 한다(RSS-08). 요약에 실패한 기사는 세지 않는다.
+     */
+    public CategoryFill checkRecommendableFill(LocalDate serviceDate) {
+        return toFill(articleSaveService.countRecommendableByActiveCategory(serviceDate));
+    }
+
+    private CategoryFill toFill(Map<Long, Long> counts) {
         int max = selectionProperties.maxArticlesPerCategory();
         List<Long> empty = counts.entrySet().stream()
             .filter(entry -> entry.getValue() == 0)

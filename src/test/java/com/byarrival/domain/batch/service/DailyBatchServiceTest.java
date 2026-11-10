@@ -3,12 +3,15 @@ package com.byarrival.domain.batch.service;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
+import com.byarrival.domain.article.service.ArticleAiService;
 import com.byarrival.domain.article.service.ArticleCollectService;
 import com.byarrival.domain.article.service.ArticleCollectService.CategoryFill;
 import com.byarrival.domain.feed.dto.FeedCollectResult;
@@ -23,6 +26,7 @@ import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 
 class DailyBatchServiceTest {
 
@@ -32,6 +36,7 @@ class DailyBatchServiceTest {
     private BatchRunService batchRunService;
     private FeedCollectService feedCollectService;
     private ArticleCollectService articleCollectService;
+    private ArticleAiService articleAiService;
     private BatchMonitor batchMonitor;
 
     @BeforeEach
@@ -39,8 +44,11 @@ class DailyBatchServiceTest {
         batchRunService = mock(BatchRunService.class);
         feedCollectService = mock(FeedCollectService.class);
         articleCollectService = mock(ArticleCollectService.class);
+        articleAiService = mock(ArticleAiService.class);
         batchMonitor = mock(BatchMonitor.class);
         given(articleCollectService.checkCategoryFill(any())).willReturn(new CategoryFill(List.of(), Map.of(), Map.of(1L, 20L)));
+        given(articleCollectService.checkRecommendableFill(any()))
+            .willReturn(new CategoryFill(List.of(), Map.of(), Map.of(1L, 20L)));
     }
 
     @Test
@@ -180,7 +188,7 @@ class DailyBatchServiceTest {
         CategoryFill fill = new CategoryFill(List.of(), Map.of(), Map.of(1L, 20L));
         given(batchRunService.start(SERVICE_DATE)).willReturn(Optional.of(10L));
         given(feedCollectService.collect(SERVICE_DATE)).willReturn(collected(fetchedFeed(1L)));
-        given(articleCollectService.checkCategoryFill(SERVICE_DATE)).willReturn(fill);
+        given(articleCollectService.checkRecommendableFill(SERVICE_DATE)).willReturn(fill);
 
         service(LocalDateTime.of(2026, 11, 2, 23, 45)).run();
 
@@ -231,6 +239,58 @@ class DailyBatchServiceTest {
         verify(batchMonitor).failed(eq(SERVICE_DATE), any(), eq("기사 0건 카테고리 categoryIds=[3]"), eq(fill));
     }
 
+    @Test
+    void 기사를_저장한_뒤_서비스일_기사를_AI로_가공한다() {
+        given(batchRunService.start(SERVICE_DATE)).willReturn(Optional.of(10L));
+        given(feedCollectService.collect(SERVICE_DATE)).willReturn(collected(fetchedFeed(1L)));
+
+        service(LocalDateTime.of(2026, 11, 2, 23, 45)).run();
+
+        InOrder inOrder = inOrder(articleCollectService, articleAiService, batchRunService);
+        inOrder.verify(articleCollectService).collect(any(), eq(SERVICE_DATE));
+        inOrder.verify(articleAiService).process(SERVICE_DATE);
+        inOrder.verify(batchRunService).complete(10L);
+    }
+
+    @Test
+    void 한_Feed의_기사_저장이_실패해도_저장된_기사는_AI로_가공한다() {
+        given(batchRunService.start(SERVICE_DATE)).willReturn(Optional.of(10L));
+        given(feedCollectService.collect(SERVICE_DATE)).willReturn(collected(fetchedFeed(1L), fetchedFeed(2L)));
+        given(articleCollectService.collect(argThat(feed -> feed != null && feed.feedId() == 2L), eq(SERVICE_DATE)))
+            .willThrow(new IllegalStateException("저장 실패"));
+
+        service(LocalDateTime.of(2026, 11, 2, 23, 45)).run();
+
+        verify(articleAiService).process(SERVICE_DATE);
+        verify(batchRunService).fail(10L, "기사 저장 실패 feedIds=[2]");
+    }
+
+    @Test
+    void 추천_가능_기사가_0건인_카테고리가_있으면_배치를_실패로_남긴다() {
+        CategoryFill ready = new CategoryFill(List.of(3L), Map.of(), Map.of(1L, 20L, 3L, 0L));
+        given(batchRunService.start(SERVICE_DATE)).willReturn(Optional.of(10L));
+        given(feedCollectService.collect(SERVICE_DATE)).willReturn(collected(fetchedFeed(1L)));
+        given(articleCollectService.checkRecommendableFill(SERVICE_DATE)).willReturn(ready);
+
+        service(LocalDateTime.of(2026, 11, 2, 23, 45)).run();
+
+        verify(batchRunService).fail(10L, "추천 가능 기사 0건 카테고리 categoryIds=[3]");
+        verify(batchMonitor).failed(eq(SERVICE_DATE), any(), eq("추천 가능 기사 0건 카테고리 categoryIds=[3]"), eq(ready));
+        verify(batchRunService, never()).complete(anyLong());
+    }
+
+    @Test
+    void AI_가공이_예외로_끝나면_배치를_실패로_남긴다() {
+        given(batchRunService.start(SERVICE_DATE)).willReturn(Optional.of(10L));
+        given(feedCollectService.collect(SERVICE_DATE)).willReturn(collected(fetchedFeed(1L)));
+        given(articleAiService.process(SERVICE_DATE)).willThrow(new IllegalStateException("AI 실패"));
+
+        service(LocalDateTime.of(2026, 11, 2, 23, 45)).run();
+
+        verify(batchRunService).fail(10L, "AI 실패");
+        verify(batchRunService, never()).complete(anyLong());
+    }
+
     private FeedCollectResult collected(FetchedFeed... feeds) {
         return FeedCollectResult.of(List.of(feeds), List.of());
     }
@@ -241,7 +301,7 @@ class DailyBatchServiceTest {
 
     private DailyBatchService service(LocalDateTime now) {
         Clock clock = Clock.fixed(now.atZone(KST).toInstant(), KST);
-        return new DailyBatchService(batchRunService, feedCollectService, articleCollectService, batchMonitor,
-            clock);
+        return new DailyBatchService(batchRunService, feedCollectService, articleCollectService, articleAiService,
+            batchMonitor, clock);
     }
 }

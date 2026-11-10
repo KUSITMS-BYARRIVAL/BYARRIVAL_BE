@@ -12,10 +12,13 @@ import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 /**
  * RSS로 수집한 기사. 원본을 보존하고 가공 결과(원문 주소, 읽기시간, 카테고리)를 함께 둔다.
@@ -76,8 +79,32 @@ public class Article extends BaseEntity {
     private BigDecimal readingMinutes;
 
     @Enumerated(EnumType.STRING)
+    @Column(length = 10)
+    private ArticleDifficulty difficulty;
+
+    @Column(length = 60)
+    private String summaryOneLine;
+
+    @JdbcTypeCode(SqlTypes.ARRAY)
+    @Column(columnDefinition = "varchar(30)[]")
+    private List<String> summaryKeywords;
+
+    @Column(length = 50)
+    private String summarySentence1;
+
+    @Column(length = 50)
+    private String summarySentence2;
+
+    @Column(length = 50)
+    private String summarySentence3;
+
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private ArticleProcessStatus processStatus;
+
+    // 추천 후보 여부(RSS-08). 카테고리·난이도·요약·읽기시간이 모두 있어야 true가 된다(DB 제약 ck_article_recommendable)
+    @Column(nullable = false)
+    private boolean recommendable;
 
     @Builder(builderMethodName = "collected")
     private Article(Long feedId, Long categoryId, String guid, String originalUrl, String title, String pressName,
@@ -99,5 +126,28 @@ public class Article extends BaseEntity {
         this.sourceUrl = sourceUrl;
         this.readingMinutes = readingMinutes;
         this.processStatus = ArticleProcessStatus.CLEANED;
+    }
+
+    /**
+     * 검증을 통과한 한 줄 요약·3문장 요약·핵심 키워드와 요약에 쓴 난이도를 저장한다(AI-02).
+     */
+    public void markSummarized(ArticleDifficulty difficulty, String oneLine, List<String> summary,
+        List<String> keywords) {
+        this.difficulty = difficulty;
+        this.summaryOneLine = oneLine;
+        this.summaryKeywords = List.copyOf(keywords);
+        this.summarySentence1 = summary.get(0);
+        this.summarySentence2 = summary.get(1);
+        this.summarySentence3 = summary.get(2);
+        this.processStatus = ArticleProcessStatus.SUMMARIZED;
+        markReadyIfComplete();
+    }
+
+    // 카테고리가 매핑되고 읽기시간까지 계산된 기사만 추천 후보가 된다(RSS-08)
+    private void markReadyIfComplete() {
+        if (categoryId != null && readingMinutes != null) {
+            this.processStatus = ArticleProcessStatus.READY;
+            this.recommendable = true;
+        }
     }
 }
