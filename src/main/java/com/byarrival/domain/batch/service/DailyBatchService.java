@@ -1,6 +1,7 @@
 package com.byarrival.domain.batch.service;
 
 import com.byarrival.common.time.ServiceDay;
+import com.byarrival.domain.article.service.ArticleAiService;
 import com.byarrival.domain.article.service.ArticleCollectService;
 import com.byarrival.domain.article.service.ArticleCollectService.CategoryFill;
 import com.byarrival.domain.feed.dto.FeedCollectResult;
@@ -27,6 +28,7 @@ public class DailyBatchService {
     private final BatchRunService batchRunService;
     private final FeedCollectService feedCollectService;
     private final ArticleCollectService articleCollectService;
+    private final ArticleAiService articleAiService;
     private final BatchMonitor batchMonitor;
     private final Clock clock;
 
@@ -50,8 +52,11 @@ public class DailyBatchService {
             }
             List<FetchedFeed> fetchedFeeds = collectResult.fetchedFeeds();
             List<Long> saveFailedFeedIds = saveArticles(fetchedFeeds, serviceDate);
+            // 난이도 판정과 3줄 요약(AI-01, AI-02). 일부 Feed·카테고리가 실패해도 저장된 기사는 먼저 가공해
+            // 나머지 카테고리라도 추천할 수 있게 한다. 요약까지 끝난 기사만 추천 후보가 된다(RSS-08)
+            articleAiService.process(serviceDate);
             if (!saveFailedFeedIds.isEmpty()) {
-                // 다시 실행할 수 있도록 실패로 남긴다. 이미 저장된 기사는 재실행 때 건너뛴다.
+                // 다시 실행할 수 있도록 실패로 남긴다. 이미 저장·가공된 기사는 재실행 때 건너뛴다.
                 fail(batchRunId.get(), serviceDate, startedAt, "기사 저장 실패 feedIds=" + saveFailedFeedIds);
                 return;
             }
@@ -67,8 +72,16 @@ public class DailyBatchService {
                 batchMonitor.failed(serviceDate, startedAt, reason, fill);
                 return;
             }
+            CategoryFill ready = articleCollectService.checkRecommendableFill(serviceDate);
+            if (!ready.emptyCategoryIds().isEmpty()) {
+                // 요약을 하나도 못 해 그날 추천을 할 수 없는 카테고리. 다시 실행하면 남은 기사만 가공한다
+                String reason = "추천 가능 기사 0건 카테고리 categoryIds=" + ready.emptyCategoryIds();
+                batchRunService.fail(batchRunId.get(), reason);
+                batchMonitor.failed(serviceDate, startedAt, reason, ready);
+                return;
+            }
             batchRunService.complete(batchRunId.get());
-            batchMonitor.completed(serviceDate, startedAt, fill);
+            batchMonitor.completed(serviceDate, startedAt, ready);
             log.info("[DailyBatch] serviceDate={} 완료 - 수집 Feed {}개", serviceDate, fetchedFeeds.size());
         } catch (RuntimeException e) {
             log.error("[DailyBatch] serviceDate={} 실패 - {}", serviceDate, e.getMessage(), e);

@@ -64,6 +64,43 @@ rss:
     min-hangul-ratio: 0.5
     user-agent: "Mozilla/5.0 (compatible; ByArrival/1.0)"
 
+route:
+  # 선택 기사 예상 읽기시간 합계 허용 범위: T×min-time-ratio 이상, T×max-time-ratio 이하 (RIDE-04)
+  min-time-ratio: 0.7
+  max-time-ratio: 1.2
+  # 후보 카드 풀 크기 = 추천 구성 기사 수 × pool-multiplier
+  pool-multiplier: 2
+  # 컨디션별 HARD:EASY 비율 (기사 수 기준)
+  difficulty-ratios:
+    SUNNY: { hard: 3, easy: 2 }
+    NORMAL: { hard: 2, easy: 3 }
+    CLOUDY: { hard: 1, easy: 4 }
+    RAINY: { hard: 1, easy: 4 }
+
+ai:
+  anthropic:
+    # 비어 있으면 AI 호출이 인증 실패로 끝난다(로컬·테스트)
+    api-key: ${ANTHROPIC_API_KEY:}
+    timeout: 60s
+    max-retries: 2
+    # 알림의 예상 비용 계산용. 요약·난이도 모두 Haiku 5.5, 프롬프트 10만 토큰 이하 기준(2026-11 공식 가격)
+    input-price-per-million-tokens: 0.10
+    output-price-per-million-tokens: 0.50
+  summary:
+    model: claude-haiku-5-5
+    max-tokens: 4000
+    # low는 30자 제한을 자주 넘겨(2026-11-10 실제 기사 5건 모두 실패) medium을 쓴다
+    effort: medium
+    concurrency: 8
+    max-retries: 3
+  difficulty:
+    # 카테고리 하나(최대 20건)를 한 번에 판정한다. 상대 비교라 생각을 깊게 하지 않아도 된다
+    model: claude-haiku-5-5
+    max-tokens: 4000
+    effort: low
+    lead-length: 400
+    max-retries: 3
+
 jwt:
   secret: ${JWT_SECRET:}
   access-token-validity: 24h
