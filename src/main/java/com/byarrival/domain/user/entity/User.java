@@ -9,6 +9,8 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -40,8 +42,18 @@ public class User extends BaseEntity {
     private String profileImageUrl;
 
     @Enumerated(EnumType.STRING)
+    @Column(length = 20)
+    private TravelType travelType;
+
+    private LocalTime commuteStartTime;
+
+    private Integer defaultCommuteMinutes;
+
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private OnboardingStatus onboardingStatus;
+
+    private LocalDateTime onboardedAt;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
@@ -64,6 +76,33 @@ public class User extends BaseEntity {
 
     public void updateNotificationPermission(NotificationPermission permission) {
         this.notificationPermission = permission;
+    }
+
+    public void changeNickname(String nickname) {
+        this.nickname = nickname;
+    }
+
+    public void changeTravelType(TravelType travelType) {
+        this.travelType = travelType;
+    }
+
+    public void changeCommuteStartTime(LocalTime commuteStartTime) {
+        this.commuteStartTime = commuteStartTime;
+    }
+
+    public void changeDefaultCommuteMinutes(int defaultCommuteMinutes) {
+        this.defaultCommuteMinutes = defaultCommuteMinutes;
+    }
+
+    /**
+     * 이미 완료했으면 처음 완료한 시각을 유지한다.
+     */
+    public void completeOnboarding(LocalDateTime now) {
+        if (isOnboardingCompleted()) {
+            return;
+        }
+        this.onboardingStatus = OnboardingStatus.COMPLETED;
+        this.onboardedAt = now;
     }
 
     public boolean isOnboardingCompleted() {
