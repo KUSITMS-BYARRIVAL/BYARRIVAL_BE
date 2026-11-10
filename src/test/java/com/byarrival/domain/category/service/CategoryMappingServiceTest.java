@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.byarrival.support.TestcontainersConfig;
 import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -21,6 +22,8 @@ class CategoryMappingServiceTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    // 마이그레이션이 넣은 서비스 카테고리 8개가 남아 있으면 결과가 섞이므로 비우고 시작한다
+    @BeforeEach
     @AfterEach
     void tearDown() {
         jdbcTemplate.update("DELETE FROM category");

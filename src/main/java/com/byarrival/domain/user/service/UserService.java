@@ -5,13 +5,17 @@ import com.byarrival.common.exception.CommonErrorCode;
 import com.byarrival.domain.term.service.TermService;
 import com.byarrival.domain.user.dto.response.NotificationPermissionResponse;
 import com.byarrival.domain.user.dto.response.UserMeResponse;
+import com.byarrival.domain.user.entity.JobGroup;
 import com.byarrival.domain.user.entity.NotificationPermission;
 import com.byarrival.domain.user.entity.SocialProvider;
 import com.byarrival.domain.user.entity.User;
 import com.byarrival.domain.user.entity.UserInterestCategory;
+import com.byarrival.domain.user.entity.UserJobGroup;
 import com.byarrival.domain.user.entity.UserStatus;
 import com.byarrival.domain.user.repository.UserInterestCategoryRepository;
+import com.byarrival.domain.user.repository.UserJobGroupRepository;
 import com.byarrival.domain.user.repository.UserRepository;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -28,6 +32,7 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final UserInterestCategoryRepository userInterestCategoryRepository;
+    private final UserJobGroupRepository userJobGroupRepository;
     private final TermService termService;
 
     @Transactional(readOnly = true)
@@ -87,6 +92,27 @@ public class UserService {
             .distinct()
             .map(categoryId -> UserInterestCategory.of(userId, categoryId))
             .toList());
+    }
+
+    /**
+     * 고른 순서대로 돌려준다.
+     */
+    @Transactional(readOnly = true)
+    public List<JobGroup> findJobGroups(Long userId) {
+        return userJobGroupRepository.findJobGroupsByUserId(userId);
+    }
+
+    /**
+     * 직군을 통째로 바꾸고 목록 순서를 고른 순서로 저장한다. 개수·중복 검증은 호출하는 쪽에서 한다.
+     */
+    @Transactional
+    public void replaceJobGroups(Long userId, List<JobGroup> jobGroups) {
+        userJobGroupRepository.deleteAllByUserIdInBatch(userId);
+        List<UserJobGroup> rows = new ArrayList<>();
+        for (int i = 0; i < jobGroups.size(); i++) {
+            rows.add(UserJobGroup.of(userId, jobGroups.get(i), i + 1));
+        }
+        userJobGroupRepository.saveAll(rows);
     }
 
     /**
