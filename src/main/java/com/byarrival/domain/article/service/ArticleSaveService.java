@@ -84,6 +84,23 @@ public class ArticleSaveService {
     /**
      * @return 활성 서비스 카테고리별로 이 서비스일에 저장된 기사 수. 저장된 기사가 없는 카테고리는 0
      */
+    /**
+     * 활성 카테고리별 추천 후보(RSS-08) 기사 수. 기사가 없는 카테고리는 0으로 채운다.
+     */
+    @Transactional(readOnly = true)
+    public Map<Long, Long> countRecommendableByActiveCategory(LocalDate serviceDate) {
+        Set<Long> categoryIds = categoryMappingService.getActiveCategoryIds();
+        Map<Long, Long> counts = new HashMap<>();
+        if (categoryIds.isEmpty()) {
+            return counts;
+        }
+        categoryIds.forEach(categoryId -> counts.put(categoryId, 0L));
+        for (CategoryArticleCount count : articleRepository.countRecommendableByCategory(serviceDate, categoryIds)) {
+            counts.put(count.getCategoryId(), count.getArticleCount());
+        }
+        return counts;
+    }
+
     @Transactional(readOnly = true)
     public Map<Long, Long> countByActiveCategory(LocalDate serviceDate) {
         Set<Long> categoryIds = categoryMappingService.getActiveCategoryIds();
