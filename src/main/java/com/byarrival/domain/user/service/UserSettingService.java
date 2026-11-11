@@ -20,7 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 마이 화면의 프로필·개인 설정 변경. 바꾼 값은 다음 노선부터 반영되고 이미 만든 노선의 스냅샷은 그대로다.
- * 모든 변경은 바꾼 뒤의 내 정보 전체를 돌려준다.
+ * 모든 변경은 바꾼 뒤의 내 정보 전체를 돌려준다. 같은 회원의 변경이 서로 덮어쓰지 않도록 회원 행을 잠그고 처리한다.
  */
 @Service
 @RequiredArgsConstructor
@@ -34,7 +34,7 @@ public class UserSettingService {
      */
     @Transactional
     public UserMeResponse updateMe(Long userId, UserUpdateRequest request) {
-        User user = userService.getActiveUser(userId);
+        User user = userService.getActiveUserForUpdate(userId);
         if (request.nickname() != null) {
             user.changeNickname(userProfileValidator.validNickname(request.nickname()));
         }
@@ -49,7 +49,7 @@ public class UserSettingService {
 
     @Transactional
     public UserMeResponse replaceInterestCategories(Long userId, List<Long> categoryIds) {
-        userService.getActiveUser(userId);
+        userService.getActiveUserForUpdate(userId);
         userProfileValidator.validateCategories(categoryIds);
         userService.replaceInterestCategories(userId, categoryIds);
         return userService.getMe(userId);
@@ -60,7 +60,7 @@ public class UserSettingService {
      */
     @Transactional
     public UserMeResponse replaceWeeklyCommute(Long userId, List<DailyCommuteRequest> days) {
-        User user = userService.getActiveUser(userId);
+        User user = userService.getActiveUserForUpdate(userId);
         if (days.isEmpty()) {
             throw new BusinessException(UserErrorCode.NO_COMMUTE_DAY);
         }
@@ -83,7 +83,7 @@ public class UserSettingService {
      */
     @Transactional
     public UserMeResponse replaceJobGroups(Long userId, List<JobGroup> jobGroups) {
-        userService.getActiveUser(userId);
+        userService.getActiveUserForUpdate(userId);
         List<JobGroup> requested = jobGroups.stream().distinct().toList();
         List<JobGroup> ordered = new ArrayList<>();
         for (JobGroup existing : userService.findJobGroups(userId)) {

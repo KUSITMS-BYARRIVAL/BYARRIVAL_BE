@@ -117,6 +117,15 @@ public class UserService {
     }
 
     /**
+     * 설정을 바꾸기 전에 회원 행을 잠그고 가져온다. 같은 회원의 변경 요청은 앞 트랜잭션이 끝날 때까지 기다린다.
+     * 호출하는 쪽의 트랜잭션 안에서 부른다. 탈퇴했거나 없는 회원이면 UNAUTHORIZED로 응답한다.
+     */
+    public User getActiveUserForUpdate(Long userId) {
+        return userRepository.findForUpdate(userId, UserStatus.ACTIVE)
+            .orElseThrow(() -> new BusinessException(CommonErrorCode.UNAUTHORIZED));
+    }
+
+    /**
      * 탈퇴했거나 없는 회원이면 UNAUTHORIZED로 응답해 앱이 로그인 화면으로 이동하게 한다.
      * 엔티티를 바꾸려면 호출하는 쪽의 트랜잭션 안에서 부른다.
      */
