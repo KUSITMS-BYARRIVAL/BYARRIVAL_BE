@@ -13,6 +13,21 @@ ALTER TABLE users
     ADD COLUMN sat_start_time TIME,
     ADD COLUMN sun_start_time TIME;
 
+-- 이미 온보딩을 마쳤는데 요일별 값이 하나도 없는 회원은 새로 온보딩을 마친 회원과 같게 월~금을 기본값으로 채운다.
+-- 0분을 '설정하지 않음'으로 바꾸기 전에 골라야 일부러 쉬는 날(0분)로 둔 회원을 빈 회원으로 착각하지 않는다.
+-- 시작 시각은 아래에서 이동시간이 있는 요일에 기본 출근 시각으로 채운다.
+UPDATE users
+SET mon_minutes = default_commute_minutes,
+    tue_minutes = default_commute_minutes,
+    wed_minutes = default_commute_minutes,
+    thu_minutes = default_commute_minutes,
+    fri_minutes = default_commute_minutes
+WHERE onboarding_status = 'COMPLETED'
+  AND commute_start_time IS NOT NULL
+  AND default_commute_minutes IS NOT NULL
+  AND mon_minutes IS NULL AND tue_minutes IS NULL AND wed_minutes IS NULL AND thu_minutes IS NULL
+  AND fri_minutes IS NULL AND sat_minutes IS NULL AND sun_minutes IS NULL;
+
 -- 기존 0분(쉬는 날)은 '설정하지 않음'으로 바꾸고, 이동시간만 있던 요일은 기본 출근 시각으로 채운다.
 -- 출근 시각이 없어 채울 수 없으면 그 요일 설정을 비운다.
 UPDATE users SET mon_minutes = NULL WHERE mon_minutes = 0 OR (mon_minutes IS NOT NULL AND commute_start_time IS NULL);
