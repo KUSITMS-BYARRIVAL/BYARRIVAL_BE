@@ -1,20 +1,17 @@
 package com.byarrival.domain.onboarding.service;
 
 import com.byarrival.common.exception.BusinessException;
-import com.byarrival.domain.category.service.CategoryMappingService;
-import com.byarrival.domain.onboarding.config.OnboardingProperties;
 import com.byarrival.domain.onboarding.dto.request.OnboardingUpdateRequest;
 import com.byarrival.domain.onboarding.dto.response.OnboardingResponse;
 import com.byarrival.domain.onboarding.exception.OnboardingErrorCode;
 import com.byarrival.domain.user.entity.JobGroup;
 import com.byarrival.domain.user.entity.User;
+import com.byarrival.domain.user.service.UserProfileValidator;
 import com.byarrival.domain.user.service.UserService;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
-import java.util.Set;
-import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,11 +23,8 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class OnboardingService {
 
-    private static final Pattern NICKNAME_CHARACTERS = Pattern.compile("^[가-힣a-zA-Z0-9]+$");
-
     private final UserService userService;
-    private final CategoryMappingService categoryMappingService;
-    private final OnboardingProperties properties;
+    private final UserProfileValidator userProfileValidator;
     private final Clock clock;
 
     @Transactional(readOnly = true)
@@ -46,7 +40,7 @@ public class OnboardingService {
     public OnboardingResponse updateOnboarding(Long userId, OnboardingUpdateRequest request) {
         User user = userService.getActiveUser(userId);
         if (request.nickname() != null) {
-            user.changeNickname(validNickname(request.nickname()));
+            user.changeNickname(userProfileValidator.validNickname(request.nickname()));
         }
         if (request.travelType() != null) {
             user.changeTravelType(request.travelType());
@@ -55,10 +49,10 @@ public class OnboardingService {
             user.changeCommuteStartTime(request.commuteStartTime().truncatedTo(ChronoUnit.MINUTES));
         }
         if (request.defaultCommuteMinutes() != null) {
-            user.changeDefaultCommuteMinutes(validCommuteMinutes(request.defaultCommuteMinutes()));
+            user.changeDefaultCommuteMinutes(userProfileValidator.validCommuteMinutes(request.defaultCommuteMinutes()));
         }
         if (request.categoryIds() != null) {
-            validateCategories(request.categoryIds());
+            userProfileValidator.validateCategories(request.categoryIds());
             userService.replaceInterestCategories(userId, request.categoryIds());
         }
         if (request.jobGroups() != null) {
@@ -93,30 +87,5 @@ public class OnboardingService {
         Long userId = user.getId();
         return OnboardingResponse.of(user, userService.findInterestCategoryIds(userId),
             userService.findJobGroups(userId));
-    }
-
-    private String validNickname(String nickname) {
-        String stripped = nickname.strip();
-        int length = stripped.codePointCount(0, stripped.length());
-        if (length < properties.nicknameMinLength() || length > properties.nicknameMaxLength()
-            || !NICKNAME_CHARACTERS.matcher(stripped).matches()) {
-            throw new BusinessException(OnboardingErrorCode.INVALID_NICKNAME);
-        }
-        return stripped;
-    }
-
-    private int validCommuteMinutes(int minutes) {
-        boolean inRange = minutes >= properties.commuteMinutesMin() && minutes <= properties.commuteMinutesMax();
-        if (!inRange || minutes % properties.commuteMinutesStep() != 0) {
-            throw new BusinessException(OnboardingErrorCode.INVALID_COMMUTE_MINUTES);
-        }
-        return minutes;
-    }
-
-    private void validateCategories(List<Long> categoryIds) {
-        Set<Long> activeIds = categoryMappingService.getActiveCategoryIds();
-        if (!activeIds.containsAll(categoryIds)) {
-            throw new BusinessException(OnboardingErrorCode.INVALID_CATEGORY);
-        }
     }
 }

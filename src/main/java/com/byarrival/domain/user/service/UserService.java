@@ -51,7 +51,8 @@ public class UserService {
     @Transactional(readOnly = true)
     public UserMeResponse getMe(Long userId) {
         User user = getActiveUser(userId);
-        return UserMeResponse.of(user, termService.hasAgreedRequiredTerms(userId));
+        return UserMeResponse.of(user, termService.hasAgreedRequiredTerms(userId), findInterestCategoryIds(userId),
+            findJobGroups(userId));
     }
 
     @Transactional
@@ -113,6 +114,15 @@ public class UserService {
             rows.add(UserJobGroup.of(userId, jobGroups.get(i), i + 1));
         }
         userJobGroupRepository.saveAll(rows);
+    }
+
+    /**
+     * 설정을 바꾸기 전에 회원 행을 잠그고 가져온다. 같은 회원의 변경 요청은 앞 트랜잭션이 끝날 때까지 기다린다.
+     * 호출하는 쪽의 트랜잭션 안에서 부른다. 탈퇴했거나 없는 회원이면 UNAUTHORIZED로 응답한다.
+     */
+    public User getActiveUserForUpdate(Long userId) {
+        return userRepository.findForUpdate(userId, UserStatus.ACTIVE)
+            .orElseThrow(() -> new BusinessException(CommonErrorCode.UNAUTHORIZED));
     }
 
     /**

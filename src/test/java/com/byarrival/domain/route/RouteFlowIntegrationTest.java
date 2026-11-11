@@ -323,8 +323,11 @@ class RouteFlowIntegrationTest {
 
     private Long newUser(Integer defaultMinutes, int tuesdayMinutes, Long interestCategoryId) {
         Long userId = userRepository.save(User.signUp(SocialProvider.KAKAO, UUID.randomUUID().toString())).getId();
-        jdbcTemplate.update("UPDATE users SET default_commute_minutes = ?, tue_minutes = ? WHERE id = ?",
-            defaultMinutes, tuesdayMinutes, userId);
+        // 요일별 설정은 시작 시각과 함께 저장한다. 0분은 설정하지 않은 요일(쉬는 날)로 둔다
+        Integer tuesday = tuesdayMinutes == 0 ? null : tuesdayMinutes;
+        jdbcTemplate.update("UPDATE users SET default_commute_minutes = ?, tue_minutes = ?, "
+                + "tue_start_time = CASE WHEN CAST(? AS INTEGER) IS NULL THEN NULL ELSE TIME '08:00' END WHERE id = ?",
+            defaultMinutes, tuesday, tuesday, userId);
         jdbcTemplate.update("INSERT INTO user_interest_category (user_id, category_id) VALUES (?, ?)",
             userId, interestCategoryId);
         return userId;
