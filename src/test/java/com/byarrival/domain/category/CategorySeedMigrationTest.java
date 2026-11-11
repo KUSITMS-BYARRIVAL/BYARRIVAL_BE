@@ -35,6 +35,8 @@ class CategorySeedMigrationTest {
     @BeforeEach
     @AfterEach
     void clear() {
+        // Feed 매핑(V12)이 카테고리를 참조하므로 먼저 지운다
+        jdbcTemplate.update("DELETE FROM category_mapping");
         jdbcTemplate.update("DELETE FROM category");
     }
 
