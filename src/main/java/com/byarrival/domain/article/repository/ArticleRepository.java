@@ -48,6 +48,9 @@ public interface ArticleRepository extends JpaRepository<Article, Long> {
     List<Article> findRecommendable(@Param("serviceDate") LocalDate serviceDate,
         @Param("categoryIds") Collection<Long> categoryIds);
 
+    // 같은 사건 정리 대상: 그 서비스일의 추천 후보. 먼저 고른(먼저 저장한) 기사부터 읽는다
+    List<Article> findAllByServiceDateAndRecommendableTrueOrderById(LocalDate serviceDate);
+
     interface CategoryDifficultyCount {
 
         Long getCategoryId();
