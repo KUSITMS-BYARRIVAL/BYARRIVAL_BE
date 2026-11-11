@@ -51,7 +51,8 @@ public class UserService {
     @Transactional(readOnly = true)
     public UserMeResponse getMe(Long userId) {
         User user = getActiveUser(userId);
-        return UserMeResponse.of(user, termService.hasAgreedRequiredTerms(userId));
+        return UserMeResponse.of(user, termService.hasAgreedRequiredTerms(userId), findInterestCategoryIds(userId),
+            findJobGroups(userId));
     }
 
     @Transactional
