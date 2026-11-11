@@ -145,6 +145,45 @@ class ArticleStoryServiceTest {
         assertThat(recommendable(itOther)).isTrue();
     }
 
+    @Test
+    void 재실행으로_남길_기사가_바뀌면_기존_중복_기록도_새로_남긴_기사로_옮긴다() {
+        // 첫 실행에서 요약에 실패해 후보가 아니던 기사가 재실행에서 후보가 된 경우
+        Long latecomer = newArticle(economy);
+        jdbcTemplate.update("UPDATE article SET recommendable = FALSE, process_status = 'CLEANED' WHERE id = ?",
+            latecomer);
+        Long kept = newArticle(economy);
+        Long economyOther = newArticle(economy);
+        Long removed = newArticle(it);
+        Long itOther = newArticle(it);
+        given(grouper.group(any())).willReturn(grouped(Set.of(kept, removed)));
+        articleStoryService.dedupe(SERVICE_DATE);
+
+        jdbcTemplate.update("UPDATE article SET recommendable = TRUE, process_status = 'READY' WHERE id = ?",
+            latecomer);
+        given(grouper.group(any())).willReturn(grouped(Set.of(latecomer, kept)));
+        articleStoryService.dedupe(SERVICE_DATE);
+
+        assertThat(recommendable(latecomer)).isTrue();
+        assertThat(recommendable(kept)).isFalse();
+        assertThat(duplicateOf(kept)).isEqualTo(latecomer);
+        assertThat(duplicateOf(removed)).isEqualTo(latecomer);
+        assertThat(recommendable(economyOther)).isTrue();
+        assertThat(recommendable(itOther)).isTrue();
+    }
+
+    @Test
+    void 묶기_중_예상하지_못한_오류가_나도_아무_기사도_빼지_않고_넘어간다() {
+        Long first = newArticle(economy);
+        Long second = newArticle(it);
+        given(grouper.group(any())).willThrow(new IllegalStateException("예상 못 한 오류"));
+
+        StoryResult result = articleStoryService.dedupe(SERVICE_DATE);
+
+        assertThat(result.succeeded()).isFalse();
+        assertThat(recommendable(first)).isTrue();
+        assertThat(recommendable(second)).isTrue();
+    }
+
     @SafeVarargs
     private GroupResult grouped(Set<Long>... groups) {
         return new GroupResult(List.of(groups), 1, new TokenUsage(15000, 2500));

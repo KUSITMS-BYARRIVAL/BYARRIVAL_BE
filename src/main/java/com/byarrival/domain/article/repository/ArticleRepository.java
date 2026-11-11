@@ -7,6 +7,7 @@ import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -50,6 +51,11 @@ public interface ArticleRepository extends JpaRepository<Article, Long> {
 
     // 같은 사건 정리 대상: 그 서비스일의 추천 후보. 먼저 고른(먼저 저장한) 기사부터 읽는다
     List<Article> findAllByServiceDateAndRecommendableTrueOrderById(LocalDate serviceDate);
+
+    // 추천에서 뺀 기사를 가리키던 중복 기록을 새로 남긴 기사로 옮긴다(배치 재실행으로 남길 기사가 바뀐 경우)
+    @Modifying
+    @Query("UPDATE Article a SET a.duplicateOfArticleId = :representativeId WHERE a.duplicateOfArticleId = :removedId")
+    int repointDuplicates(@Param("removedId") Long removedId, @Param("representativeId") Long representativeId);
 
     interface CategoryDifficultyCount {
 
