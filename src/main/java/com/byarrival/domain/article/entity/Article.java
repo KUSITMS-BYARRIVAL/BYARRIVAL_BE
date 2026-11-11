@@ -106,6 +106,9 @@ public class Article extends BaseEntity {
     @Column(nullable = false)
     private boolean recommendable;
 
+    // 같은 사건으로 묶여 추천에서 뺀 기사면, 남긴 기사(같은 사건 대표)의 ID
+    private Long duplicateOfArticleId;
+
     @Builder(builderMethodName = "collected")
     private Article(Long feedId, Long categoryId, String guid, String originalUrl, String title, String pressName,
         String rssCategory, LocalDateTime publishedAt, String rawContent, LocalDate serviceDate) {
@@ -141,6 +144,14 @@ public class Article extends BaseEntity {
         this.summarySentence3 = summary.get(2);
         this.processStatus = ArticleProcessStatus.SUMMARIZED;
         markReadyIfComplete();
+    }
+
+    /**
+     * 같은 사건의 다른 기사를 남기고 이 기사는 추천에서 뺀다.
+     */
+    public void markDuplicateOf(Long representativeArticleId) {
+        this.duplicateOfArticleId = representativeArticleId;
+        this.recommendable = false;
     }
 
     // 카테고리가 매핑되고 읽기시간까지 계산된 기사만 추천 후보가 된다(RSS-08)

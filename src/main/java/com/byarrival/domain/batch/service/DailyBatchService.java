@@ -2,6 +2,7 @@ package com.byarrival.domain.batch.service;
 
 import com.byarrival.common.time.ServiceDay;
 import com.byarrival.domain.article.service.ArticleAiService;
+import com.byarrival.domain.article.service.ArticleStoryService;
 import com.byarrival.domain.article.service.ArticleCollectService;
 import com.byarrival.domain.article.service.ArticleCollectService.CategoryFill;
 import com.byarrival.domain.feed.dto.FeedCollectResult;
@@ -29,6 +30,7 @@ public class DailyBatchService {
     private final FeedCollectService feedCollectService;
     private final ArticleCollectService articleCollectService;
     private final ArticleAiService articleAiService;
+    private final ArticleStoryService articleStoryService;
     private final BatchMonitor batchMonitor;
     private final Clock clock;
 
@@ -55,6 +57,8 @@ public class DailyBatchService {
             // 난이도 판정과 3줄 요약(AI-01, AI-02). 일부 Feed·카테고리가 실패해도 저장된 기사는 먼저 가공해
             // 나머지 카테고리라도 추천할 수 있게 한다. 요약까지 끝난 기사만 추천 후보가 된다(RSS-08)
             articleAiService.process(serviceDate);
+            // 표현이 달라 수집 때 못 거른 같은 사건 기사를 AI로 묶어 1건만 추천 후보로 남긴다. 실패하면 건너뛴다
+            articleStoryService.dedupe(serviceDate);
             if (!saveFailedFeedIds.isEmpty()) {
                 // 다시 실행할 수 있도록 실패로 남긴다. 이미 저장·가공된 기사는 재실행 때 건너뛴다.
                 fail(batchRunId.get(), serviceDate, startedAt, "기사 저장 실패 feedIds=" + saveFailedFeedIds);
