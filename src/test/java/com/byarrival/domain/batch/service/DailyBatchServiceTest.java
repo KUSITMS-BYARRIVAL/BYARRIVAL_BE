@@ -12,6 +12,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import com.byarrival.domain.article.service.ArticleAiService;
+import com.byarrival.domain.article.service.ArticleStoryService;
 import com.byarrival.domain.article.service.ArticleCollectService;
 import com.byarrival.domain.article.service.ArticleCollectService.CategoryFill;
 import com.byarrival.domain.feed.dto.FeedCollectResult;
@@ -37,6 +38,7 @@ class DailyBatchServiceTest {
     private FeedCollectService feedCollectService;
     private ArticleCollectService articleCollectService;
     private ArticleAiService articleAiService;
+    private ArticleStoryService articleStoryService;
     private BatchMonitor batchMonitor;
 
     @BeforeEach
@@ -45,6 +47,7 @@ class DailyBatchServiceTest {
         feedCollectService = mock(FeedCollectService.class);
         articleCollectService = mock(ArticleCollectService.class);
         articleAiService = mock(ArticleAiService.class);
+        articleStoryService = mock(ArticleStoryService.class);
         batchMonitor = mock(BatchMonitor.class);
         given(articleCollectService.checkCategoryFill(any())).willReturn(new CategoryFill(List.of(), Map.of(), Map.of(1L, 20L)));
         given(articleCollectService.checkRecommendableFill(any()))
@@ -240,15 +243,17 @@ class DailyBatchServiceTest {
     }
 
     @Test
-    void 기사를_저장한_뒤_서비스일_기사를_AI로_가공한다() {
+    void 기사를_저장한_뒤_AI로_가공하고_같은_사건을_정리한다() {
         given(batchRunService.start(SERVICE_DATE)).willReturn(Optional.of(10L));
         given(feedCollectService.collect(SERVICE_DATE)).willReturn(collected(fetchedFeed(1L)));
 
         service(LocalDateTime.of(2026, 11, 2, 23, 45)).run();
 
-        InOrder inOrder = inOrder(articleCollectService, articleAiService, batchRunService);
+        InOrder inOrder = inOrder(articleCollectService, articleAiService, articleStoryService, batchRunService);
         inOrder.verify(articleCollectService).collect(any(), eq(SERVICE_DATE));
         inOrder.verify(articleAiService).process(SERVICE_DATE);
+        inOrder.verify(articleStoryService).dedupe(SERVICE_DATE);
+        inOrder.verify(articleCollectService).checkRecommendableFill(SERVICE_DATE);
         inOrder.verify(batchRunService).complete(10L);
     }
 
@@ -302,6 +307,6 @@ class DailyBatchServiceTest {
     private DailyBatchService service(LocalDateTime now) {
         Clock clock = Clock.fixed(now.atZone(KST).toInstant(), KST);
         return new DailyBatchService(batchRunService, feedCollectService, articleCollectService, articleAiService,
-            batchMonitor, clock);
+            articleStoryService, batchMonitor, clock);
     }
 }
