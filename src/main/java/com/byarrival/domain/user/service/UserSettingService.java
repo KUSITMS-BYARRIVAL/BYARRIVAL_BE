@@ -41,9 +41,6 @@ public class UserSettingService {
         if (request.travelType() != null) {
             user.changeTravelType(request.travelType());
         }
-        if (request.commuteStartTime() != null) {
-            user.changeCommuteStartTime(request.commuteStartTime().truncatedTo(ChronoUnit.MINUTES));
-        }
         if (request.defaultCommuteMinutes() != null) {
             user.changeDefaultCommuteMinutes(userProfileValidator.validCommuteMinutes(request.defaultCommuteMinutes()));
         }

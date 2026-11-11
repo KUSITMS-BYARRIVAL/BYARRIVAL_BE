@@ -73,8 +73,8 @@ class UserSettingFlowIntegrationTest {
 
     @Test
     void 내_정보는_프로필과_개인_설정을_함께_돌려준다() throws Exception {
-        perform(patch(ME), "{\"nickname\":\"도착이\",\"travelType\":\"WORKER\",\"commuteStartTime\":\"08:10\","
-            + "\"defaultCommuteMinutes\":40}").andExpect(status().isOk());
+        perform(patch(ME), "{\"nickname\":\"도착이\",\"travelType\":\"WORKER\",\"defaultCommuteMinutes\":40}")
+            .andExpect(status().isOk());
         perform(put(ME + "/interest-categories"), categories(economyId)).andExpect(status().isOk());
         perform(put(ME + "/job-groups"), "{\"jobGroups\":[\"DESIGN\"]}").andExpect(status().isOk());
 
@@ -82,7 +82,7 @@ class UserSettingFlowIntegrationTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.nickname").value("도착이"))
             .andExpect(jsonPath("$.data.travelType").value("WORKER"))
-            .andExpect(jsonPath("$.data.commuteStartTime").value("08:10"))
+            .andExpect(jsonPath("$.data.commuteStartTime").doesNotExist())
             .andExpect(jsonPath("$.data.defaultCommuteMinutes").value(40))
             .andExpect(jsonPath("$.data.weeklyCommute").isEmpty())
             .andExpect(jsonPath("$.data.categoryIds[0]").value(economyId))
@@ -99,6 +99,19 @@ class UserSettingFlowIntegrationTest {
             .andExpect(jsonPath("$.data.nickname").value("도착이"))
             .andExpect(jsonPath("$.data.travelType").value("STUDENT"))
             .andExpect(jsonPath("$.data.defaultCommuteMinutes").value(30));
+    }
+
+    @Test
+    void 내_정보_수정으로는_출근_시각을_바꾸지_않고_요일별_설정에서만_바꾼다() throws Exception {
+        perform(put(ME + "/weekly-commute"), "{\"days\":[" + day("MONDAY", "08:00", 30) + "]}")
+            .andExpect(status().isOk());
+
+        perform(patch(ME), "{\"commuteStartTime\":\"07:40\"}")
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.weeklyCommute[0].startTime").value("08:00"));
+        perform(put(ME + "/weekly-commute"), "{\"days\":[" + day("MONDAY", "07:40", 30) + "]}")
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.weeklyCommute[0].startTime").value("07:40"));
     }
 
     @Test

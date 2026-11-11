@@ -47,7 +47,8 @@ public class UserController {
     }
 
     @Operation(summary = "내 정보 수정",
-        description = "닉네임, 이동 유형, 기본 이동 시작 시각(HH:mm), 기본 이동시간 중 보낸 항목만 바꾼다. 다음 노선부터 반영된다.")
+        description = "닉네임, 이동 유형, 기본 이동시간 중 보낸 항목만 바꾼다. 다음 노선부터 반영된다. "
+            + "출근 시각은 요일별 이동 설정(PUT /users/me/weekly-commute)에서 바꾼다.")
     @PatchMapping("/me")
     public ApiResponse<UserMeResponse> updateMe(@LoginUserId Long userId, @Valid @RequestBody UserUpdateRequest request) {
         return ApiResponse.ok(userSettingService.updateMe(userId, request));
