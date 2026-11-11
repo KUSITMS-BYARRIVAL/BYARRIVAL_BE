@@ -43,7 +43,8 @@ class FeedFailureRecordTest {
         RssFeed feed = rssFeedRepository.findById(feedId).orElseThrow();
         assertThat(feed.isActive()).isFalse();
         assertThat(feed.getConsecutiveFailureCount()).isEqualTo(3);
-        assertThat(feedService.getActiveFeeds()).isEmpty();
+        // 마이그레이션(V12)이 넣은 구글 뉴스 Feed가 있을 수 있어 이 Feed가 빠졌는지만 본다
+        assertThat(feedService.getActiveFeeds()).extracting(RssFeed::getId).doesNotContain(feedId);
     }
 
     @Test
