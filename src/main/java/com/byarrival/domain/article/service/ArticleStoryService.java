@@ -67,7 +67,17 @@ public class ArticleStoryService {
 
         Map<Long, Article> byId = articles.stream().collect(Collectors.toMap(Article::getId, Function.identity()));
         Map<Long, Long> duplicates = chooseDuplicates(grouped.groups(), byId);
-        int marked = duplicates.isEmpty() ? 0 : store.markDuplicates(duplicates);
+        int marked;
+        try {
+            marked = duplicates.isEmpty() ? 0 : store.markDuplicates(duplicates);
+        } catch (RuntimeException e) {
+            // 저장 트랜잭션은 롤백됐다. 아무 기사도 빼지 않은 채 이 단계만 건너뛰고 배치는 계속한다
+            log.error("[같은 사건] serviceDate={} 중복 저장 실패, 건너뜀 - {}", serviceDate,
+                e.getClass().getSimpleName(), e);
+            StoryResult result = StoryResult.failed(grouped.calls(), grouped.usage());
+            notifyResult(serviceDate, result, Map.of());
+            return result;
+        }
         StoryResult result = new StoryResult(true, grouped.groups().size(), marked, grouped.calls(),
             grouped.usage());
         log.info("[같은 사건] serviceDate={} 묶음 {}개, 추천 제외 {}건", serviceDate, result.groupCount(), marked);

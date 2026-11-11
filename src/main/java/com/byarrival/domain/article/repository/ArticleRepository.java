@@ -49,8 +49,11 @@ public interface ArticleRepository extends JpaRepository<Article, Long> {
     List<Article> findRecommendable(@Param("serviceDate") LocalDate serviceDate,
         @Param("categoryIds") Collection<Long> categoryIds);
 
-    // 같은 사건 정리 대상: 그 서비스일의 추천 후보. 먼저 고른(먼저 저장한) 기사부터 읽는다
-    List<Article> findAllByServiceDateAndRecommendableTrueOrderById(LocalDate serviceDate);
+    // 같은 사건 정리 대상: 그 서비스일의 추천 후보 중 숨기지 않은 기사. 먼저 고른(먼저 저장한) 기사부터 읽는다.
+    // 숨긴 기사가 대표로 남아 공개 기사가 빠지지 않게 한다. visibility는 엔티티에 매핑하지 않아 네이티브 쿼리로 거른다
+    @Query(value = "SELECT * FROM article WHERE service_date = :serviceDate AND recommendable "
+        + "AND visibility = 'VISIBLE' ORDER BY id", nativeQuery = true)
+    List<Article> findStoryCandidates(@Param("serviceDate") LocalDate serviceDate);
 
     // 추천에서 뺀 기사를 가리키던 중복 기록을 새로 남긴 기사로 옮긴다(배치 재실행으로 남길 기사가 바뀐 경우)
     @Modifying

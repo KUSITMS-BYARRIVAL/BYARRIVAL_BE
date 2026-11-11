@@ -3,6 +3,7 @@ package com.byarrival.domain.article.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -28,6 +29,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 /**
  * 실제 DB로 같은 사건 정리를 확인한다. AI 호출(ArticleStoryGrouper)만 가짜로 바꾼다.
@@ -46,6 +48,9 @@ class ArticleStoryServiceTest {
 
     @MockitoBean
     private ArticleStoryGrouper grouper;
+
+    @MockitoSpyBean
+    private ArticleStoryStore store;
 
     private Long feedId;
     private Long economy;
@@ -182,6 +187,40 @@ class ArticleStoryServiceTest {
         assertThat(result.succeeded()).isFalse();
         assertThat(recommendable(first)).isTrue();
         assertThat(recommendable(second)).isTrue();
+    }
+
+    @Test
+    void 숨긴_기사는_정리_대상에_넣지_않아_대표로_남지_않는다() {
+        Long hidden = newArticle(economy);
+        jdbcTemplate.update("UPDATE article SET visibility = 'HIDDEN' WHERE id = ?", hidden);
+        Long visible = newArticle(economy);
+        Long other = newArticle(it);
+        given(grouper.group(any())).willReturn(grouped());
+
+        articleStoryService.dedupe(SERVICE_DATE);
+
+        ArgumentCaptor<List<StoryInput>> inputs = ArgumentCaptor.captor();
+        verify(grouper).group(inputs.capture());
+        assertThat(inputs.getValue()).extracting(StoryInput::articleId).containsExactly(visible, other);
+    }
+
+    @Test
+    void 중복_저장에_실패하면_아무_기사도_빼지_않고_쓴_토큰과_함께_넘어간다() {
+        Long first = newArticle(economy);
+        Long economyOther = newArticle(economy);
+        Long second = newArticle(it);
+        Long itOther = newArticle(it);
+        given(grouper.group(any())).willReturn(grouped(Set.of(first, second)));
+        willThrow(new IllegalStateException("잠금 시간 초과")).given(store).markDuplicates(any());
+
+        StoryResult result = articleStoryService.dedupe(SERVICE_DATE);
+
+        assertThat(result.succeeded()).isFalse();
+        assertThat(result.calls()).isEqualTo(1);
+        assertThat(result.usage()).isEqualTo(new TokenUsage(15000, 2500));
+        assertThat(recommendable(second)).isTrue();
+        assertThat(recommendable(economyOther)).isTrue();
+        assertThat(recommendable(itOther)).isTrue();
     }
 
     @SafeVarargs

@@ -20,7 +20,7 @@ public class ArticleStoryStore {
 
     @Transactional(readOnly = true)
     public List<Article> loadRecommendable(LocalDate serviceDate) {
-        return articleRepository.findAllByServiceDateAndRecommendableTrueOrderById(serviceDate);
+        return articleRepository.findStoryCandidates(serviceDate);
     }
 
     /**
