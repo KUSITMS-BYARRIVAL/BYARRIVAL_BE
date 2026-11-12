@@ -32,15 +32,14 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.ResultMatcher;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 보관함(LIB-01~05)과 기사 저장 토글(READ-04)을 실제 DB와 보안 필터로 확인한다. 테스트마다 롤백한다.
+ * 보관함(LIB-01~05)과 기사 저장 토글(READ-04)을 실제 DB와 보안 필터로 확인한다. 데이터는 테스트마다 새 사용자로 나눈다.
+ * 이용 기록(앱 접속)이 별도 트랜잭션으로 저장되므로 테스트 트랜잭션으로 묶지 않는다.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
 @Import(TestcontainersConfig.class)
-@Transactional
 class ScrapFlowIntegrationTest {
 
     @Autowired
