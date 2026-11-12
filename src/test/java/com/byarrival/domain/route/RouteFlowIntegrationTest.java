@@ -397,6 +397,9 @@ class RouteFlowIntegrationTest {
         perform(user, get("/api/v1/routes/{routeId}/stops/2", routeId), null)
             .andExpect(jsonPath("$.data.available").value(false))
             .andExpect(jsonPath("$.data.title").doesNotExist());
+        perform(user, post("/api/v1/routes/{routeId}/stops/2/read", routeId), null)
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.code").value("ROUTE_STOP_UNAVAILABLE"));
         perform(user, post("/api/v1/routes/{routeId}/stops/1/read", routeId), null)
             .andExpect(jsonPath("$.data.progress.currentStop").value(3))
             .andExpect(jsonPath("$.data.progress.remainingStops").value(1));
@@ -436,6 +439,48 @@ class RouteFlowIntegrationTest {
         perform(user, post("/api/v1/routes/{routeId}/departure", routeId), null)
             .andExpect(status().isConflict())
             .andExpect(jsonPath("$.code").value("ROUTE_INVALID_STATUS"));
+    }
+
+    @Test
+    void 완주한_노선도_서비스일이_끝난_04시가_지나면_다시_볼_수_없다() throws Exception {
+        Long userId = newUser(10, 0, categoryId);
+        TokenResponse user = tokenService.issue(userId);
+        completedRoute(userId, TODAY.minusDays(1));
+        Long routeId = jdbcTemplate.queryForObject(
+            "SELECT id FROM route WHERE user_id = ? AND service_date = ?", Long.class, userId, TODAY.minusDays(1));
+
+        perform(user, get("/api/v1/routes/{routeId}/stops/1", routeId), null)
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.code").value("ROUTE_EXPIRED"));
+        perform(user, post("/api/v1/routes/{routeId}/arrival", routeId), null)
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.code").value("ROUTE_EXPIRED"));
+        perform(user, post("/api/v1/routes/{routeId}/stops/1/read", routeId), null)
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.code").value("ROUTE_EXPIRED"));
+        // 만료돼도 완주 기록은 남아 연속 이용에 들어간다
+        assertThat(jdbcTemplate.queryForObject("SELECT status FROM route WHERE id = ?", String.class, routeId))
+            .isEqualTo("COMPLETED");
+    }
+
+    @Test
+    void 운행_중에_서비스일이_끝나면_완독도_도착도_할_수_없다() throws Exception {
+        Long userId = newUser(10, 0, categoryId);
+        TokenResponse user = tokenService.issue(userId);
+        LocalDate yesterday = TODAY.minusDays(1);
+        Long routeId = jdbcTemplate.queryForObject("""
+            INSERT INTO route (user_id, service_date, route_condition, target_minutes, status, fallback_step, expires_at,
+                started_at)
+            VALUES (?, ?, 'SUNNY', 10, 'IN_PROGRESS', 0, ?, ?)
+            RETURNING id
+            """, Long.class, userId, yesterday, ServiceDay.endOf(yesterday), yesterday.atTime(8, 0));
+
+        perform(user, post("/api/v1/routes/{routeId}/departure", routeId), null)
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.code").value("ROUTE_EXPIRED"));
+        perform(user, post("/api/v1/routes/{routeId}/arrival", routeId), null)
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.code").value("ROUTE_EXPIRED"));
     }
 
     // 후보 카드를 모두 담고 시작하기까지 한 노선 (T=10분, 3분 기사 3개 = 9분)

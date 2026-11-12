@@ -165,6 +165,9 @@ public class RouteCommandService {
             throw new BusinessException(RouteErrorCode.ROUTE_STOP_NOT_FOUND);
         }
         RouteCard card = progress.stop(stopNumber);
+        if (!progress.isAvailable(card)) {
+            throw new BusinessException(RouteErrorCode.ROUTE_STOP_UNAVAILABLE);
+        }
         boolean newlyRead = route.getStatus() == RouteStatus.IN_PROGRESS && card.markRead(now);
         return new ReadOutcome(route, card.getArticleId(), newlyRead);
     }

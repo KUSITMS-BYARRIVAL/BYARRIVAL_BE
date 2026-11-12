@@ -17,6 +17,7 @@ public enum RouteErrorCode implements ErrorCode {
     ROUTE_NOT_STARTABLE(HttpStatus.BAD_REQUEST, "담은 카드가 시작 조건을 만족하지 않습니다."),
     ROUTE_TRAVEL_TIME_NOT_SET(HttpStatus.CONFLICT, "이동시간 설정이 필요합니다."),
     ROUTE_STOP_NOT_FOUND(HttpStatus.NOT_FOUND, "노선에 없는 정거장입니다."),
+    ROUTE_STOP_UNAVAILABLE(HttpStatus.CONFLICT, "숨겨졌거나 삭제된 기사라 건너뛰어야 합니다."),
     ROUTE_NOT_ARRIVABLE(HttpStatus.BAD_REQUEST, "아직 읽지 않은 기사가 있어요.");
 
     private final HttpStatus status;

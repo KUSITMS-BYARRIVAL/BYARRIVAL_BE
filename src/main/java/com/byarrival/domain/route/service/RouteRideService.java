@@ -57,10 +57,10 @@ public class RouteRideService {
         LocalDateTime now = LocalDateTime.now(clock);
         Route route = routeRepository.findByIdAndUserId(routeId, userId)
             .orElseThrow(() -> new BusinessException(RouteErrorCode.ROUTE_NOT_FOUND));
-        RouteStatus status = route.statusAt(now);
-        if (status == RouteStatus.EXPIRED) {
+        if (route.isExpired(now)) {
             throw new BusinessException(RouteErrorCode.ROUTE_EXPIRED);
         }
+        RouteStatus status = route.getStatus();
         if (status != RouteStatus.IN_PROGRESS && status != RouteStatus.COMPLETED) {
             throw new BusinessException(RouteErrorCode.ROUTE_INVALID_STATUS);
         }

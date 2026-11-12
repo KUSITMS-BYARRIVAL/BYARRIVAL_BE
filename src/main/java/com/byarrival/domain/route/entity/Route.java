@@ -70,15 +70,18 @@ public class Route extends BaseEntity {
         this.status = RouteStatus.CREATED;
     }
 
+    /**
+     * 서비스일이 끝나는 04:00이 지났는지. 완주 여부와 상관없이 만료되며, 만료된 노선은 이어보기도 다시 보기도 할 수 없다.
+     */
     public boolean isExpired(LocalDateTime now) {
-        return status != RouteStatus.COMPLETED && !now.isBefore(expiresAt);
+        return !now.isBefore(expiresAt);
     }
 
     /**
-     * 현재 시각 기준 상태. 완주하지 않은 채 만료 시각을 넘기면 EXPIRED로 본다.
+     * 현재 시각 기준 상태. 완주하지 않은 채 만료 시각을 넘기면 EXPIRED로 본다. 완주한 노선은 완주 기록으로 COMPLETED를 유지한다.
      */
     public RouteStatus statusAt(LocalDateTime now) {
-        return isExpired(now) ? RouteStatus.EXPIRED : status;
+        return isExpired(now) && status != RouteStatus.COMPLETED ? RouteStatus.EXPIRED : status;
     }
 
     /**
