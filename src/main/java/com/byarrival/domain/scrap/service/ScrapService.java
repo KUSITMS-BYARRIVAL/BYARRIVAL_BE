@@ -226,7 +226,7 @@ public class ScrapService {
         Integer minutes = article.getReadingMinutes() == null ? null
             : article.getReadingMinutes().setScale(0, RoundingMode.CEILING).intValue();
         return new LibraryArticleResponse(scrap.getId(), article.getId(), available, article.getTitle(),
-            article.getPressName(), article.getCategoryId(), categoryNames.get(article.getCategoryId()),
+            article.getPressName(), article.getPublishedAt(), article.getCategoryId(), categoryNames.get(article.getCategoryId()),
             article.getSummaryOneLine(), minutes, available ? article.linkUrl() : null, scrap.getCreatedAt());
     }
 }
