@@ -35,8 +35,9 @@ public class AppAccessInterceptor implements HandlerInterceptor {
         }
         LocalDateTime now = LocalDateTime.now(clock);
         LocalDate today = now.toLocalDate();
-        if (!today.equals(recordedDates.put(userId, today))) {
-            usageEventRecorder.recordAppAccess(userId, today, now);
+        // 저장에 실패하면 기록하지 않은 것으로 두어 다음 요청에서 다시 시도한다
+        if (!today.equals(recordedDates.get(userId)) && usageEventRecorder.recordAppAccess(userId, today, now)) {
+            recordedDates.put(userId, today);
         }
         return true;
     }
