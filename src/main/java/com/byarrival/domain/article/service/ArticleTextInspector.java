@@ -19,6 +19,10 @@ public class ArticleTextInspector {
     // 제목의 [사진]·[포토]·【화보】 같은 말머리. 사진 위주 기사라 본문이 없어 요약할 내용이 없다.
     private static final Pattern PHOTO_TAG = Pattern.compile(
         "[\\[【(]\\s*(사진|포토|화보|포토뉴스|포토슬라이드|photo)\\s*[]】)]", Pattern.CASE_INSENSITIVE);
+    // 뉴스로 읽을 내용이 없는 기사의 말머리: [오늘의 운세]·[띠별 운세], [미리보는 ○○신문](다음 날 지면 목차),
+    // [영상]·(영상), [부고], [인사]. [인사이트]처럼 다른 말이 붙은 말머리는 거르지 않는다.
+    private static final Pattern NON_NEWS_TAG = Pattern.compile(
+        "[\\[【(]\\s*([^]】)]*운세[^]】)]*|미리보는[^]】)]*|영상|부고|인사)\\s*[]】)]");
     private static final Pattern HTML_REMNANT = Pattern.compile(
         "<[/!]?[a-zA-Z][^>]*>|&(#[0-9]{1,7}|#[xX][0-9a-fA-F]{1,6}|[a-zA-Z][a-zA-Z0-9]{1,31});");
 
@@ -38,6 +42,10 @@ public class ArticleTextInspector {
 
     public boolean isPhotoArticle(String title) {
         return title != null && PHOTO_TAG.matcher(title).find();
+    }
+
+    public boolean isNonNewsArticle(String title) {
+        return title != null && NON_NEWS_TAG.matcher(title).find();
     }
 
     public boolean isKorean(String text) {

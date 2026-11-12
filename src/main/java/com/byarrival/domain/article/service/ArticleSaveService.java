@@ -44,7 +44,8 @@ public class ArticleSaveService {
     /**
      * Feed의 Item 중 아직 저장되지 않은 기사를 Feed 순서대로 고르고, 카테고리별로 더 저장할 수 있는 수와
      * 같은 서비스일에 이미 고른 기사의 사건을 구한다. 이미 저장된 기사(GUID나 URL이 같음), 컬럼 길이를 넘는 기사,
-     * 제목을 읽을 수 없는 기사(외국어, 깨진 글자), 사진 기사([사진]·[포토] 말머리)는 뺀다.
+     * 제목을 읽을 수 없는 기사(외국어, 깨진 글자), 사진 기사([사진]·[포토] 말머리),
+     * 뉴스가 아닌 기사([오늘의 운세]·[미리보는 ○○신문]·[영상]·[부고]·[인사] 말머리)는 뺀다.
      */
     @Transactional(readOnly = true)
     public CollectPlan plan(FetchedFeed feed, LocalDate serviceDate) {
@@ -73,7 +74,7 @@ public class ArticleSaveService {
         }
 
         int skipped = feed.items().size() - mapped.size() - unmapped.size();
-        log.info("[ArticleCollect] feedId={} Item {}건 중 신규 {}건 (카테고리 미매핑 {}건), 제외 {}건 (중복·길이 초과·제목·사진)",
+        log.info("[ArticleCollect] feedId={} Item {}건 중 신규 {}건 (카테고리 미매핑 {}건), 제외 {}건 (중복·길이 초과·제목·사진·말머리)",
             feed.feedId(), feed.items().size(), mapped.size() + unmapped.size(), unmapped.size(), skipped);
         return new CollectPlan(mapped, unmapped, remainingByCategory(mapped, serviceDate), pickedStories(serviceDate));
     }
@@ -144,6 +145,10 @@ public class ArticleSaveService {
         }
         if (textInspector.isPhotoArticle(item.title())) {
             log.info("[ArticleCollect] feedId={} 사진 기사라 제외 - title={}", feedId, abbreviate(item.title()));
+            return false;
+        }
+        if (textInspector.isNonNewsArticle(item.title())) {
+            log.info("[ArticleCollect] feedId={} 뉴스가 아닌 말머리라 제외 - title={}", feedId, abbreviate(item.title()));
             return false;
         }
         return true;
