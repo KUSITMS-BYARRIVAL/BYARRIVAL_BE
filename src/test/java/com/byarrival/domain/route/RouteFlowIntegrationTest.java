@@ -342,7 +342,14 @@ class RouteFlowIntegrationTest {
             .andExpect(jsonPath("$.data.summary.length()").value(3))
             .andExpect(jsonPath("$.data.oneLine").value("한 줄 요약"))
             .andExpect(jsonPath("$.data.sourceUrl").exists())
-            .andExpect(jsonPath("$.data.read").value(false));
+            .andExpect(jsonPath("$.data.read").value(false))
+            .andExpect(jsonPath("$.data.scrapped").value(false));
+
+        // 기사 화면에서 저장하면 정거장 응답에 저장 상태가 보인다(READ-04)
+        perform(user, put("/api/v1/scraps/articles/{articleId}", articles.get(0)), null)
+            .andExpect(jsonPath("$.data.scrapped").value(true));
+        perform(user, get("/api/v1/routes/{routeId}/stops/1", routeId), null)
+            .andExpect(jsonPath("$.data.scrapped").value(true));
 
         // 다 읽기 전에는 도착할 수 없다
         perform(user, post("/api/v1/routes/{routeId}/arrival", routeId), null)
