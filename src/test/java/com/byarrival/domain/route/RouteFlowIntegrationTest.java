@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.byarrival.common.time.ServiceDay;
 import com.byarrival.domain.auth.dto.response.TokenResponse;
 import com.byarrival.domain.auth.service.TokenService;
+import com.byarrival.domain.event.service.UsageEventCleanupService;
 import com.byarrival.domain.route.entity.RecommendationLog;
 import com.byarrival.domain.route.entity.Route;
 import com.byarrival.domain.route.entity.RouteCondition;
@@ -88,6 +89,9 @@ class RouteFlowIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private UsageEventCleanupService usageEventCleanupService;
 
     private Long feedId;
     private Long categoryId;
@@ -410,6 +414,30 @@ class RouteFlowIntegrationTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.readCount").value(2))
             .andExpect(jsonPath("$.data.streakDays").value(1));
+
+        // 완주 뒤 건너뛴 기사가 다시 보이면 그때 읽은 것도 완독으로 기록한다
+        jdbcTemplate.update("UPDATE article SET visibility = 'VISIBLE', recommendable = TRUE WHERE id = ?",
+            articles.get(1));
+        perform(user, post("/api/v1/routes/{routeId}/stops/2/read", routeId), null)
+            .andExpect(jsonPath("$.data.read").value(true))
+            .andExpect(jsonPath("$.data.progress.readCount").value(3));
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM usage_event_log WHERE route_id = ? "
+            + "AND event_type = 'ARTICLE_READ'", Long.class, routeId)).isEqualTo(3);
+    }
+
+    @Test
+    void 보관_기간_6개월이_지난_이용_이벤트_로그는_파기한다() {
+        Long userId = newUser(10, 0, categoryId);
+        String insert = "INSERT INTO usage_event_log (user_id, event_type, service_date, occurred_at) "
+            + "VALUES (?, 'APP_ACCESS', ?, ?)";
+        LocalDateTime expired = NOW.minusMonths(6).minusMinutes(1);
+        LocalDateTime kept = NOW.minusMonths(6).plusMinutes(1);
+        jdbcTemplate.update(insert, userId, expired.toLocalDate(), expired);
+        jdbcTemplate.update(insert, userId, kept.toLocalDate().plusDays(1), kept);
+
+        assertThat(usageEventCleanupService.deleteExpired()).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForList("SELECT occurred_at FROM usage_event_log WHERE user_id = ?",
+            LocalDateTime.class, userId)).containsExactly(kept);
     }
 
     @Test
