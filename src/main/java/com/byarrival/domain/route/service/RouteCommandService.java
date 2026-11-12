@@ -10,6 +10,7 @@ import com.byarrival.domain.route.exception.RouteErrorCode;
 import com.byarrival.domain.route.repository.RouteCardRepository;
 import com.byarrival.domain.route.repository.RouteRepository;
 import com.byarrival.domain.route.service.RouteCartPolicy.CartStatus;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -28,6 +29,8 @@ public class RouteCommandService {
     private final RouteRepository routeRepository;
     private final RouteCardRepository routeCardRepository;
     private final RouteCartPolicy routeCartPolicy;
+    private final RideProgressReader rideProgressReader;
+    private final Clock clock;
 
     /**
      * 노선과 후보 카드 풀 스냅샷을 저장한다. 같은 서비스일에 먼저 만든 노선이 있으면 유니크 제약 위반으로 실패한다.
@@ -134,6 +137,71 @@ public class RouteCommandService {
         }
     }
 
+    /**
+     * 출발하기: 보딩패스 단계의 노선을 담은 카드로 확정하고 운행을 시작한다. 이미 운행 중이면 그대로 둔다.
+     */
+    @Transactional
+    public Route depart(Long userId, Long routeId, LocalDateTime now) {
+        Route route = lockActive(userId, routeId, now);
+        if (route.getStatus() == RouteStatus.BOARDING) {
+            route.depart(now);
+        } else if (route.getStatus() != RouteStatus.IN_PROGRESS) {
+            throw new BusinessException(RouteErrorCode.ROUTE_INVALID_STATUS);
+        }
+        return route;
+    }
+
+    /**
+     * 정거장 기사를 완독으로 기록한다([기사 보러가기]). 이미 읽은 기사면 그대로 둔다.
+     * 완주한 노선에서도 기록한다. 완주 때 숨겨져 건너뛴 기사가 다시 보이게 되면 그때 읽은 것도 완독이다(READ-02).
+     *
+     * @return 이번에 처음 읽었는지
+     */
+    @Transactional
+    public ReadOutcome read(Long userId, Long routeId, int stopNumber, LocalDateTime now) {
+        Route route = lockActive(userId, routeId, now);
+        if (route.getStatus() != RouteStatus.IN_PROGRESS && route.getStatus() != RouteStatus.COMPLETED) {
+            throw new BusinessException(RouteErrorCode.ROUTE_INVALID_STATUS);
+        }
+        RideProgress progress = rideProgressReader.read(route);
+        if (!progress.hasStop(stopNumber)) {
+            throw new BusinessException(RouteErrorCode.ROUTE_STOP_NOT_FOUND);
+        }
+        RouteCard card = progress.stop(stopNumber);
+        if (!progress.isAvailable(card)) {
+            throw new BusinessException(RouteErrorCode.ROUTE_STOP_UNAVAILABLE);
+        }
+        boolean newlyRead = card.markRead(now);
+        return new ReadOutcome(route, card.getArticleId(), newlyRead);
+    }
+
+    /**
+     * 도착하기: 남은 기사가 없으면 완주로 끝낸다. 이미 완주했으면 그대로 둔다. 만료된 노선은 완주 처리하지 않는다.
+     *
+     * @return 이번에 처음 완주했으면 true
+     */
+    @Transactional
+    public ArriveOutcome arrive(Long userId, Long routeId, LocalDateTime now) {
+        Route route = lockActive(userId, routeId, now);
+        if (route.getStatus() == RouteStatus.COMPLETED) {
+            return new ArriveOutcome(route, false);
+        }
+        if (route.getStatus() != RouteStatus.IN_PROGRESS) {
+            throw new BusinessException(RouteErrorCode.ROUTE_INVALID_STATUS);
+        }
+        if (!rideProgressReader.read(route).arrivable()) {
+            throw new BusinessException(RouteErrorCode.ROUTE_NOT_ARRIVABLE);
+        }
+        route.complete(now);
+        return new ArriveOutcome(route, true);
+    }
+
+    public record ReadOutcome(Route route, Long articleId, boolean newlyRead) {
+    }
+
+    public record ArriveOutcome(Route route, boolean newlyCompleted) {
+    }
+
     private Route lockSelectable(Long userId, Long routeId, LocalDateTime now) {
         Route route = lockActive(userId, routeId, now);
         if (route.getStatus() != RouteStatus.CREATED) {
@@ -142,10 +210,11 @@ public class RouteCommandService {
         return route;
     }
 
+    // 잠금을 기다리는 동안 04:00이 지날 수 있으므로 잠금을 얻은 뒤의 시각으로도 만료를 확인한다
     private Route lockActive(Long userId, Long routeId, LocalDateTime now) {
         Route route = routeRepository.findForUpdate(routeId, userId)
             .orElseThrow(() -> new BusinessException(RouteErrorCode.ROUTE_NOT_FOUND));
-        if (route.isExpired(now)) {
+        if (route.isExpired(now) || route.isExpired(LocalDateTime.now(clock))) {
             throw new BusinessException(RouteErrorCode.ROUTE_EXPIRED);
         }
         return route;

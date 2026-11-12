@@ -70,15 +70,18 @@ public class Route extends BaseEntity {
         this.status = RouteStatus.CREATED;
     }
 
+    /**
+     * 서비스일이 끝나는 04:00이 지났는지. 완주 여부와 상관없이 만료되며, 만료된 노선은 이어보기도 다시 보기도 할 수 없다.
+     */
     public boolean isExpired(LocalDateTime now) {
-        return status != RouteStatus.COMPLETED && !now.isBefore(expiresAt);
+        return !now.isBefore(expiresAt);
     }
 
     /**
-     * 현재 시각 기준 상태. 완주하지 않은 채 만료 시각을 넘기면 EXPIRED로 본다.
+     * 현재 시각 기준 상태. 완주하지 않은 채 만료 시각을 넘기면 EXPIRED로 본다. 완주한 노선은 완주 기록으로 COMPLETED를 유지한다.
      */
     public RouteStatus statusAt(LocalDateTime now) {
-        return isExpired(now) ? RouteStatus.EXPIRED : status;
+        return isExpired(now) && status != RouteStatus.COMPLETED ? RouteStatus.EXPIRED : status;
     }
 
     /**
@@ -87,6 +90,22 @@ public class Route extends BaseEntity {
     public void board(LocalDateTime now) {
         this.status = RouteStatus.BOARDING;
         this.boardedAt = now;
+    }
+
+    /**
+     * 출발하기: 담은 카드로 노선을 확정하고 운행을 시작한다.
+     */
+    public void depart(LocalDateTime now) {
+        this.status = RouteStatus.IN_PROGRESS;
+        this.startedAt = now;
+    }
+
+    /**
+     * 도착하기: 노선을 완주로 끝낸다.
+     */
+    public void complete(LocalDateTime now) {
+        this.status = RouteStatus.COMPLETED;
+        this.completedAt = now;
     }
 
     /**

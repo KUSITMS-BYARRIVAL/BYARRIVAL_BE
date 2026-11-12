@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.byarrival.common.time.ServiceDay;
 import com.byarrival.domain.auth.dto.response.TokenResponse;
 import com.byarrival.domain.auth.service.TokenService;
+import com.byarrival.domain.event.service.UsageEventCleanupService;
 import com.byarrival.domain.route.entity.RecommendationLog;
 import com.byarrival.domain.route.entity.Route;
 import com.byarrival.domain.route.entity.RouteCondition;
@@ -88,6 +89,9 @@ class RouteFlowIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private UsageEventCleanupService usageEventCleanupService;
 
     private Long feedId;
     private Long categoryId;
@@ -299,6 +303,231 @@ class RouteFlowIntegrationTest {
         addCard(tokenService.issue(userId), route.getId(), articleId.intValue())
             .andExpect(status().isConflict())
             .andExpect(jsonPath("$.code").value("ROUTE_EXPIRED"));
+    }
+
+    @Test
+    void 출발해서_정거장마다_원문을_열고_도착하면_완주와_연속_이용이_기록된다() throws Exception {
+        List<Long> articles = List.of(newArticle(categoryId, "EASY", "3.0", "VISIBLE"),
+            newArticle(categoryId, "EASY", "3.0", "VISIBLE"), newArticle(categoryId, "EASY", "3.0", "VISIBLE"));
+        Long userId = newUser(10, 0, categoryId);
+        TokenResponse user = tokenService.issue(userId);
+        Long routeId = boardedRoute(user, articles);
+        // 어제·그제 완주, 사흘 전은 쉬어서 오늘 완주하면 연속 3일
+        completedRoute(userId, TODAY.minusDays(1));
+        completedRoute(userId, TODAY.minusDays(2));
+        completedRoute(userId, TODAY.minusDays(4));
+
+        // 출발 전에는 정거장을 볼 수 없다
+        perform(user, get("/api/v1/routes/{routeId}/stops/1", routeId), null)
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.code").value("ROUTE_INVALID_STATUS"));
+
+        perform(user, post("/api/v1/routes/{routeId}/departure", routeId), null)
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.status").value("IN_PROGRESS"))
+            .andExpect(jsonPath("$.data.progress.totalStops").value(3))
+            .andExpect(jsonPath("$.data.progress.currentStop").value(1))
+            .andExpect(jsonPath("$.data.progress.remainingMinutes").value(9));
+        // 연타해도 같은 결과
+        perform(user, post("/api/v1/routes/{routeId}/departure", routeId), null)
+            .andExpect(jsonPath("$.data.status").value("IN_PROGRESS"));
+
+        perform(user, get("/api/v1/routes/{routeId}/stops/1", routeId), null)
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.available").value(true))
+            .andExpect(jsonPath("$.data.articleId").value(articles.get(0)))
+            .andExpect(jsonPath("$.data.title").value("테스트 기사"))
+            .andExpect(jsonPath("$.data.pressName").value("테스트일보"))
+            .andExpect(jsonPath("$.data.readingMinutes").value(3))
+            .andExpect(jsonPath("$.data.summary.length()").value(3))
+            .andExpect(jsonPath("$.data.oneLine").value("한 줄 요약"))
+            .andExpect(jsonPath("$.data.sourceUrl").exists())
+            .andExpect(jsonPath("$.data.read").value(false));
+
+        // 다 읽기 전에는 도착할 수 없다
+        perform(user, post("/api/v1/routes/{routeId}/arrival", routeId), null)
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.code").value("ROUTE_NOT_ARRIVABLE"));
+
+        perform(user, post("/api/v1/routes/{routeId}/stops/1/read", routeId), null)
+            .andExpect(jsonPath("$.data.read").value(true))
+            .andExpect(jsonPath("$.data.progress.readCount").value(1))
+            .andExpect(jsonPath("$.data.progress.currentStop").value(2))
+            .andExpect(jsonPath("$.data.progress.remainingMinutes").value(6));
+        // 같은 기사를 다시 눌러도 한 번만 센다
+        perform(user, post("/api/v1/routes/{routeId}/stops/1/read", routeId), null)
+            .andExpect(jsonPath("$.data.progress.readCount").value(1));
+
+        // 앱을 다시 열면 2번 정거장부터 이어본다
+        perform(user, get("/api/v1/routes/today"), null)
+            .andExpect(jsonPath("$.data.state").value("IN_PROGRESS"))
+            .andExpect(jsonPath("$.data.route.ride.currentStop").value(2))
+            .andExpect(jsonPath("$.data.route.ride.readCount").value(1));
+
+        perform(user, post("/api/v1/routes/{routeId}/stops/2/read", routeId), null).andExpect(status().isOk());
+        perform(user, post("/api/v1/routes/{routeId}/stops/3/read", routeId), null)
+            .andExpect(jsonPath("$.data.progress.arrivable").value(true));
+
+        perform(user, post("/api/v1/routes/{routeId}/arrival", routeId), null)
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.readCount").value(3))
+            .andExpect(jsonPath("$.data.totalStops").value(3))
+            .andExpect(jsonPath("$.data.streakDays").value(3))
+            .andExpect(jsonPath("$.data.usedMinutes").value(0));
+        // 다시 눌러도 같은 결과, 완주 후에도 오늘 노선 다시 보기 가능
+        perform(user, post("/api/v1/routes/{routeId}/arrival", routeId), null)
+            .andExpect(jsonPath("$.data.streakDays").value(3));
+        perform(user, get("/api/v1/routes/{routeId}/stops/2", routeId), null)
+            .andExpect(jsonPath("$.data.read").value(true));
+        perform(user, get("/api/v1/routes/today"), null)
+            .andExpect(jsonPath("$.data.state").value("COMPLETED"));
+
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM usage_event_log WHERE route_id = ? "
+            + "AND event_type = 'ARTICLE_READ'", Integer.class, routeId)).isEqualTo(3);
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM usage_event_log WHERE route_id = ? "
+            + "AND event_type = 'ROUTE_COMPLETED' AND service_date = ?", Integer.class, routeId, TODAY)).isEqualTo(1);
+    }
+
+    @Test
+    void 숨겨진_기사는_건너뛰고_나머지만_읽어도_도착할_수_있다() throws Exception {
+        List<Long> articles = List.of(newArticle(categoryId, "EASY", "3.0", "VISIBLE"),
+            newArticle(categoryId, "EASY", "3.0", "VISIBLE"), newArticle(categoryId, "EASY", "3.0", "VISIBLE"));
+        TokenResponse user = tokenService.issue(newUser(10, 0, categoryId));
+        Long routeId = boardedRoute(user, articles);
+        perform(user, post("/api/v1/routes/{routeId}/departure", routeId), null).andExpect(status().isOk());
+        jdbcTemplate.update("UPDATE article SET visibility = 'HIDDEN', recommendable = FALSE WHERE id = ?",
+            articles.get(1));
+
+        perform(user, get("/api/v1/routes/{routeId}/stops/2", routeId), null)
+            .andExpect(jsonPath("$.data.available").value(false))
+            .andExpect(jsonPath("$.data.title").doesNotExist());
+        perform(user, post("/api/v1/routes/{routeId}/stops/2/read", routeId), null)
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.code").value("ROUTE_STOP_UNAVAILABLE"));
+        perform(user, post("/api/v1/routes/{routeId}/stops/1/read", routeId), null)
+            .andExpect(jsonPath("$.data.progress.currentStop").value(3))
+            .andExpect(jsonPath("$.data.progress.remainingStops").value(1));
+        perform(user, post("/api/v1/routes/{routeId}/stops/3/read", routeId), null)
+            .andExpect(jsonPath("$.data.progress.arrivable").value(true));
+
+        perform(user, post("/api/v1/routes/{routeId}/arrival", routeId), null)
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.readCount").value(2))
+            .andExpect(jsonPath("$.data.streakDays").value(1));
+
+        // 완주 뒤 건너뛴 기사가 다시 보이면 그때 읽은 것도 완독으로 기록한다
+        jdbcTemplate.update("UPDATE article SET visibility = 'VISIBLE', recommendable = TRUE WHERE id = ?",
+            articles.get(1));
+        perform(user, post("/api/v1/routes/{routeId}/stops/2/read", routeId), null)
+            .andExpect(jsonPath("$.data.read").value(true))
+            .andExpect(jsonPath("$.data.progress.readCount").value(3));
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM usage_event_log WHERE route_id = ? "
+            + "AND event_type = 'ARTICLE_READ'", Long.class, routeId)).isEqualTo(3);
+    }
+
+    @Test
+    void 보관_기간_6개월이_지난_이용_이벤트_로그는_파기한다() {
+        Long userId = newUser(10, 0, categoryId);
+        String insert = "INSERT INTO usage_event_log (user_id, event_type, service_date, occurred_at) "
+            + "VALUES (?, 'APP_ACCESS', ?, ?)";
+        LocalDateTime expired = NOW.minusMonths(6).minusMinutes(1);
+        LocalDateTime kept = NOW.minusMonths(6).plusMinutes(1);
+        jdbcTemplate.update(insert, userId, expired.toLocalDate(), expired);
+        jdbcTemplate.update(insert, userId, kept.toLocalDate().plusDays(1), kept);
+
+        assertThat(usageEventCleanupService.deleteExpired()).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForList("SELECT occurred_at FROM usage_event_log WHERE user_id = ?",
+            LocalDateTime.class, userId)).containsExactly(kept);
+    }
+
+    @Test
+    void 없는_정거장과_출발_전_완독은_거절한다() throws Exception {
+        List<Long> articles = List.of(newArticle(categoryId, "EASY", "3.0", "VISIBLE"),
+            newArticle(categoryId, "EASY", "3.0", "VISIBLE"), newArticle(categoryId, "EASY", "3.0", "VISIBLE"));
+        TokenResponse user = tokenService.issue(newUser(10, 0, categoryId));
+        Long routeId = boardedRoute(user, articles);
+
+        perform(user, post("/api/v1/routes/{routeId}/stops/1/read", routeId), null)
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.code").value("ROUTE_INVALID_STATUS"));
+        perform(user, post("/api/v1/routes/{routeId}/departure", routeId), null).andExpect(status().isOk());
+        perform(user, get("/api/v1/routes/{routeId}/stops/4", routeId), null)
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.code").value("ROUTE_STOP_NOT_FOUND"));
+        perform(user, post("/api/v1/routes/{routeId}/stops/0/read", routeId), null)
+            .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void 카드를_고르는_중에는_출발할_수_없다() throws Exception {
+        newArticle(categoryId, "EASY", "3.0", "VISIBLE");
+        TokenResponse user = tokenService.issue(newUser(10, 0, categoryId));
+        Long routeId = createRoute(user);
+
+        perform(user, post("/api/v1/routes/{routeId}/departure", routeId), null)
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.code").value("ROUTE_INVALID_STATUS"));
+    }
+
+    @Test
+    void 완주한_노선도_서비스일이_끝난_04시가_지나면_다시_볼_수_없다() throws Exception {
+        Long userId = newUser(10, 0, categoryId);
+        TokenResponse user = tokenService.issue(userId);
+        completedRoute(userId, TODAY.minusDays(1));
+        Long routeId = jdbcTemplate.queryForObject(
+            "SELECT id FROM route WHERE user_id = ? AND service_date = ?", Long.class, userId, TODAY.minusDays(1));
+
+        perform(user, get("/api/v1/routes/{routeId}/stops/1", routeId), null)
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.code").value("ROUTE_EXPIRED"));
+        perform(user, post("/api/v1/routes/{routeId}/arrival", routeId), null)
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.code").value("ROUTE_EXPIRED"));
+        perform(user, post("/api/v1/routes/{routeId}/stops/1/read", routeId), null)
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.code").value("ROUTE_EXPIRED"));
+        // 만료돼도 완주 기록은 남아 연속 이용에 들어간다
+        assertThat(jdbcTemplate.queryForObject("SELECT status FROM route WHERE id = ?", String.class, routeId))
+            .isEqualTo("COMPLETED");
+    }
+
+    @Test
+    void 운행_중에_서비스일이_끝나면_완독도_도착도_할_수_없다() throws Exception {
+        Long userId = newUser(10, 0, categoryId);
+        TokenResponse user = tokenService.issue(userId);
+        LocalDate yesterday = TODAY.minusDays(1);
+        Long routeId = jdbcTemplate.queryForObject("""
+            INSERT INTO route (user_id, service_date, route_condition, target_minutes, status, fallback_step, expires_at,
+                started_at)
+            VALUES (?, ?, 'SUNNY', 10, 'IN_PROGRESS', 0, ?, ?)
+            RETURNING id
+            """, Long.class, userId, yesterday, ServiceDay.endOf(yesterday), yesterday.atTime(8, 0));
+
+        perform(user, post("/api/v1/routes/{routeId}/departure", routeId), null)
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.code").value("ROUTE_EXPIRED"));
+        perform(user, post("/api/v1/routes/{routeId}/arrival", routeId), null)
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.code").value("ROUTE_EXPIRED"));
+    }
+
+    // 후보 카드를 모두 담고 시작하기까지 한 노선 (T=10분, 3분 기사 3개 = 9분)
+    private Long boardedRoute(TokenResponse user, List<Long> articleIds) throws Exception {
+        Long routeId = createRoute(user);
+        for (Long articleId : articleIds) {
+            addCard(user, routeId, articleId.intValue()).andExpect(status().isOk());
+        }
+        perform(user, post("/api/v1/routes/{routeId}/boarding", routeId), null).andExpect(status().isOk());
+        return routeId;
+    }
+
+    private void completedRoute(Long userId, LocalDate serviceDate) {
+        jdbcTemplate.update("""
+            INSERT INTO route (user_id, service_date, route_condition, target_minutes, status, fallback_step, expires_at,
+                started_at, completed_at)
+            VALUES (?, ?, 'SUNNY', 10, 'COMPLETED', 0, ?, ?, ?)
+            """, userId, serviceDate, ServiceDay.endOf(serviceDate), serviceDate.atTime(8, 0),
+            serviceDate.atTime(8, 20));
     }
 
     private Long createRoute(TokenResponse user) throws Exception {

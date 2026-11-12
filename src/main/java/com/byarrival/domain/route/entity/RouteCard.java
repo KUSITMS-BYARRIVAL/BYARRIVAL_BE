@@ -53,6 +53,9 @@ public class RouteCard extends BaseEntity {
 
     private LocalDateTime cartedAt;
 
+    // 완독 시각([기사 보러가기]를 누른 시각). 읽음 이력으로 삭제하지 않고 보관한다
+    private LocalDateTime readAt;
+
     @Builder
     private RouteCard(Long routeId, Long articleId, int poolOrder, ArticleDifficulty difficulty,
         BigDecimal readingMinutes, boolean recommended) {
@@ -71,6 +74,23 @@ public class RouteCard extends BaseEntity {
     public void addToCart(int cartOrder, LocalDateTime now) {
         this.cartOrder = cartOrder;
         this.cartedAt = now;
+    }
+
+    public boolean isRead() {
+        return readAt != null;
+    }
+
+    /**
+     * 완독으로 기록한다. 이미 읽었으면 처음 읽은 시각을 그대로 둔다.
+     *
+     * @return 이번에 처음 읽었으면 true
+     */
+    public boolean markRead(LocalDateTime now) {
+        if (readAt != null) {
+            return false;
+        }
+        this.readAt = now;
+        return true;
     }
 
     public void removeFromCart() {
