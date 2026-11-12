@@ -99,6 +99,7 @@ class ScrapFlowIntegrationTest {
             .andExpect(jsonPath("$.data.articles[0].available").value(true))
             .andExpect(jsonPath("$.data.articles[0].title").value("테스트 기사"))
             .andExpect(jsonPath("$.data.articles[0].oneLine").value("한 줄 요약"))
+            .andExpect(jsonPath("$.data.articles[0].publishedAt").value("2026-11-12T08:00:00"))
             .andExpect(jsonPath("$.data.articles[0].readingMinutes").value(3))
             .andExpect(jsonPath("$.data.articles[0].sourceUrl").exists())
             // 저장 기사가 있는 카테고리만 화면 순서대로
@@ -181,6 +182,15 @@ class ScrapFlowIntegrationTest {
                 .containsExactly(Arrays.stream(expected).map(value -> ((Number) value).longValue())
                     .toArray(Long[]::new));
         };
+    }
+
+    @Test
+    void 저장한_콘텐츠가_없으면_빈_목록이다() throws Exception {
+        perform(user, get("/api/v1/scraps"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.counts.article").value(0))
+            .andExpect(jsonPath("$.data.categories.length()").value(0))
+            .andExpect(jsonPath("$.data.articles.length()").value(0));
     }
 
     private ResultActions perform(TokenResponse token, MockHttpServletRequestBuilder request) throws Exception {

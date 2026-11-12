@@ -10,6 +10,7 @@ public record LibraryArticleResponse(
     boolean available,
     String title,
     String pressName,
+    @Schema(description = "기사 발행 시각") LocalDateTime publishedAt,
     Long categoryId,
     String categoryName,
     @Schema(description = "AI 한 줄 요약") String oneLine,
