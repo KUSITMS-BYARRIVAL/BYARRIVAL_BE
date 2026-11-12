@@ -19,8 +19,26 @@ public class DailyBatchScheduler {
     private final DailyBatchService dailyBatchService;
     private final BatchMonitor batchMonitor;
 
-    @Scheduled(cron = "0 45 23 * * *", zone = ClockConfig.KST)
+    static final String RUN_CRON = "0 45 23 * * *";
+    // 23:45 배치가 실패하면 마감(23:59) 전에 두 번 다시 시도한다(RSS-02). 2026-11-11 운영 배치가 4분 21초 걸린 기준이다
+    static final String RETRY_CRON = "0 52,56 23 * * *";
+
+    @Scheduled(cron = RUN_CRON, zone = ClockConfig.KST)
     public void run() {
+        execute();
+    }
+
+    /**
+     * 같은 서비스일 배치를 다시 실행한다. 이미 성공했거나 아직 실행 중이면 배치가 시작 단계에서 건너뛴다.
+     * 실패로 끝난 배치만 다시 돌며, 이미 저장·가공한 기사는 건너뛰고 남은 것만 처리한다.
+     */
+    @Scheduled(cron = RETRY_CRON, zone = ClockConfig.KST)
+    public void retry() {
+        log.info("[DailyBatch] 재시도 시각 - 실패한 배치가 있으면 다시 실행");
+        execute();
+    }
+
+    private void execute() {
         try {
             dailyBatchService.run();
         } catch (RuntimeException e) {
