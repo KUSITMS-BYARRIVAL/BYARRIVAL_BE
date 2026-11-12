@@ -153,7 +153,7 @@ public class ScrapService {
         Comparator<Scrap> order = Comparator.comparing(Scrap::getCreatedAt).thenComparing(Scrap::getId);
         Comparator<Scrap> sorted = sort == LibrarySort.OLDEST ? order : order.reversed();
         if (type == LibraryType.SMALLTALK) {
-            return new LibraryResponse(type, counts, List.of(), List.of(), smalltalksOf(userId, sorted));
+            return smalltalkLibrary(userId, counts, sorted, categoryId);
         }
         List<Scrap> scraps = scrapRepository.findActive(userId, ScrapTargetType.ARTICLE);
         Set<Long> articleIds = scraps.stream().map(Scrap::getTargetId).collect(Collectors.toSet());
@@ -163,7 +163,9 @@ public class ScrapService {
 
         // 원문 기사 행이 없어진 저장(기사 삭제)은 보여 줄 내용이 없어 뺀다
         List<Scrap> visible = scraps.stream().filter(scrap -> articles.containsKey(scrap.getTargetId())).toList();
-        List<LibraryCategoryResponse> categories = categoriesOf(visible, articles, categoryNames);
+        Map<Long, Long> categoryCounts = new HashMap<>();
+        visible.forEach(scrap -> categoryCounts.merge(articles.get(scrap.getTargetId()).getCategoryId(), 1L, Long::sum));
+        List<LibraryCategoryResponse> categories = categoriesOf(categoryCounts, categoryNames);
 
         List<LibraryArticleResponse> items = visible.stream()
             .filter(scrap -> categoryId == null || categoryId.equals(articles.get(scrap.getTargetId()).getCategoryId()))
@@ -173,12 +175,22 @@ public class ScrapService {
         return new LibraryResponse(type, counts, categories, items, List.of());
     }
 
-    private List<LibrarySmalltalkResponse> smalltalksOf(Long userId, Comparator<Scrap> sorted) {
+    // 스몰토크 탭도 기사 탭처럼 카테고리 칩과 필터를 쓴다(보관함 스몰토크 화면)
+    private LibraryResponse smalltalkLibrary(Long userId, LibraryCountResponse counts, Comparator<Scrap> sorted,
+        Long categoryId) {
         List<Scrap> scraps = scrapRepository.findActive(userId, ScrapTargetType.SMALLTALK);
         Map<Long, SmalltalkView> smalltalks = smalltalkQueryService.findAllByIds(
             scraps.stream().map(Scrap::getTargetId).toList());
-        return scraps.stream()
-            .filter(scrap -> smalltalks.containsKey(scrap.getTargetId()))
+        List<Scrap> visible = scraps.stream().filter(scrap -> smalltalks.containsKey(scrap.getTargetId())).toList();
+        Map<Long, Long> categoryCounts = new HashMap<>();
+        visible.forEach(scrap -> {
+            Long category = smalltalks.get(scrap.getTargetId()).categoryId();
+            if (category != null) {
+                categoryCounts.merge(category, 1L, Long::sum);
+            }
+        });
+        List<LibrarySmalltalkResponse> items = visible.stream()
+            .filter(scrap -> categoryId == null || categoryId.equals(smalltalks.get(scrap.getTargetId()).categoryId()))
             .sorted(sorted)
             .map(scrap -> {
                 SmalltalkView view = smalltalks.get(scrap.getTargetId());
@@ -186,6 +198,8 @@ public class ScrapService {
                     view.categoryId(), view.categoryName(), view.articleTitle(), view.sourceUrl(), scrap.getCreatedAt());
             })
             .toList();
+        return new LibraryResponse(LibraryType.SMALLTALK, counts,
+            categoriesOf(categoryCounts, categoryMappingService.getActiveCategoryNames()), List.of(), items);
     }
 
     private Scrap findOwned(Long userId, Long scrapId) {
@@ -206,13 +220,8 @@ public class ScrapService {
             counts.getOrDefault(ScrapTargetType.SMALLTALK, 0L));
     }
 
-    // 저장 기사가 있는 카테고리만 화면 순서(display_order)대로
-    private static List<LibraryCategoryResponse> categoriesOf(List<Scrap> scraps, Map<Long, Article> articles,
-        Map<Long, String> categoryNames) {
-        Map<Long, Long> counts = new HashMap<>();
-        for (Scrap scrap : scraps) {
-            counts.merge(articles.get(scrap.getTargetId()).getCategoryId(), 1L, Long::sum);
-        }
+    // 저장한 콘텐츠가 있는 카테고리만 화면 순서(display_order)대로
+    private static List<LibraryCategoryResponse> categoriesOf(Map<Long, Long> counts, Map<Long, String> categoryNames) {
         return categoryNames.entrySet().stream()
             .filter(category -> counts.containsKey(category.getKey()))
             .map(category -> new LibraryCategoryResponse(category.getKey(), category.getValue(),
@@ -226,7 +235,8 @@ public class ScrapService {
         Integer minutes = article.getReadingMinutes() == null ? null
             : article.getReadingMinutes().setScale(0, RoundingMode.CEILING).intValue();
         return new LibraryArticleResponse(scrap.getId(), article.getId(), available, article.getTitle(),
-            article.getPressName(), article.getPublishedAt(), article.getCategoryId(), categoryNames.get(article.getCategoryId()),
+            article.getPressName(), article.getPublishedAt(), article.getCategoryId(),
+            categoryNames.get(article.getCategoryId()),
             article.getSummaryOneLine(), minutes, available ? article.linkUrl() : null, scrap.getCreatedAt());
     }
 }

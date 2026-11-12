@@ -28,8 +28,8 @@ public class ScrapController {
     private final ScrapService scrapService;
 
     @Operation(summary = "보관함 조회",
-        description = "탭별 저장 개수와 목록(type=ARTICLE|SMALLTALK). 기사 탭은 저장 시각 최신순(LATEST)·오래된순(OLDEST) 정렬과 카테고리 필터를 쓴다. "
-            + "categories는 저장 기사가 있는 카테고리만 담는다(0건 카테고리 숨김). 숨겼거나 원문이 삭제된 기사는 available=false.")
+        description = "탭별 저장 개수와 목록(type=ARTICLE|SMALLTALK). 두 탭 모두 저장 시각 최신순(LATEST)·오래된순(OLDEST) 정렬과 카테고리 필터를 쓴다. "
+            + "categories는 그 탭에 저장한 콘텐츠가 있는 카테고리만 담는다(0건 카테고리 숨김). 숨겼거나 원문이 삭제된 기사는 available=false.")
     @GetMapping
     public ApiResponse<LibraryResponse> getLibrary(
         @LoginUserId Long userId,

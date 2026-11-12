@@ -136,6 +136,11 @@ class SmalltalkFlowIntegrationTest {
             .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
         List<Integer> saved = JsonPath.read(library, "$.data.smalltalks[*].smalltalkId");
         assertThat(saved).containsExactlyInAnyOrder(economyTalk.intValue(), yesterdayTalk.intValue());
+        // 스몰토크 탭도 카테고리 칩과 필터를 쓴다
+        List<Integer> chips = JsonPath.read(library, "$.data.categories[*].categoryId");
+        assertThat(chips).containsExactly(first.intValue());
+        perform(get("/api/v1/scraps").param("type", "SMALLTALK").param("categoryId", String.valueOf(second)))
+            .andExpect(jsonPath("$.data.smalltalks.length()").value(0));
 
         perform(delete("/api/v1/scraps/smalltalks/{id}", economyTalk))
             .andExpect(jsonPath("$.data.scrapped").value(false));
