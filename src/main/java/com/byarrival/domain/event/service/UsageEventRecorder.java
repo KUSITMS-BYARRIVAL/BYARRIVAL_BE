@@ -44,6 +44,14 @@ public class UsageEventRecorder {
             () -> repository.insertRouteCompleted(userId, routeId, serviceDate, occurredAt));
     }
 
+    /**
+     * 앱 접속 이벤트. 날짜는 서비스일이 아니라 KST 자정 기준 날짜이며 날짜당 한 번만 남는다(나의 기록 캘린더 '앱 접속만').
+     */
+    public void recordAppAccess(Long userId, LocalDate accessDate, LocalDateTime occurredAt) {
+        retry("APP_ACCESS userId=" + userId + " date=" + accessDate,
+            () -> repository.insertAppAccess(userId, accessDate, occurredAt));
+    }
+
     private void retry(String target, Runnable work) {
         for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
             try {
