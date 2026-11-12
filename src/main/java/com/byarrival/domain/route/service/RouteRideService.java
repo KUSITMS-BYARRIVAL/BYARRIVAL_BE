@@ -25,10 +25,11 @@ import java.util.List;
 import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 노선 운행: 출발하기, 정거장 기사 조회, 완독, 도착하기.
- * 노선 상태 변경과 이벤트 로그 저장을 서로 다른 트랜잭션으로 나누기 위해 이 클래스는 트랜잭션을 직접 열지 않는다.
+ * 노선 상태 변경과 이벤트 로그 저장을 서로 다른 트랜잭션으로 나누기 위해 명령 메서드는 트랜잭션을 직접 열지 않는다.
  */
 @Service
 @RequiredArgsConstructor
@@ -53,6 +54,7 @@ public class RouteRideService {
     /**
      * n번째 정거장 기사. 운행 중이거나 오늘 완주한 노선만 볼 수 있다(완주 후 다시 보기).
      */
+    @Transactional(readOnly = true)
     public RouteStopResponse getStop(Long userId, Long routeId, int stopNumber) {
         LocalDateTime now = LocalDateTime.now(clock);
         Route route = routeRepository.findByIdAndUserId(routeId, userId)

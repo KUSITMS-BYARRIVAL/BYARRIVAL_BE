@@ -10,6 +10,7 @@ import com.byarrival.domain.route.exception.RouteErrorCode;
 import com.byarrival.domain.route.repository.RouteCardRepository;
 import com.byarrival.domain.route.repository.RouteRepository;
 import com.byarrival.domain.route.service.RouteCartPolicy.CartStatus;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -29,6 +30,7 @@ public class RouteCommandService {
     private final RouteCardRepository routeCardRepository;
     private final RouteCartPolicy routeCartPolicy;
     private final RideProgressReader rideProgressReader;
+    private final Clock clock;
 
     /**
      * 노선과 후보 카드 풀 스냅샷을 저장한다. 같은 서비스일에 먼저 만든 노선이 있으면 유니크 제약 위반으로 실패한다.
@@ -150,9 +152,10 @@ public class RouteCommandService {
     }
 
     /**
-     * 정거장 기사를 완독으로 기록한다([기사 보러가기]). 이미 읽은 기사나 완주한 노선이면 그대로 둔다.
+     * 정거장 기사를 완독으로 기록한다([기사 보러가기]). 이미 읽은 기사면 그대로 둔다.
+     * 완주한 노선에서도 기록한다. 완주 때 숨겨져 건너뛴 기사가 다시 보이게 되면 그때 읽은 것도 완독이다(READ-02).
      *
-     * @return 이번에 처음 읽었으면 그 기사 ID
+     * @return 이번에 처음 읽었는지
      */
     @Transactional
     public ReadOutcome read(Long userId, Long routeId, int stopNumber, LocalDateTime now) {
@@ -168,7 +171,7 @@ public class RouteCommandService {
         if (!progress.isAvailable(card)) {
             throw new BusinessException(RouteErrorCode.ROUTE_STOP_UNAVAILABLE);
         }
-        boolean newlyRead = route.getStatus() == RouteStatus.IN_PROGRESS && card.markRead(now);
+        boolean newlyRead = card.markRead(now);
         return new ReadOutcome(route, card.getArticleId(), newlyRead);
     }
 
@@ -207,10 +210,11 @@ public class RouteCommandService {
         return route;
     }
 
+    // 잠금을 기다리는 동안 04:00이 지날 수 있으므로 잠금을 얻은 뒤의 시각으로도 만료를 확인한다
     private Route lockActive(Long userId, Long routeId, LocalDateTime now) {
         Route route = routeRepository.findForUpdate(routeId, userId)
             .orElseThrow(() -> new BusinessException(RouteErrorCode.ROUTE_NOT_FOUND));
-        if (route.isExpired(now)) {
+        if (route.isExpired(now) || route.isExpired(LocalDateTime.now(clock))) {
             throw new BusinessException(RouteErrorCode.ROUTE_EXPIRED);
         }
         return route;
