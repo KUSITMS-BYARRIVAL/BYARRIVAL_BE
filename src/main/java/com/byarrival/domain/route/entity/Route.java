@@ -90,6 +90,22 @@ public class Route extends BaseEntity {
     }
 
     /**
+     * 출발하기: 담은 카드로 노선을 확정하고 운행을 시작한다.
+     */
+    public void depart(LocalDateTime now) {
+        this.status = RouteStatus.IN_PROGRESS;
+        this.startedAt = now;
+    }
+
+    /**
+     * 도착하기: 노선을 완주로 끝낸다.
+     */
+    public void complete(LocalDateTime now) {
+        this.status = RouteStatus.COMPLETED;
+        this.completedAt = now;
+    }
+
+    /**
      * 보딩패스에서 뒤로 가기: 담은 카드는 그대로 두고 카드 선택 단계로 돌아간다.
      */
     public void returnToCardSelection() {
