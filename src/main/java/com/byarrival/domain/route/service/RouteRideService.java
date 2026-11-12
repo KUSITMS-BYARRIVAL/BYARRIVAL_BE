@@ -21,6 +21,7 @@ import com.byarrival.domain.route.repository.RouteRepository;
 import com.byarrival.domain.route.service.PopularArticleService.PopularArticles;
 import com.byarrival.domain.route.service.RouteCommandService.ArriveOutcome;
 import com.byarrival.domain.route.service.RouteCommandService.ReadOutcome;
+import com.byarrival.domain.scrap.service.ScrapService;
 import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.Duration;
@@ -55,6 +56,7 @@ public class RouteRideService {
     private final ArticleQueryService articleQueryService;
     private final CategoryMappingService categoryMappingService;
     private final PopularArticleService popularArticleService;
+    private final ScrapService scrapService;
     private final Clock clock;
 
     public RideResponse depart(Long userId, Long routeId) {
@@ -87,7 +89,7 @@ public class RouteRideService {
         RideProgressResponse progressResponse = RideProgressResponse.from(progress);
         if (!progress.isAvailable(card)) {
             return new RouteStopResponse(routeId, stopNumber, progress.totalStops(), false, card.getArticleId(),
-                null, null, null, null, null, null, null, null, null, null, card.isRead(), progressResponse);
+                null, null, null, null, null, null, null, null, null, null, card.isRead(), false, progressResponse);
         }
         Article article = articleQueryService.findAllByIds(List.of(card.getArticleId())).get(card.getArticleId());
         String categoryName = categoryMappingService.getActiveCategoryNames().get(article.getCategoryId());
@@ -99,7 +101,9 @@ public class RouteRideService {
             article.getTitle(), article.getPressName(), article.getPublishedAt(), article.getCategoryId(), categoryName,
             card.getReadingMinutes().setScale(0, RoundingMode.CEILING).intValue(),
             article.getSummaryKeywords() == null ? List.of() : article.getSummaryKeywords(),
-            article.getSummaryOneLine(), summary, urlOf(article), card.isRead(), progressResponse);
+            article.getSummaryOneLine(), summary, urlOf(article), card.isRead(),
+            scrapService.findScrappedArticleIds(userId, List.of(article.getId())).contains(article.getId()),
+            progressResponse);
     }
 
     /**
