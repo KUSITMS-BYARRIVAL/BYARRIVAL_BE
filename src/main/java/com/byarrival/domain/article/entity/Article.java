@@ -147,6 +147,13 @@ public class Article extends BaseEntity {
     }
 
     /**
+     * 앱의 원문 보기 주소. 크롤링한 언론사 원문 주소가 없으면 수집한 주소(구글 뉴스 링크)를 쓴다.
+     */
+    public String linkUrl() {
+        return sourceUrl != null ? sourceUrl : originalUrl;
+    }
+
+    /**
      * 같은 사건의 다른 기사를 남기고 이 기사는 추천에서 뺀다.
      */
     public void markDuplicateOf(Long representativeArticleId) {
