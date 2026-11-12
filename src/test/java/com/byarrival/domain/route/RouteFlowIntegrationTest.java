@@ -413,7 +413,8 @@ class RouteFlowIntegrationTest {
         perform(user, post("/api/v1/routes/{routeId}/arrival", routeId), null)
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.readCount").value(2))
-            .andExpect(jsonPath("$.data.streakDays").value(1));
+            .andExpect(jsonPath("$.data.streakDays").value(1))
+            .andExpect(jsonPath("$.data.top3.status").exists());
 
         // 완주 뒤 건너뛴 기사가 다시 보이면 그때 읽은 것도 완독으로 기록한다
         jdbcTemplate.update("UPDATE article SET visibility = 'VISIBLE', recommendable = TRUE WHERE id = ?",
