@@ -82,6 +82,7 @@ class ArticleTextInspectorTest {
     @ParameterizedTest
     @ValueSource(strings = {
         "[인사이트] 반도체 슈퍼사이클의 끝",
+        "[미리보는 CES 2027] 국내 기업의 신기술 경쟁",
         "[단독] 영상 속 남성 신원 확인",
         "인사 청문회 앞둔 후보자",
         "운세 앱 이용자 1천만 돌파",
