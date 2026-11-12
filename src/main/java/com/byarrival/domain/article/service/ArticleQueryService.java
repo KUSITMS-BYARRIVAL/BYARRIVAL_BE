@@ -34,6 +34,14 @@ public class ArticleQueryService {
     }
 
     /**
+     * @return 그 서비스일의 추천 후보 기사 중 숨기지 않은 기사(퀴즈·스몰토크 생성 대상). ID 순
+     */
+    @Transactional(readOnly = true)
+    public List<Article> findRecommendableAll(LocalDate serviceDate) {
+        return articleRepository.findStoryCandidates(serviceDate);
+    }
+
+    /**
      * @return 주어진 기사 중 숨겼거나 원문이 삭제된 기사 ID
      */
     @Transactional(readOnly = true)
