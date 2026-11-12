@@ -76,6 +76,9 @@ route:
     NORMAL: { hard: 2, easy: 3 }
     CLOUDY: { hard: 1, easy: 4 }
     RAINY: { hard: 1, easy: 4 }
+  popular:
+    # 많이 담은 뉴스 순위를 보여 주는 최소 인원. 그날 기사를 담은 사용자가 이보다 적으면 집계중 상태 (HOME-07)
+    min-users: 30
 
 ai:
   anthropic:
