@@ -20,12 +20,14 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 많이 담은 뉴스 순위(ARR-02, HOME-05 기준)를 실제 DB로 확인한다. 테스트마다 다른 서비스일을 써서 서로 섞이지 않게 한다.
+ * 많이 담은 뉴스 순위(ARR-02, HOME-05 기준)를 실제 DB로 확인한다. 테스트마다 롤백해 다른 테스트의 사용자·카드가 집계에 섞이지 않게 한다.
  */
 @SpringBootTest
 @Import(TestcontainersConfig.class)
+@Transactional
 class PopularArticleIntegrationTest {
 
     private static final int MIN_USERS = 30;
@@ -51,7 +53,8 @@ class PopularArticleIntegrationTest {
         categoryId = jdbcTemplate.queryForObject(
             "INSERT INTO category (name, display_order) VALUES (?, 99) RETURNING id", Long.class,
             "테스트-" + UUID.randomUUID().toString().substring(0, 8));
-        serviceDate = LocalDate.of(2030, 1, 1).plusDays(Math.abs(UUID.randomUUID().getMostSignificantBits() % 3000));
+        // 다른 테스트 클래스가 커밋한 노선과 겹치지 않는 먼 서비스일
+        serviceDate = LocalDate.of(2030, 1, 1);
     }
 
     @Test
