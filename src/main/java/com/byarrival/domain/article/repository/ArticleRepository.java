@@ -60,6 +60,10 @@ public interface ArticleRepository extends JpaRepository<Article, Long> {
     @Query("UPDATE Article a SET a.duplicateOfArticleId = :representativeId WHERE a.duplicateOfArticleId = :removedId")
     int repointDuplicates(@Param("removedId") Long removedId, @Param("representativeId") Long representativeId);
 
+    // 숨겼거나 원문이 삭제된 기사. 노선 운행에서 건너뛴다(READ-01)
+    @Query(value = "SELECT id FROM article WHERE id IN (:articleIds) AND visibility <> 'VISIBLE'", nativeQuery = true)
+    List<Long> findUnavailableIds(@Param("articleIds") Collection<Long> articleIds);
+
     interface CategoryDifficultyCount {
 
         Long getCategoryId();

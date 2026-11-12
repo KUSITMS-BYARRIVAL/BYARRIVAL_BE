@@ -6,6 +6,7 @@ import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -30,6 +31,17 @@ public class ArticleQueryService {
             return List.of();
         }
         return articleRepository.findRecommendable(serviceDate, categoryIds);
+    }
+
+    /**
+     * @return 주어진 기사 중 숨겼거나 원문이 삭제된 기사 ID
+     */
+    @Transactional(readOnly = true)
+    public Set<Long> findUnavailableIds(Collection<Long> articleIds) {
+        if (articleIds.isEmpty()) {
+            return Set.of();
+        }
+        return Set.copyOf(articleRepository.findUnavailableIds(articleIds));
     }
 
     /**
