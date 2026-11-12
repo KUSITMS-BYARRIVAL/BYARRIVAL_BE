@@ -133,6 +133,22 @@ class ArticleCollectServiceTest {
     }
 
     @Test
+    void source가_사이트_주소면_도메인을_언론사명으로_저장한다() {
+        RssItem urlSource = new RssItem("guid-1", GOOGLE + "1", "첫째 제목", null, PUBLISHED_AT, List.of(),
+            "https://www.dhtimes.co.kr/");
+        RssItem noWww = new RssItem("guid-2", GOOGLE + "2", "둘째 제목", null, PUBLISHED_AT, List.of(),
+            "https://newsgb.co.kr");
+        RssItem brokenUrl = new RssItem("guid-3", GOOGLE + "3", "셋째 제목", null, PUBLISHED_AT, List.of(),
+            "https://");
+
+        articleCollectService.collect(feed(urlSource, noWww, brokenUrl), SERVICE_DATE);
+
+        assertThat(articleRepository.findAll()).extracting(Article::getGuid, Article::getPressName)
+            .containsExactlyInAnyOrder(tuple("guid-1", "dhtimes.co.kr"), tuple("guid-2", "newsgb.co.kr"),
+                tuple("guid-3", "한국경제"));
+    }
+
+    @Test
     void Item의_category로_서비스_카테고리를_매핑한다() {
         Long societyId = insertCategory("사회", 2);
         categoryMappingRepository.save(CategoryMapping.create(feedId, "사회일반", societyId));

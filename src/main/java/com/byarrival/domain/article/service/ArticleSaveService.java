@@ -10,12 +10,14 @@ import com.byarrival.domain.article.service.ArticleStoryMatcher.Story;
 import com.byarrival.domain.category.service.CategoryMappingService;
 import com.byarrival.domain.feed.dto.FetchedFeed;
 import com.byarrival.domain.feed.dto.RssItem;
+import java.net.URI;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -188,13 +190,34 @@ public class ArticleSaveService {
         return new CategoryMatch(rssCategory, null);
     }
 
-    // 여러 언론사를 모은 Feed(구글 뉴스)는 Item의 source가 실제 언론사다
+    // 여러 언론사를 모은 Feed(구글 뉴스)는 Item의 source가 실제 언론사다.
+    // 구글 뉴스가 언론사명을 모르면 source에 사이트 주소(https://www.dhtimes.co.kr/)를 넣으므로 도메인(dhtimes.co.kr)만 쓴다.
     private String pressNameOf(FetchedFeed feed, RssItem item) {
-        String source = item.source();
-        if (source == null || source.length() > Article.MAX_PRESS_NAME_LENGTH) {
+        String source = item.source() == null ? null : item.source().strip();
+        if (source != null && isHttpUrl(source)) {
+            source = hostOf(source);
+        }
+        if (source == null || source.isEmpty() || source.length() > Article.MAX_PRESS_NAME_LENGTH) {
             return feed.pressName();
         }
         return source;
+    }
+
+    private static boolean isHttpUrl(String value) {
+        String lower = value.toLowerCase(Locale.ROOT);
+        return lower.startsWith("http://") || lower.startsWith("https://");
+    }
+
+    private static String hostOf(String url) {
+        try {
+            String host = URI.create(url).getHost();
+            if (host == null) {
+                return null;
+            }
+            return host.regionMatches(true, 0, "www.", 0, 4) ? host.substring(4) : host;
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     private boolean fitsColumns(Long feedId, RssItem item) {
