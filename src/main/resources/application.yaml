@@ -103,6 +103,13 @@ ai:
     effort: low
     lead-length: 400
     max-retries: 3
+  quiz:
+    # 추천 후보 기사(약 160건)마다 요약으로 3지선다 1문제를 만든다(AI-03)
+    model: claude-haiku-5-5
+    max-tokens: 4000
+    effort: medium
+    concurrency: 8
+    max-retries: 3
   smalltalk:
     # 카테고리별 인기 기사(구글 뉴스 노출 순서) 상위부터 최대 2건씩 한 줄 스몰토크를 만든다(TALK-01)
     model: claude-haiku-5-5
