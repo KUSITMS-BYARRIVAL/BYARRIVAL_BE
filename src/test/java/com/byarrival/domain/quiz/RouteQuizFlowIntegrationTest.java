@@ -203,6 +203,11 @@ class RouteQuizFlowIntegrationTest {
         perform(user, get("/api/v1/routes/{routeId}/quizzes", routeId), null)
             .andExpect(jsonPath("$.data.progress.total").value(1))
             .andExpect(jsonPath("$.data.quizzes[0].articleId").value(read));
+        // 안 푼 문제가 있으면 결과는 끝나지 않은 상태다
+        perform(user, get("/api/v1/routes/{routeId}/quizzes/result", routeId), null)
+            .andExpect(jsonPath("$.data.total").value(1))
+            .andExpect(jsonPath("$.data.answeredCount").value(0))
+            .andExpect(jsonPath("$.data.finished").value(false));
 
         Long noQuizUser = newUser();
         Long noQuizRoute = newRoute(noQuizUser, "COMPLETED", List.of(newArticle("퀴즈 없는 기사")), 1);
@@ -222,6 +227,19 @@ class RouteQuizFlowIntegrationTest {
         perform(tokenService.issue(userId), get("/api/v1/routes/{routeId}/quizzes", routeId), null)
             .andExpect(status().isConflict())
             .andExpect(jsonPath("$.code").value("ROUTE_INVALID_STATUS"));
+    }
+
+    @Test
+    void 서비스일이_끝난_노선의_퀴즈는_풀_수_없다() throws Exception {
+        Long userId = newUser();
+        Long article = newArticle("어제 기사");
+        newQuiz(article, "문제?");
+        Long routeId = newRoute(userId, "COMPLETED", List.of(article), 1);
+        jdbcTemplate.update("UPDATE route SET expires_at = ? WHERE id = ?", TODAY.atTime(4, 0), routeId);
+
+        perform(tokenService.issue(userId), get("/api/v1/routes/{routeId}/quizzes", routeId), null)
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.code").value("ROUTE_EXPIRED"));
     }
 
     private ResultActions perform(TokenResponse token, MockHttpServletRequestBuilder request, String body)
