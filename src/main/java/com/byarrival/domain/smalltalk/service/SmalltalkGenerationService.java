@@ -66,7 +66,7 @@ public class SmalltalkGenerationService {
     }
 
     /**
-     * @return 카테고리 ID → 그 서비스일에 확보한 스몰토크 수(이번 실행 전에 만든 것 포함)
+     * @return 카테고리 ID → 그 서비스일에 확보한 스몰토크 수(이번 실행 전에 만든 것 포함). 기사가 없는 활성 카테고리는 0
      */
     public Map<Long, Integer> generate(LocalDate serviceDate) {
         Set<Long> done = store.findArticleIds(serviceDate);
@@ -79,7 +79,9 @@ public class SmalltalkGenerationService {
         Map<Long, CompletableFuture<Integer>> futures = new LinkedHashMap<>();
         byCategory.forEach((categoryId, articles) -> futures.put(categoryId, CompletableFuture.supplyAsync(
             () -> fillCategory(serviceDate, articles, done, categoryNames.getOrDefault(categoryId, "")), executor)));
+        // 추천 후보 기사가 없는 활성 카테고리도 0건으로 남겨 부족 알림에 드러나게 한다
         Map<Long, Integer> counts = new LinkedHashMap<>();
+        categoryNames.keySet().forEach(categoryId -> counts.put(categoryId, 0));
         futures.forEach((categoryId, future) -> counts.put(categoryId, future.join()));
         log.info("[AI 스몰토크] serviceDate={} 카테고리별 확보 {}", serviceDate, counts);
         notifyCompleted(serviceDate, counts);
