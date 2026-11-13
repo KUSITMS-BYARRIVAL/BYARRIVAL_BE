@@ -87,9 +87,12 @@ public class RouteRideService {
         }
         RouteCard card = progress.stop(stopNumber);
         RideProgressResponse progressResponse = RideProgressResponse.from(progress);
+        // 숨김·삭제된 기사도 보관함에는 비활성 카드로 남으므로 저장 상태는 그대로 알려 준다
+        boolean scrapped = scrapService.findScrappedArticleIds(userId, List.of(card.getArticleId()))
+            .contains(card.getArticleId());
         if (!progress.isAvailable(card)) {
             return new RouteStopResponse(routeId, stopNumber, progress.totalStops(), false, card.getArticleId(),
-                null, null, null, null, null, null, null, null, null, null, card.isRead(), false, progressResponse);
+                null, null, null, null, null, null, null, null, null, null, card.isRead(), scrapped, progressResponse);
         }
         Article article = articleQueryService.findAllByIds(List.of(card.getArticleId())).get(card.getArticleId());
         String categoryName = categoryMappingService.getActiveCategoryNames().get(article.getCategoryId());
@@ -101,9 +104,7 @@ public class RouteRideService {
             article.getTitle(), article.getPressName(), article.getPublishedAt(), article.getCategoryId(), categoryName,
             card.getReadingMinutes().setScale(0, RoundingMode.CEILING).intValue(),
             article.getSummaryKeywords() == null ? List.of() : article.getSummaryKeywords(),
-            article.getSummaryOneLine(), summary, urlOf(article), card.isRead(),
-            scrapService.findScrappedArticleIds(userId, List.of(article.getId())).contains(article.getId()),
-            progressResponse);
+            article.getSummaryOneLine(), summary, urlOf(article), card.isRead(), scrapped, progressResponse);
     }
 
     /**

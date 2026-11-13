@@ -402,12 +402,15 @@ class RouteFlowIntegrationTest {
         TokenResponse user = tokenService.issue(newUser(10, 0, categoryId));
         Long routeId = boardedRoute(user, articles);
         perform(user, post("/api/v1/routes/{routeId}/departure", routeId), null).andExpect(status().isOk());
+        // 저장해 둔 기사가 숨겨져도 보관함과 같은 저장 상태를 보여 준다
+        perform(user, put("/api/v1/scraps/articles/{articleId}", articles.get(1)), null).andExpect(status().isOk());
         jdbcTemplate.update("UPDATE article SET visibility = 'HIDDEN', recommendable = FALSE WHERE id = ?",
             articles.get(1));
 
         perform(user, get("/api/v1/routes/{routeId}/stops/2", routeId), null)
             .andExpect(jsonPath("$.data.available").value(false))
-            .andExpect(jsonPath("$.data.title").doesNotExist());
+            .andExpect(jsonPath("$.data.title").doesNotExist())
+            .andExpect(jsonPath("$.data.scrapped").value(true));
         perform(user, post("/api/v1/routes/{routeId}/stops/2/read", routeId), null)
             .andExpect(status().isConflict())
             .andExpect(jsonPath("$.code").value("ROUTE_STOP_UNAVAILABLE"));
