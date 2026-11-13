@@ -10,7 +10,6 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.IntStream;
 import lombok.RequiredArgsConstructor;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
@@ -35,20 +34,16 @@ public class QuizStore {
     }
 
     /**
-     * @return 저장했으면 true. 그 사이 같은 기사의 퀴즈가 저장됐으면(배치 재실행) false
+     * 퀴즈를 저장한다. 그 사이 같은 기사의 퀴즈가 저장됐으면(배치 재실행이 겹친 경우) uk_quiz_article 위반으로
+     * DataIntegrityViolationException이 난다. 트랜잭션 밖의 호출부에서 중복으로 처리한다.
      */
     @Transactional
-    public boolean save(Long articleId, ValidatedQuiz quiz, LocalDateTime now) {
+    public void save(Long articleId, ValidatedQuiz quiz, LocalDateTime now) {
         List<QuizChoice> choices = IntStream.range(0, quiz.choices().size())
             .mapToObj(i -> new QuizChoice(i + 1, quiz.choices().get(i)))
             .toList();
-        try {
-            quizRepository.saveAndFlush(Quiz.create(articleId, quiz.question(), JSON_MAPPER.writeValueAsString(choices),
-                quiz.answerSeq(), quiz.explanation(), now));
-            return true;
-        } catch (DataIntegrityViolationException e) {
-            return false;
-        }
+        quizRepository.saveAndFlush(Quiz.create(articleId, quiz.question(), JSON_MAPPER.writeValueAsString(choices),
+            quiz.answerSeq(), quiz.explanation(), now));
     }
 
     static List<QuizChoice> choicesOf(Quiz quiz) {

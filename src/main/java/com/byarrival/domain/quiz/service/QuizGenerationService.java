@@ -24,7 +24,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
 import lombok.extern.slf4j.Slf4j;
+import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 /**
@@ -36,6 +38,8 @@ import org.springframework.stereotype.Service;
 public class QuizGenerationService {
 
     private static final int MAX_FAILED_IDS_IN_ALERT = 30;
+    private static final String UNIQUE_VIOLATION_SQL_STATE = "23505";
+    private static final String QUIZ_ARTICLE_UNIQUE_CONSTRAINT = "uk_quiz_article";
 
     private final ArticleQueryService articleQueryService;
     private final CategoryMappingService categoryMappingService;
@@ -77,44 +81,62 @@ public class QuizGenerationService {
             .toList();
         if (sources.isEmpty()) {
             log.info("[AI 퀴즈] serviceDate={} 만들 퀴즈 없음", serviceDate);
-            return new QuizGenerationResult(0, List.of(), 0, 0, 0);
+            return new QuizGenerationResult(0, 0, List.of(), 0, 0, 0);
         }
 
         Tally tally = new Tally();
-        List<CompletableFuture<Long>> futures = sources.stream()
+        List<CompletableFuture<Outcome>> futures = sources.stream()
             .map(source -> CompletableFuture.supplyAsync(() -> generateOne(source, tally), executor))
             .toList();
         List<Long> failed = new ArrayList<>();
         int succeeded = 0;
-        for (CompletableFuture<Long> future : futures) {
-            Long failedId = future.join();
-            if (failedId == null) {
-                succeeded++;
-            } else {
-                failed.add(failedId);
+        int duplicated = 0;
+        for (CompletableFuture<Outcome> future : futures) {
+            Outcome outcome = future.join();
+            switch (outcome.status()) {
+                case SAVED -> succeeded++;
+                case DUPLICATED -> duplicated++;
+                case FAILED -> failed.add(outcome.articleId());
             }
         }
-        QuizGenerationResult result = new QuizGenerationResult(succeeded, List.copyOf(failed), tally.calls.get(),
-            tally.inputTokens.get(), tally.outputTokens.get());
-        log.info("[AI 퀴즈] serviceDate={} 대상 {}건, 성공 {}건, 실패 {}건, 호출 {}회", serviceDate, sources.size(),
-            succeeded, failed.size(), result.calls());
+        QuizGenerationResult result = new QuizGenerationResult(succeeded, duplicated, List.copyOf(failed),
+            tally.calls.get(), tally.inputTokens.get(), tally.outputTokens.get());
+        log.info("[AI 퀴즈] serviceDate={} 대상 {}건, 성공 {}건, 이미 있음 {}건, 실패 {}건, 호출 {}회", serviceDate,
+            sources.size(), succeeded, duplicated, failed.size(), result.calls());
         notifyCompleted(serviceDate, sources.size(), result);
         return result;
     }
 
-    // 성공하면 null, 실패하면 기사 ID
-    private Long generateOne(QuizSource source, Tally tally) {
+    private Outcome generateOne(QuizSource source, Tally tally) {
         try {
             ValidatedQuiz quiz = generateValid(source, tally);
             if (quiz == null) {
-                return source.articleId();
+                return new Outcome(source.articleId(), OutcomeStatus.FAILED);
             }
             store.save(source.articleId(), quiz, LocalDateTime.now(clock));
-            return null;
+            return new Outcome(source.articleId(), OutcomeStatus.SAVED);
+        } catch (DataIntegrityViolationException e) {
+            if (isQuizArticleUniqueViolation(e)) {
+                // 배치 재실행이 겹쳐 그 사이 같은 기사의 퀴즈가 저장된 경우. 기사당 1문제는 지켜졌다
+                log.info("[AI 퀴즈] articleId={} 이미 퀴즈가 있어 건너뜀", source.articleId());
+                return new Outcome(source.articleId(), OutcomeStatus.DUPLICATED);
+            }
+            log.error("[AI 퀴즈 실패] articleId={} 저장 실패", source.articleId(), e);
+            return new Outcome(source.articleId(), OutcomeStatus.FAILED);
         } catch (RuntimeException e) {
             log.error("[AI 퀴즈 실패] articleId={} {}", source.articleId(), e.getClass().getSimpleName(), e);
-            return source.articleId();
+            return new Outcome(source.articleId(), OutcomeStatus.FAILED);
         }
+    }
+
+    private static boolean isQuizArticleUniqueViolation(DataIntegrityViolationException e) {
+        for (Throwable cause = e.getCause(); cause != null; cause = cause.getCause()) {
+            if (cause instanceof ConstraintViolationException violation) {
+                return UNIQUE_VIOLATION_SQL_STATE.equals(violation.getSQLState())
+                    && QUIZ_ARTICLE_UNIQUE_CONSTRAINT.equalsIgnoreCase(violation.getConstraintName());
+            }
+        }
+        return false;
     }
 
     /**
@@ -160,6 +182,7 @@ public class QuizGenerationService {
                 .append(result.failedArticleIds().isEmpty() ? "🧩 **AI 퀴즈 완료**" : "⚠️ **AI 퀴즈 완료 (실패 있음)**")
                 .append(" 서비스일 ").append(serviceDate).append('\n')
                 .append("대상 ").append(targets).append("건 · 성공 ").append(result.succeeded())
+                .append(" · 이미 있음 ").append(result.duplicated())
                 .append(" · 실패 ").append(result.failedArticleIds().size())
                 .append(" · 호출 ").append(result.calls()).append("회")
                 .append(String.format(" · 토큰 입력 %,d / 출력 %,d", result.inputTokens(), result.outputTokens()))
@@ -176,8 +199,18 @@ public class QuizGenerationService {
         }
     }
 
-    public record QuizGenerationResult(int succeeded, List<Long> failedArticleIds, long calls, long inputTokens,
-                                       long outputTokens) {
+    /**
+     * @param duplicated 그 사이 다른 실행이 같은 기사의 퀴즈를 저장해 건너뛴 수
+     */
+    public record QuizGenerationResult(int succeeded, int duplicated, List<Long> failedArticleIds, long calls,
+                                       long inputTokens, long outputTokens) {
+    }
+
+    private record Outcome(Long articleId, OutcomeStatus status) {
+    }
+
+    private enum OutcomeStatus {
+        SAVED, DUPLICATED, FAILED
     }
 
     private static final class Tally {
