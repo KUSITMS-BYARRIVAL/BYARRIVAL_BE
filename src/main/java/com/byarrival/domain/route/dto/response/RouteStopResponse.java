@@ -22,6 +22,7 @@ public record RouteStopResponse(
     @Schema(description = "AI 3줄 요약") List<String> summary,
     @Schema(description = "원문 주소. [기사 보러가기]로 연다") String sourceUrl,
     @Schema(description = "완독했는지") boolean read,
+    @Schema(description = "보관함에 저장했는지(READ-04 저장 토글)") boolean scrapped,
     RideProgressResponse progress
 ) {
 }

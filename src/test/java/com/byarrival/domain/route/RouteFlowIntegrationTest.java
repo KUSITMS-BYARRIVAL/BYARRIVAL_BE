@@ -342,7 +342,14 @@ class RouteFlowIntegrationTest {
             .andExpect(jsonPath("$.data.summary.length()").value(3))
             .andExpect(jsonPath("$.data.oneLine").value("한 줄 요약"))
             .andExpect(jsonPath("$.data.sourceUrl").exists())
-            .andExpect(jsonPath("$.data.read").value(false));
+            .andExpect(jsonPath("$.data.read").value(false))
+            .andExpect(jsonPath("$.data.scrapped").value(false));
+
+        // 기사 화면에서 저장하면 정거장 응답에 저장 상태가 보인다(READ-04)
+        perform(user, put("/api/v1/scraps/articles/{articleId}", articles.get(0)), null)
+            .andExpect(jsonPath("$.data.scrapped").value(true));
+        perform(user, get("/api/v1/routes/{routeId}/stops/1", routeId), null)
+            .andExpect(jsonPath("$.data.scrapped").value(true));
 
         // 다 읽기 전에는 도착할 수 없다
         perform(user, post("/api/v1/routes/{routeId}/arrival", routeId), null)
@@ -395,12 +402,15 @@ class RouteFlowIntegrationTest {
         TokenResponse user = tokenService.issue(newUser(10, 0, categoryId));
         Long routeId = boardedRoute(user, articles);
         perform(user, post("/api/v1/routes/{routeId}/departure", routeId), null).andExpect(status().isOk());
+        // 저장해 둔 기사가 숨겨져도 보관함과 같은 저장 상태를 보여 준다
+        perform(user, put("/api/v1/scraps/articles/{articleId}", articles.get(1)), null).andExpect(status().isOk());
         jdbcTemplate.update("UPDATE article SET visibility = 'HIDDEN', recommendable = FALSE WHERE id = ?",
             articles.get(1));
 
         perform(user, get("/api/v1/routes/{routeId}/stops/2", routeId), null)
             .andExpect(jsonPath("$.data.available").value(false))
-            .andExpect(jsonPath("$.data.title").doesNotExist());
+            .andExpect(jsonPath("$.data.title").doesNotExist())
+            .andExpect(jsonPath("$.data.scrapped").value(true));
         perform(user, post("/api/v1/routes/{routeId}/stops/2/read", routeId), null)
             .andExpect(status().isConflict())
             .andExpect(jsonPath("$.code").value("ROUTE_STOP_UNAVAILABLE"));
