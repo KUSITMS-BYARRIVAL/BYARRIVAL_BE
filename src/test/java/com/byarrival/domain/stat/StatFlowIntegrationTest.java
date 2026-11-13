@@ -95,6 +95,8 @@ class StatFlowIntegrationTest {
         newRoute(LocalDate.of(2026, 11, 11), 3, 1, null);
         // 10-01 완주: 5분, 1건 완독
         newRoute(LocalDate.of(2026, 10, 1), 1, 1, LocalDateTime.of(2026, 10, 1, 8, 4, 10));
+        // 10-21(수) 완주: 7분, 2건 완독. 6주 그래프의 세 번째 주(10-19~10-25)
+        newRoute(LocalDate.of(2026, 10, 21), 2, 2, LocalDateTime.of(2026, 10, 21, 8, 7));
 
         perform(get("/api/v1/stats/summary"))
             .andExpect(status().isOk())
@@ -110,13 +112,13 @@ class StatFlowIntegrationTest {
             .andExpect(jsonPath("$.data.readArticleCount").value(3));
         perform(get("/api/v1/stats/summary").param("period", "YEAR"))
             .andExpect(jsonPath("$.data.from").value("2026-01-01"))
-            .andExpect(jsonPath("$.data.usedMinutes").value(18))
-            .andExpect(jsonPath("$.data.readArticleCount").value(4));
+            .andExpect(jsonPath("$.data.usedMinutes").value(25))
+            .andExpect(jsonPath("$.data.readArticleCount").value(6));
         perform(get("/api/v1/stats/summary").param("period", "ALL"))
             .andExpect(jsonPath("$.data.from").doesNotExist())
-            .andExpect(jsonPath("$.data.usedMinutes").value(18))
-            .andExpect(jsonPath("$.data.readArticleCount").value(4))
-            .andExpect(jsonPath("$.data.completedCount").value(2));
+            .andExpect(jsonPath("$.data.usedMinutes").value(25))
+            .andExpect(jsonPath("$.data.readArticleCount").value(6))
+            .andExpect(jsonPath("$.data.completedCount").value(3));
 
         String graph = perform(get("/api/v1/stats/weekly"))
             .andExpect(jsonPath("$.data.weeks.length()").value(6))
@@ -128,8 +130,13 @@ class StatFlowIntegrationTest {
             .andExpect(jsonPath("$.data.weeks[5].completedCount").value(1))
             .andExpect(jsonPath("$.data.empty").value(false))
             .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
-        List<Integer> earlierReads = JsonPath.read(graph, "$.data.weeks[0:5].readArticleCount");
-        assertThat(earlierReads).containsOnly(0);
+        // 앞선 주는 그 주의 기록만 센다. 10-01은 그래프 시작(10-05)보다 앞이라 빠진다
+        List<Integer> usedMinutes = JsonPath.read(graph, "$.data.weeks[*].usedMinutes");
+        List<Integer> readCounts = JsonPath.read(graph, "$.data.weeks[*].readArticleCount");
+        List<Integer> completedCounts = JsonPath.read(graph, "$.data.weeks[*].completedCount");
+        assertThat(usedMinutes).containsExactly(0, 0, 7, 0, 0, 13);
+        assertThat(readCounts).containsExactly(0, 0, 2, 0, 0, 3);
+        assertThat(completedCounts).containsExactly(0, 0, 1, 0, 0, 1);
     }
 
     @Test
