@@ -185,19 +185,23 @@ class StatFlowIntegrationTest {
     }
 
     @Test
-    void 연속_완주와_최장_연속_완주를_센다() throws Exception {
-        // 10-20~10-24 5일 연속, 11-09~11-11 3일 연속(오늘 11-12는 아직 완주 전)
-        for (int day = 20; day <= 24; day++) {
-            newRoute(LocalDate.of(2026, 10, day), 1, 1, LocalDate.of(2026, 10, day).atTime(8, 10));
+    void 연속_완주는_주말을_건너뛰고_평일만_센다() throws Exception {
+        // 10-19(월)~10-23(금), 10-26(월)~10-28(수): 주말을 건너뛰어 8일 연속. 10-29(목)에 끊김
+        for (LocalDate day : List.of(LocalDate.of(2026, 10, 19), LocalDate.of(2026, 10, 20), LocalDate.of(2026, 10, 21),
+            LocalDate.of(2026, 10, 22), LocalDate.of(2026, 10, 23), LocalDate.of(2026, 10, 26),
+            LocalDate.of(2026, 10, 27), LocalDate.of(2026, 10, 28))) {
+            newRoute(day, 1, 1, day.atTime(8, 10));
         }
-        for (int day = 9; day <= 11; day++) {
-            newRoute(LocalDate.of(2026, 11, day), 1, 1, LocalDate.of(2026, 11, day).atTime(8, 10));
+        // 11-06(금), 11-07(토, 주말이라 세지 않음), 11-09(월)~11-11(수). 오늘 11-12(목)는 아직 완주 전
+        for (LocalDate day : List.of(LocalDate.of(2026, 11, 6), LocalDate.of(2026, 11, 7), LocalDate.of(2026, 11, 9),
+            LocalDate.of(2026, 11, 10), LocalDate.of(2026, 11, 11))) {
+            newRoute(day, 1, 1, day.atTime(8, 10));
         }
 
         perform(get("/api/v1/stats/streak"))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.currentStreak").value(3))
-            .andExpect(jsonPath("$.data.longestStreak").value(5));
+            .andExpect(jsonPath("$.data.currentStreak").value(4))
+            .andExpect(jsonPath("$.data.longestStreak").value(8));
     }
 
     @Test
