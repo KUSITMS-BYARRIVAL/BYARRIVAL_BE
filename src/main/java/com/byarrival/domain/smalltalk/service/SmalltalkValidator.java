@@ -35,6 +35,9 @@ public class SmalltalkValidator {
         if (hook.isEmpty()) {
             problems.add("hook이 비어 있습니다.");
         } else {
+            if (hook.contains("\n") || hook.contains("\r")) {
+                problems.add("hook은 줄바꿈 없이 한 줄로 쓰세요.");
+            }
             int length = hook.codePointCount(0, hook.length());
             if (length > MAX_HOOK_LENGTH) {
                 problems.add("hook이 " + length + "자입니다. " + MAX_HOOK_LENGTH + "자 이내로 쓰세요.");
