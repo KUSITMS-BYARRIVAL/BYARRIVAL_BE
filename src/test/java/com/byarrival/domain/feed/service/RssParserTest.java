@@ -52,6 +52,34 @@ class RssParserTest {
     }
 
     @Test
+    void 제목_끝에_언론사명이_겹쳐_있으면_모두_뗀다() {
+        List<RssItem> items = parse(rss("""
+            <item>
+              <title>인텔 아태 부사장 "소버린 AI도 경쟁력" - 머니투데이 - 머니투데이</title>
+              <link>https://news.google.com/rss/articles/abc?oc=5</link>
+              <pubDate>Fri, 06 Nov 2026 01:00:00 GMT</pubDate>
+              <source url="https://www.mt.co.kr">머니투데이</source>
+            </item>
+            """));
+
+        assertThat(items.getFirst().title()).isEqualTo("인텔 아태 부사장 \"소버린 AI도 경쟁력\"");
+    }
+
+    @Test
+    void source가_사이트_주소여도_제목_끝의_주소를_뗀다() {
+        List<RssItem> items = parse(rss("""
+            <item>
+              <title>신생 바이오 토르테라퓨틱스는 뭘 하는 곳? - https://www.dhtimes.co.kr/</title>
+              <link>https://news.google.com/rss/articles/abc?oc=5</link>
+              <pubDate>Fri, 06 Nov 2026 01:00:00 GMT</pubDate>
+              <source url="https://www.dhtimes.co.kr">https://www.dhtimes.co.kr/</source>
+            </item>
+            """));
+
+        assertThat(items.getFirst().title()).isEqualTo("신생 바이오 토르테라퓨틱스는 뭘 하는 곳?");
+    }
+
+    @Test
     void 제목_끝이_source와_다르면_제목을_그대로_둔다() {
         List<RssItem> items = parse(rss("""
             <item>
