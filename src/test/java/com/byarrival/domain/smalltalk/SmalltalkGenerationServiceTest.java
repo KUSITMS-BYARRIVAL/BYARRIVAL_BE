@@ -100,6 +100,28 @@ class SmalltalkGenerationServiceTest {
         verify(generator, never()).generate(source(third));
     }
 
+    @Test
+    void 생성하는_사이_같은_기사의_스몰토크가_저장되면_확보한_건수에_넣는다() {
+        Long category = newCategory();
+        Long first = newArticle(category, "1위");
+        Long second = newArticle(category, "2위");
+        Long third = newArticle(category, "3위");
+        // AI 응답을 기다리는 사이 다른 배치 실행이 1위 기사의 스몰토크를 먼저 저장했다
+        given(generator.generate(source(first))).willAnswer(invocation -> {
+            jdbcTemplate.update("INSERT INTO smalltalk (article_id, service_date, hook) VALUES (?, ?, '먼저 저장됐어요.')",
+                first, serviceDate);
+            return result("1위", true, "1위 소식 들으셨어요?");
+        });
+        given(generator.generate(source(second))).willReturn(result("2위", true, "2위 소식 들으셨어요?"));
+
+        Map<Long, Integer> counts = smalltalkGenerationService.generate(serviceDate);
+
+        assertThat(counts).containsEntry(category, 2);
+        verify(generator, never()).generate(source(third));
+        assertThat(jdbcTemplate.queryForObject("SELECT hook FROM smalltalk WHERE article_id = ?", String.class, first))
+            .isEqualTo("먼저 저장됐어요.");
+    }
+
     private static SmalltalkSource source(Long articleId) {
         return argThat(source -> source != null && source.articleId().equals(articleId));
     }
