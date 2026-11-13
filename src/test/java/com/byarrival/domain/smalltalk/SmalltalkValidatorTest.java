@@ -30,6 +30,15 @@ class SmalltalkValidatorTest {
     }
 
     @Test
+    void 줄바꿈이_들어간_한_줄은_실패한다() {
+        assertThatThrownBy(() -> validator.validate(new SmalltalkOutput(TITLE, true, "소식 들으셨어요?\n같이 얘기해요?"), TITLE))
+            .isInstanceOf(BusinessException.class)
+            .hasMessageContaining("줄바꿈");
+        assertThatThrownBy(() -> validator.validate(new SmalltalkOutput(TITLE, true, "소식 들으셨어요?\r\n좋아요."), TITLE))
+            .hasMessageContaining("줄바꿈");
+    }
+
+    @Test
     void 길거나_해요체가_아니거나_제목이_다르면_실패한다() {
         assertThatThrownBy(() -> validator.validate(new SmalltalkOutput("다른 제목", true, "가".repeat(31) + "다."), TITLE))
             .isInstanceOf(BusinessException.class)

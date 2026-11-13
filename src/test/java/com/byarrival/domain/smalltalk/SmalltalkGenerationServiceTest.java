@@ -122,6 +122,18 @@ class SmalltalkGenerationServiceTest {
             .isEqualTo("먼저 저장됐어요.");
     }
 
+    @Test
+    void 추천_후보_기사가_없는_활성_카테고리도_0건으로_센다() {
+        Long empty = newCategory();
+        Long filled = newCategory();
+        Long article = newArticle(filled, "1위");
+        given(generator.generate(source(article))).willReturn(result("1위", true, "1위 소식 들으셨어요?"));
+
+        Map<Long, Integer> counts = smalltalkGenerationService.generate(serviceDate);
+
+        assertThat(counts).containsEntry(empty, 0).containsEntry(filled, 1);
+    }
+
     private static SmalltalkSource source(Long articleId) {
         return argThat(source -> source != null && source.articleId().equals(articleId));
     }
