@@ -24,7 +24,7 @@ public interface RouteRepository extends JpaRepository<Route, Long> {
 
     // 서비스일별 노선 이용 기록. 서비스일당 노선은 하나다
     @Query(value = "SELECT r.service_date AS serviceDate, COUNT(rc.read_at) AS readCount, "
-        + "r.status = 'COMPLETED' AS completed, "
+        + "r.status = 'COMPLETED' AS completed, r.route_condition AS condition, "
         + "CASE WHEN r.status = 'COMPLETED' AND r.started_at IS NOT NULL "
         + "THEN CAST(EXTRACT(EPOCH FROM (r.completed_at - r.started_at)) AS BIGINT) ELSE 0 END AS usedSeconds "
         + "FROM route r LEFT JOIN route_card rc ON rc.route_id = r.id "

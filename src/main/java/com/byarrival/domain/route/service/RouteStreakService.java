@@ -3,6 +3,7 @@ package com.byarrival.domain.route.service;
 import com.byarrival.domain.route.repository.RouteRepository;
 import java.time.LocalDate;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -28,5 +29,23 @@ public class RouteStreakService {
             day = day.minusDays(1);
         }
         return streak;
+    }
+
+    /**
+     * 최장 연속 완주 일수. 연속 이용(streakDays)과 같은 기준으로, 오늘까지 완주한 서비스일 중 하루도 빠짐없이 이어진 가장 긴 구간이다.
+     */
+    @Transactional(readOnly = true)
+    public int longestStreakDays(Long userId, LocalDate today) {
+        List<LocalDate> completed = routeRepository.findCompletedServiceDates(userId, today);
+        int longest = 0;
+        int run = 0;
+        LocalDate previous = null;
+        // 최신순으로 오므로 하루씩 거슬러 올라가며 센다
+        for (LocalDate day : completed) {
+            run = previous != null && day.equals(previous.minusDays(1)) ? run + 1 : 1;
+            longest = Math.max(longest, run);
+            previous = day;
+        }
+        return longest;
     }
 }
