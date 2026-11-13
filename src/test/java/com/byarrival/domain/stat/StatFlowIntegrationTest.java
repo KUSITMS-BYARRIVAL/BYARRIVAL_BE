@@ -14,6 +14,7 @@ import com.byarrival.support.TestcontainersConfig;
 import com.jayway.jsonpath.JsonPath;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -107,6 +108,10 @@ class StatFlowIntegrationTest {
         perform(get("/api/v1/stats/summary").param("period", "MONTH"))
             .andExpect(jsonPath("$.data.from").value("2026-11-01"))
             .andExpect(jsonPath("$.data.readArticleCount").value(3));
+        perform(get("/api/v1/stats/summary").param("period", "YEAR"))
+            .andExpect(jsonPath("$.data.from").value("2026-01-01"))
+            .andExpect(jsonPath("$.data.usedMinutes").value(18))
+            .andExpect(jsonPath("$.data.readArticleCount").value(4));
         perform(get("/api/v1/stats/summary").param("period", "ALL"))
             .andExpect(jsonPath("$.data.from").doesNotExist())
             .andExpect(jsonPath("$.data.usedMinutes").value(18))
@@ -136,24 +141,32 @@ class StatFlowIntegrationTest {
     }
 
     @Test
-    void 캘린더는_날짜별_단계를_네_가지로_보여_준다() throws Exception {
+    void 잔디는_평일만_날짜별_단계를_네_가지로_보여_준다() throws Exception {
         newRoute(LocalDate.of(2026, 11, 10), 2, 2, LocalDateTime.of(2026, 11, 10, 8, 12));
         newRoute(LocalDate.of(2026, 11, 11), 3, 1, null);
         // 노선은 만들었지만 하나도 읽지 않은 날
         newRoute(LocalDate.of(2026, 11, 9), 2, 0, null);
-        // 앱만 열어 본 날(KST 자정 기준 날짜)
-        jdbcTemplate.update("INSERT INTO usage_event_log (user_id, event_type, service_date, occurred_at) "
-            + "VALUES (?, 'APP_ACCESS', ?, ?)", userId, LocalDate.of(2026, 11, 8), LocalDateTime.of(2026, 11, 8, 21, 0));
+        // 앱만 열어 본 날(KST 자정 기준 날짜). 11-06(금)은 평일, 11-08(일)은 주말이라 잔디에 없다
+        for (LocalDate date : List.of(LocalDate.of(2026, 11, 6), LocalDate.of(2026, 11, 8))) {
+            jdbcTemplate.update("INSERT INTO usage_event_log (user_id, event_type, service_date, occurred_at) "
+                + "VALUES (?, 'APP_ACCESS', ?, ?)", userId, date, date.atTime(21, 0));
+        }
 
         String body = perform(get("/api/v1/stats/calendar"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.year").value(2026))
             .andExpect(jsonPath("$.data.today").value("2026-11-12"))
-            .andExpect(jsonPath("$.data.days.length()").value(365))
+            // 2026년 평일 261일
+            .andExpect(jsonPath("$.data.days.length()").value(261))
+            .andExpect(jsonPath("$.data.completedDays").value(1))
             .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
         List<Map<String, Object>> days = JsonPath.read(body, "$.data.days");
-        assertThat(day(days, "2026-11-07").get("level")).isEqualTo("NONE");
-        assertThat(day(days, "2026-11-08").get("level")).isEqualTo("ACCESSED");
+        assertThat(days).noneMatch(day -> {
+            DayOfWeek dayOfWeek = LocalDate.parse((String) day.get("date")).getDayOfWeek();
+            return dayOfWeek == DayOfWeek.SATURDAY || dayOfWeek == DayOfWeek.SUNDAY;
+        });
+        assertThat(day(days, "2026-11-05").get("level")).isEqualTo("NONE");
+        assertThat(day(days, "2026-11-06").get("level")).isEqualTo("ACCESSED");
         assertThat(day(days, "2026-11-09").get("level")).isEqualTo("ACCESSED");
         assertThat(day(days, "2026-11-10").get("level")).isEqualTo("COMPLETED");
         assertThat(day(days, "2026-11-10").get("readCount")).isEqualTo(2);
@@ -164,10 +177,58 @@ class StatFlowIntegrationTest {
         assertThat(day(days, "2026-11-13").get("future")).isEqualTo(true);
 
         perform(get("/api/v1/stats/calendar").param("year", "2025"))
-            .andExpect(jsonPath("$.data.days.length()").value(365))
-            .andExpect(jsonPath("$.data.days[0].date").value("2025-01-01"));
+            .andExpect(jsonPath("$.data.days.length()").value(261))
+            .andExpect(jsonPath("$.data.days[0].date").value("2025-01-01"))
+            .andExpect(jsonPath("$.data.completedDays").value(0));
         perform(get("/api/v1/stats/calendar").param("year", "1999"))
             .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void 연속_완주와_최장_연속_완주를_센다() throws Exception {
+        // 10-20~10-24 5일 연속, 11-09~11-11 3일 연속(오늘 11-12는 아직 완주 전)
+        for (int day = 20; day <= 24; day++) {
+            newRoute(LocalDate.of(2026, 10, day), 1, 1, LocalDate.of(2026, 10, day).atTime(8, 10));
+        }
+        for (int day = 9; day <= 11; day++) {
+            newRoute(LocalDate.of(2026, 11, day), 1, 1, LocalDate.of(2026, 11, day).atTime(8, 10));
+        }
+
+        perform(get("/api/v1/stats/streak"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.currentStreak").value(3))
+            .andExpect(jsonPath("$.data.longestStreak").value(5));
+    }
+
+    @Test
+    void 컨디션_기록은_올해_완주한_날만_센다() throws Exception {
+        newRoute(LocalDate.of(2026, 3, 2), 1, 1, LocalDate.of(2026, 3, 2).atTime(8, 10), "RAINY");
+        newRoute(LocalDate.of(2026, 11, 2), 1, 1, LocalDate.of(2026, 11, 2).atTime(8, 10), "SUNNY");
+        newRoute(LocalDate.of(2026, 11, 3), 1, 1, LocalDate.of(2026, 11, 3).atTime(8, 10), "CLOUDY");
+        newRoute(LocalDate.of(2026, 11, 4), 1, 1, LocalDate.of(2026, 11, 4).atTime(8, 10), "CLOUDY");
+        // 완주하지 않은 날과 작년은 세지 않는다
+        newRoute(LocalDate.of(2026, 11, 5), 2, 1, null, "SUNNY");
+        newRoute(LocalDate.of(2025, 12, 1), 1, 1, LocalDate.of(2025, 12, 1).atTime(8, 10), "NORMAL");
+
+        perform(get("/api/v1/stats/conditions"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.year").value(2026))
+            .andExpect(jsonPath("$.data.yearCounts.sunny").value(1))
+            .andExpect(jsonPath("$.data.yearCounts.normal").value(0))
+            .andExpect(jsonPath("$.data.yearCounts.cloudy").value(2))
+            .andExpect(jsonPath("$.data.yearCounts.rainy").value(1))
+            .andExpect(jsonPath("$.data.monthCounts.rainy").value(0))
+            .andExpect(jsonPath("$.data.monthTopCondition").value("CLOUDY"));
+    }
+
+    @Test
+    void 이번_달_완주가_없으면_가장_많은_컨디션은_없다() throws Exception {
+        perform(get("/api/v1/stats/conditions"))
+            .andExpect(jsonPath("$.data.yearCounts.sunny").value(0))
+            .andExpect(jsonPath("$.data.monthTopCondition").doesNotExist());
+        perform(get("/api/v1/stats/streak"))
+            .andExpect(jsonPath("$.data.currentStreak").value(0))
+            .andExpect(jsonPath("$.data.longestStreak").value(0));
     }
 
     @Test
@@ -195,14 +256,18 @@ class StatFlowIntegrationTest {
 
     // carted건을 담고 그중 read건을 읽은 노선. completedAt이 있으면 08:00에 출발해 그 시각에 완주했다
     private void newRoute(LocalDate serviceDate, int carted, int read, LocalDateTime completedAt) {
+        newRoute(serviceDate, carted, read, completedAt, "SUNNY");
+    }
+
+    private void newRoute(LocalDate serviceDate, int carted, int read, LocalDateTime completedAt, String condition) {
         String status = completedAt != null ? "COMPLETED" : read > 0 ? "IN_PROGRESS" : "CREATED";
         LocalDateTime startedAt = status.equals("CREATED") ? null : serviceDate.atTime(8, 0);
         Long routeId = jdbcTemplate.queryForObject("""
             INSERT INTO route (user_id, service_date, route_condition, target_minutes, status, fallback_step, expires_at,
                 started_at, completed_at)
-            VALUES (?, ?, 'SUNNY', 10, ?, 0, ?, ?, ?)
+            VALUES (?, ?, ?, 10, ?, 0, ?, ?, ?)
             RETURNING id
-            """, Long.class, userId, serviceDate, status, serviceDate.plusDays(1).atTime(4, 0), startedAt,
+            """, Long.class, userId, serviceDate, condition, status, serviceDate.plusDays(1).atTime(4, 0), startedAt,
             completedAt);
         for (int i = 1; i <= carted; i++) {
             Long articleId = newArticle(serviceDate);
