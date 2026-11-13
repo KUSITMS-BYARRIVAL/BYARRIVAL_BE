@@ -312,7 +312,7 @@ class RouteFlowIntegrationTest {
         Long userId = newUser(10, 0, categoryId);
         TokenResponse user = tokenService.issue(userId);
         Long routeId = boardedRoute(user, articles);
-        // 어제·그제 완주, 사흘 전은 쉬어서 오늘 완주하면 연속 3일
+        // 오늘 11-10(화). 어제(월) 완주, 그제(일)는 주말이라 세지 않고, 11-06(금) 완주로 이어져 오늘 완주하면 평일 연속 3일
         completedRoute(userId, TODAY.minusDays(1));
         completedRoute(userId, TODAY.minusDays(2));
         completedRoute(userId, TODAY.minusDays(4));

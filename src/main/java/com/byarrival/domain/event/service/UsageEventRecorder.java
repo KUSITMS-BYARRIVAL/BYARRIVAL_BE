@@ -44,19 +44,30 @@ public class UsageEventRecorder {
             () -> repository.insertRouteCompleted(userId, routeId, serviceDate, occurredAt));
     }
 
-    private void retry(String target, Runnable work) {
+    /**
+     * 앱 접속 이벤트. 날짜는 서비스일이 아니라 KST 자정 기준 날짜이며 날짜당 한 번만 남는다(나의 기록 캘린더 '앱 접속만').
+     *
+     * @return 저장했거나 이미 있으면 true, 다시 시도해도 실패하면 false
+     */
+    public boolean recordAppAccess(Long userId, LocalDate accessDate, LocalDateTime occurredAt) {
+        return retry("APP_ACCESS userId=" + userId + " date=" + accessDate,
+            () -> repository.insertAppAccess(userId, accessDate, occurredAt));
+    }
+
+    private boolean retry(String target, Runnable work) {
         for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
             try {
                 transactionTemplate.executeWithoutResult(status -> work.run());
-                return;
+                return true;
             } catch (RuntimeException e) {
                 if (attempt == MAX_ATTEMPTS) {
                     log.error("[UsageEvent] {} 저장 실패 ({}회 시도)", target, MAX_ATTEMPTS, e);
-                    return;
+                    return false;
                 }
                 log.warn("[UsageEvent] {} 저장 실패, 다시 시도 {}/{}: {}", target, attempt, MAX_ATTEMPTS,
                     e.getClass().getSimpleName());
             }
         }
+        return false;
     }
 }

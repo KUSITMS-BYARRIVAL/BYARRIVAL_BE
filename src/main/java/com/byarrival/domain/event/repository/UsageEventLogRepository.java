@@ -3,6 +3,7 @@ package com.byarrival.domain.event.repository;
 import com.byarrival.domain.user.entity.User;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.Repository;
@@ -27,6 +28,19 @@ public interface UsageEventLogRepository extends Repository<User, Long> {
         + "ON CONFLICT DO NOTHING", nativeQuery = true)
     int insertRouteCompleted(@Param("userId") Long userId, @Param("routeId") Long routeId,
         @Param("serviceDate") LocalDate serviceDate, @Param("occurredAt") LocalDateTime occurredAt);
+
+    @Modifying
+    @Query(value = "INSERT INTO usage_event_log (user_id, event_type, service_date, occurred_at) "
+        + "VALUES (:userId, 'APP_ACCESS', :accessDate, :occurredAt) "
+        + "ON CONFLICT DO NOTHING", nativeQuery = true)
+    int insertAppAccess(@Param("userId") Long userId, @Param("accessDate") LocalDate accessDate,
+        @Param("occurredAt") LocalDateTime occurredAt);
+
+    // 앱 접속 날짜(KST 자정 기준)
+    @Query(value = "SELECT service_date FROM usage_event_log WHERE user_id = :userId AND event_type = 'APP_ACCESS' "
+        + "AND service_date BETWEEN :fromDate AND :toDate", nativeQuery = true)
+    List<LocalDate> findAppAccessDates(@Param("userId") Long userId, @Param("fromDate") LocalDate from,
+        @Param("toDate") LocalDate to);
 
     @Modifying
     @Query(value = "DELETE FROM usage_event_log WHERE occurred_at < :before", nativeQuery = true)
