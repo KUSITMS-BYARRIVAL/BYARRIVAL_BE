@@ -23,7 +23,9 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.stream.Stream;
 import lombok.extern.slf4j.Slf4j;
+import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 /**
@@ -34,6 +36,9 @@ import org.springframework.stereotype.Service;
 @Slf4j
 @Service
 public class SmalltalkGenerationService {
+
+    private static final String UNIQUE_VIOLATION_SQL_STATE = "23505";
+    private static final String SMALLTALK_ARTICLE_UNIQUE_CONSTRAINT = "uk_smalltalk_article";
 
     private final ArticleQueryService articleQueryService;
     private final CategoryMappingService categoryMappingService;
@@ -93,9 +98,18 @@ public class SmalltalkGenerationService {
             }
             try {
                 String hook = generateValid(sourceOf(article, categoryName));
-                if (hook != null && store.save(article.getId(), serviceDate, hook, LocalDateTime.now(clock))) {
+                if (hook != null) {
+                    store.save(article.getId(), serviceDate, hook, LocalDateTime.now(clock));
                     count++;
                 }
+            } catch (DataIntegrityViolationException e) {
+                if (!isSmalltalkArticleUniqueViolation(e)) {
+                    log.error("[AI 스몰토크 실패] articleId={} 저장 실패", article.getId(), e);
+                    continue;
+                }
+                // 배치 재실행이 겹쳐 그 사이 같은 기사의 스몰토크가 저장된 경우. 이미 있으니 확보한 건수에 넣는다
+                log.info("[AI 스몰토크] articleId={} 이미 스몰토크가 있어 건너뜀", article.getId());
+                count++;
             } catch (RuntimeException e) {
                 log.error("[AI 스몰토크 실패] articleId={} {}", article.getId(), e.getClass().getSimpleName(), e);
             }
@@ -136,6 +150,16 @@ public class SmalltalkGenerationService {
         }
         log.warn("[AI 스몰토크 실패] articleId={} attempts={}", source.articleId(), attempts);
         return null;
+    }
+
+    private static boolean isSmalltalkArticleUniqueViolation(DataIntegrityViolationException e) {
+        for (Throwable cause = e.getCause(); cause != null; cause = cause.getCause()) {
+            if (cause instanceof ConstraintViolationException violation) {
+                return UNIQUE_VIOLATION_SQL_STATE.equals(violation.getSQLState())
+                    && SMALLTALK_ARTICLE_UNIQUE_CONSTRAINT.equalsIgnoreCase(violation.getConstraintName());
+            }
+        }
+        return false;
     }
 
     private static SmalltalkSource sourceOf(Article article, String categoryName) {

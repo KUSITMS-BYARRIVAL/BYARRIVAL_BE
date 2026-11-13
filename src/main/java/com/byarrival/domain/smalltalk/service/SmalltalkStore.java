@@ -6,7 +6,6 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,15 +24,11 @@ public class SmalltalkStore {
     }
 
     /**
-     * @return 저장했으면 true. 그 사이 같은 기사의 스몰토크가 저장됐으면 false
+     * 스몰토크를 저장한다. 그 사이 같은 기사의 스몰토크가 저장됐으면(배치 재실행이 겹친 경우) uk_smalltalk_article 위반으로
+     * DataIntegrityViolationException이 난다. 트랜잭션 밖의 호출부에서 중복으로 처리한다.
      */
     @Transactional
-    public boolean save(Long articleId, LocalDate serviceDate, String hook, LocalDateTime now) {
-        try {
-            smalltalkRepository.saveAndFlush(Smalltalk.create(articleId, serviceDate, hook, now));
-            return true;
-        } catch (DataIntegrityViolationException e) {
-            return false;
-        }
+    public void save(Long articleId, LocalDate serviceDate, String hook, LocalDateTime now) {
+        smalltalkRepository.saveAndFlush(Smalltalk.create(articleId, serviceDate, hook, now));
     }
 }
