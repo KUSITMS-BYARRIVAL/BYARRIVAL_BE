@@ -104,6 +104,28 @@ class QuizGenerationServiceTest {
         verify(generator).generate(source(failed));
     }
 
+    @Test
+    void 생성하는_사이_같은_기사의_퀴즈가_저장되면_실패가_아니라_이미_있음으로_센다() {
+        Long article = newArticle(true, "VISIBLE", "겹친 기사");
+        // AI 응답을 기다리는 사이 다른 배치 실행이 같은 기사의 퀴즈를 먼저 저장했다
+        given(generator.generate(source(article))).willAnswer(invocation -> {
+            jdbcTemplate.update("""
+                INSERT INTO quiz (article_id, question, choices, answer_seq, explanation)
+                VALUES (?, '먼저 저장된 문제?', '[{"seq":1,"content":"가"},{"seq":2,"content":"나"},{"seq":3,"content":"다"}]'::jsonb,
+                    1, '먼저 저장됐어요.')
+                """, article);
+            return result(valid("겹친 기사"));
+        });
+
+        QuizGenerationResult result = quizGenerationService.generate(serviceDate);
+
+        assertThat(result.succeeded()).isZero();
+        assertThat(result.duplicated()).isEqualTo(1);
+        assertThat(result.failedArticleIds()).isEmpty();
+        assertThat(jdbcTemplate.queryForObject("SELECT question FROM quiz WHERE article_id = ?", String.class, article))
+            .isEqualTo("먼저 저장된 문제?");
+    }
+
     private static QuizSource source(Long articleId) {
         return argThat(source -> source != null && source.articleId().equals(articleId));
     }
