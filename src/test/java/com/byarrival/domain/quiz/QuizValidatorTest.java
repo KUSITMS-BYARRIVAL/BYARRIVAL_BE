@@ -14,7 +14,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 class QuizValidatorTest {
 
-    private static final String TITLE = "엑시노스 2600, 애플 NPU 85% 성능";
+    private static final String TITLE = "삼성 AI, 어디까지 왔나? 2026년 온디바이스 AI 반도체 현황";
 
     private final QuizValidator validator = new QuizValidator();
 
@@ -53,6 +53,35 @@ class QuizValidatorTest {
             .hasMessageContaining("2번 오답이(가) 21자");
         assertThatThrownBy(() -> validator.validate(duplicated, TITLE))
             .hasMessageContaining("2번 오답이 정답이나 다른 오답과 같습니다");
+    }
+
+    @Test
+    void 정답_글이_제목에_그대로_있으면_실패한다() {
+        String title = "구자욱, 해외 에이전트 선임…MLB 진출 도전";
+        QuizOutput output = new QuizOutput(title, "구자욱이 FA를 앞두고 선임한 것은?", "해외 에이전트 선임",
+            List.of("국내 구단과 재계약", "일본 리그 진출"), "MLB 진출을 위해 해외 에이전트를 선임했어요.");
+
+        assertThatThrownBy(() -> validator.validate(output, title))
+            .hasMessageContaining("제목에 그대로 있어");
+    }
+
+    @Test
+    void 정답_숫자만_제목에_있으면_실패한다() {
+        String title = "KBO FA 시장 개장! 원태인·구자욱·양의지 등 28명";
+        QuizOutput output = new QuizOutput(title, "KBO가 공시한 FA 선수는 몇 명인가요?", "FA 자격 선수 28명",
+            List.of("FA 자격 선수 30명", "FA 자격 선수 24명"), "KBO가 FA 28명을 공시했어요.");
+
+        assertThatThrownBy(() -> validator.validate(output, title))
+            .hasMessageContaining("정답의 숫자가 제목에 있어");
+    }
+
+    @Test
+    void 제목에_없는_내용을_물으면_통과한다() {
+        String title = "KBO FA 시장 개장! 원태인·구자욱·양의지 등 28명";
+        QuizOutput output = new QuizOutput(title, "올해 FA 협상이 시작되는 날은?", "11월 18일",
+            List.of("11월 20일", "12월 1일"), "FA 협상은 11월 18일부터 시작해요.");
+
+        assertThat(validator.validate(output, title).answer()).isEqualTo("11월 18일");
     }
 
     @ParameterizedTest
