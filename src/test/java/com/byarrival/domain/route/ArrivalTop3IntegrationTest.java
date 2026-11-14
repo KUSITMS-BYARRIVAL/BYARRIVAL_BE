@@ -62,7 +62,7 @@ class ArrivalTop3IntegrationTest {
     private JdbcTemplate jdbcTemplate;
 
     @Test
-    void TOP3_항목에_예상_읽기시간을_분으로_내려준다() throws Exception {
+    void TOP3_항목에_예상_읽기시간을_분으로_내려주고_없으면_null이다() throws Exception {
         Long feedId = jdbcTemplate.queryForObject(
             "INSERT INTO rss_feed (press_name, feed_url) VALUES ('테스트', ?) RETURNING id", Long.class,
             "https://example.com/" + UUID.randomUUID());
@@ -71,20 +71,27 @@ class ArrivalTop3IntegrationTest {
             "테스트-" + UUID.randomUUID().toString().substring(0, 8));
         Long mine = newArticle(feedId, categoryId, "2.0");
         Long popular = newArticle(feedId, categoryId, "2.3");
+        // 읽기시간을 계산하지 못한 기사(원문을 못 가져와 추천 후보가 아닌 기사)도 담겨 있을 수 있다
+        Long noMinutes = newArticleWithoutMinutes(feedId, categoryId);
         Long me = newUser();
-        Long other = newUser();
-        // 나는 mine을 다 읽었고, 다른 사용자는 popular를 담았다
+        // 나는 mine을 다 읽었고, 다른 사용자 둘은 popular를, 한 명은 noMinutes를 담았다
         Long myRoute = newRoute(me, "IN_PROGRESS", mine, true);
-        newRoute(other, "IN_PROGRESS", popular, false);
+        newRoute(newUser(), "IN_PROGRESS", popular, false);
+        newRoute(newUser(), "IN_PROGRESS", popular, false);
+        newRoute(newUser(), "IN_PROGRESS", noMinutes, false);
 
         mockMvc.perform(post("/api/v1/routes/{routeId}/arrival", myRoute)
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenService.issue(me).accessToken()))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.top3.status").value("RANKED"))
-            .andExpect(jsonPath("$.data.top3.articles.length()").value(1))
+            .andExpect(jsonPath("$.data.top3.articles.length()").value(2))
             .andExpect(jsonPath("$.data.top3.articles[0].articleId").value(popular))
             .andExpect(jsonPath("$.data.top3.articles[0].readingMinutes").value(3))
-            .andExpect(jsonPath("$.data.top3.articles[0].cartedUserCount").value(1));
+            .andExpect(jsonPath("$.data.top3.articles[0].cartedUserCount").value(2))
+            // 읽기시간이 없는 기사도 TOP3에서 빠지거나 TOP3 전체가 사라지지 않고, readingMinutes만 null이다
+            .andExpect(jsonPath("$.data.top3.articles[1].articleId").value(noMinutes))
+            .andExpect(jsonPath("$.data.top3.articles[1].readingMinutes").doesNotExist())
+            .andExpect(jsonPath("$.data.top3.articles[1].cartedUserCount").value(1));
     }
 
     private Long newUser() {
@@ -101,6 +108,16 @@ class ArrivalTop3IntegrationTest {
             RETURNING id
             """, Long.class, feedId, categoryId, "https://news.example.com/" + UUID.randomUUID(),
             TODAY.atTime(1, 0), TODAY, readingMinutes);
+    }
+
+    private Long newArticleWithoutMinutes(Long feedId, Long categoryId) {
+        return jdbcTemplate.queryForObject("""
+            INSERT INTO article (feed_id, category_id, original_url, title, press_name, published_at, service_date,
+                process_status, recommendable, visibility)
+            VALUES (?, ?, ?, '읽기시간 없는 기사', '테스트일보', ?, ?, 'COLLECTED', FALSE, 'VISIBLE')
+            RETURNING id
+            """, Long.class, feedId, categoryId, "https://news.example.com/" + UUID.randomUUID(), TODAY.atTime(1, 0),
+            TODAY);
     }
 
     private Long newRoute(Long userId, String status, Long articleId, boolean read) {
