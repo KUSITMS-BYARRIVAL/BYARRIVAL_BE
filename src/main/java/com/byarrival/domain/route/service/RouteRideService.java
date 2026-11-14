@@ -159,6 +159,8 @@ public class RouteRideService {
                 Article article = articles.get(count.getArticleId());
                 ranked.add(new PopularArticleResponse(ranked.size() + 1, article.getId(), article.getTitle(),
                     article.getPressName(), article.getCategoryId(), categoryNames.get(article.getCategoryId()),
+                    article.getReadingMinutes() == null ? null
+                        : article.getReadingMinutes().setScale(0, RoundingMode.CEILING).intValue(),
                     count.getUserCount(), urlOf(article)));
             }
             return PopularArticlesResponse.ranked(ranked);
