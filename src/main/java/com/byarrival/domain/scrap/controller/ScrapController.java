@@ -28,8 +28,8 @@ public class ScrapController {
     private final ScrapService scrapService;
 
     @Operation(summary = "보관함 조회",
-        description = "탭별 저장 개수와 목록. 기사 탭은 저장 시각 최신순(LATEST)·오래된순(OLDEST) 정렬과 카테고리 필터를 쓴다. "
-            + "categories는 저장 기사가 있는 카테고리만 담는다(0건 카테고리 숨김). 숨겼거나 원문이 삭제된 기사는 available=false.")
+        description = "탭별 저장 개수와 목록(type=ARTICLE|SMALLTALK). 두 탭 모두 저장 시각 최신순(LATEST)·오래된순(OLDEST) 정렬과 카테고리 필터를 쓴다. "
+            + "categories는 그 탭에 저장한 콘텐츠가 있는 카테고리만 담는다(0건 카테고리 숨김). 숨겼거나 원문이 삭제된 기사는 available=false.")
     @GetMapping
     public ApiResponse<LibraryResponse> getLibrary(
         @LoginUserId Long userId,
@@ -49,6 +49,18 @@ public class ScrapController {
     @DeleteMapping("/articles/{articleId}")
     public ApiResponse<ScrapStatusResponse> unsaveArticle(@LoginUserId Long userId, @PathVariable Long articleId) {
         return ApiResponse.ok(scrapService.unsaveArticle(userId, articleId));
+    }
+
+    @Operation(summary = "스몰토크 저장", description = "이미 저장한 스몰토크면 그대로 둔다. 삭제된 스몰토크는 SCRAP_TARGET_NOT_FOUND.")
+    @PutMapping("/smalltalks/{smalltalkId}")
+    public ApiResponse<ScrapStatusResponse> saveSmalltalk(@LoginUserId Long userId, @PathVariable Long smalltalkId) {
+        return ApiResponse.ok(scrapService.saveSmalltalk(userId, smalltalkId));
+    }
+
+    @Operation(summary = "스몰토크 저장 해제", description = "저장하지 않은 스몰토크면 그대로 둔다.")
+    @DeleteMapping("/smalltalks/{smalltalkId}")
+    public ApiResponse<ScrapStatusResponse> unsaveSmalltalk(@LoginUserId Long userId, @PathVariable Long smalltalkId) {
+        return ApiResponse.ok(scrapService.unsaveSmalltalk(userId, smalltalkId));
     }
 
     @Operation(summary = "보관함에서 삭제", description = "토스트의 [되돌리기]는 restore로 원래 자리에 되살린다.")

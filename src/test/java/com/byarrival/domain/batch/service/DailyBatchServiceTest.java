@@ -19,6 +19,7 @@ import com.byarrival.domain.feed.dto.FeedCollectResult;
 import com.byarrival.domain.feed.dto.FetchedFeed;
 import com.byarrival.domain.feed.service.FeedCollectService;
 import com.byarrival.domain.quiz.service.QuizGenerationService;
+import com.byarrival.domain.smalltalk.service.SmalltalkGenerationService;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -41,6 +42,7 @@ class DailyBatchServiceTest {
     private ArticleAiService articleAiService;
     private ArticleStoryService articleStoryService;
     private QuizGenerationService quizGenerationService;
+    private SmalltalkGenerationService smalltalkGenerationService;
     private BatchMonitor batchMonitor;
 
     @BeforeEach
@@ -51,6 +53,7 @@ class DailyBatchServiceTest {
         articleAiService = mock(ArticleAiService.class);
         articleStoryService = mock(ArticleStoryService.class);
         quizGenerationService = mock(QuizGenerationService.class);
+        smalltalkGenerationService = mock(SmalltalkGenerationService.class);
         batchMonitor = mock(BatchMonitor.class);
         given(articleCollectService.checkCategoryFill(any())).willReturn(new CategoryFill(List.of(), Map.of(), Map.of(1L, 20L)));
         given(articleCollectService.checkRecommendableFill(any()))
@@ -246,18 +249,19 @@ class DailyBatchServiceTest {
     }
 
     @Test
-    void 기사를_저장한_뒤_AI로_가공하고_같은_사건을_정리한_뒤_퀴즈를_만든다() {
+    void 기사를_저장한_뒤_AI로_가공하고_같은_사건을_정리한_뒤_퀴즈와_스몰토크를_만든다() {
         given(batchRunService.start(SERVICE_DATE)).willReturn(Optional.of(10L));
         given(feedCollectService.collect(SERVICE_DATE)).willReturn(collected(fetchedFeed(1L)));
 
         service(LocalDateTime.of(2026, 11, 2, 23, 45)).run();
 
-        InOrder inOrder = inOrder(articleCollectService, articleAiService, articleStoryService, quizGenerationService,
-            batchRunService);
+        InOrder inOrder = inOrder(articleCollectService, articleAiService, articleStoryService,
+            quizGenerationService, smalltalkGenerationService, batchRunService);
         inOrder.verify(articleCollectService).collect(any(), eq(SERVICE_DATE));
         inOrder.verify(articleAiService).process(SERVICE_DATE);
         inOrder.verify(articleStoryService).dedupe(SERVICE_DATE);
         inOrder.verify(quizGenerationService).generate(SERVICE_DATE);
+        inOrder.verify(smalltalkGenerationService).generate(SERVICE_DATE);
         inOrder.verify(articleCollectService).checkRecommendableFill(SERVICE_DATE);
         inOrder.verify(batchRunService).complete(10L);
     }
@@ -267,6 +271,17 @@ class DailyBatchServiceTest {
         given(batchRunService.start(SERVICE_DATE)).willReturn(Optional.of(10L));
         given(feedCollectService.collect(SERVICE_DATE)).willReturn(collected(fetchedFeed(1L)));
         given(quizGenerationService.generate(SERVICE_DATE)).willThrow(new IllegalStateException("퀴즈 실패"));
+
+        service(LocalDateTime.of(2026, 11, 2, 23, 45)).run();
+
+        verify(batchRunService).complete(10L);
+    }
+
+    @Test
+    void 스몰토크_생성이_실패해도_배치는_완료한다() {
+        given(batchRunService.start(SERVICE_DATE)).willReturn(Optional.of(10L));
+        given(feedCollectService.collect(SERVICE_DATE)).willReturn(collected(fetchedFeed(1L)));
+        given(smalltalkGenerationService.generate(SERVICE_DATE)).willThrow(new IllegalStateException("스몰토크 실패"));
 
         service(LocalDateTime.of(2026, 11, 2, 23, 45)).run();
 
@@ -323,6 +338,6 @@ class DailyBatchServiceTest {
     private DailyBatchService service(LocalDateTime now) {
         Clock clock = Clock.fixed(now.atZone(KST).toInstant(), KST);
         return new DailyBatchService(batchRunService, feedCollectService, articleCollectService, articleAiService,
-            articleStoryService, quizGenerationService, batchMonitor, clock);
+            articleStoryService, quizGenerationService, smalltalkGenerationService, batchMonitor, clock);
     }
 }

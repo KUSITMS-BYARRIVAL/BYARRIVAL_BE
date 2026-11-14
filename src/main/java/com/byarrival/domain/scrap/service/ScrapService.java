@@ -8,6 +8,7 @@ import com.byarrival.domain.scrap.dto.response.LibraryArticleResponse;
 import com.byarrival.domain.scrap.dto.response.LibraryCategoryResponse;
 import com.byarrival.domain.scrap.dto.response.LibraryCountResponse;
 import com.byarrival.domain.scrap.dto.response.LibraryResponse;
+import com.byarrival.domain.scrap.dto.response.LibrarySmalltalkResponse;
 import com.byarrival.domain.scrap.dto.response.LibrarySort;
 import com.byarrival.domain.scrap.dto.response.LibraryType;
 import com.byarrival.domain.scrap.dto.response.ScrapStatusResponse;
@@ -16,6 +17,8 @@ import com.byarrival.domain.scrap.entity.ScrapTargetType;
 import com.byarrival.domain.scrap.exception.ScrapErrorCode;
 import com.byarrival.domain.scrap.repository.ScrapRepository;
 import com.byarrival.domain.scrap.repository.ScrapRepository.TypeCount;
+import com.byarrival.domain.smalltalk.service.SmalltalkQueryService;
+import com.byarrival.domain.smalltalk.service.SmalltalkQueryService.SmalltalkView;
 import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -43,6 +46,7 @@ public class ScrapService {
     private final ScrapWriter scrapWriter;
     private final ArticleQueryService articleQueryService;
     private final CategoryMappingService categoryMappingService;
+    private final SmalltalkQueryService smalltalkQueryService;
     private final Clock clock;
 
     /**
@@ -54,14 +58,51 @@ public class ScrapService {
             || !articleQueryService.findUnavailableIds(List.of(articleId)).isEmpty()) {
             throw new BusinessException(ScrapErrorCode.SCRAP_TARGET_NOT_FOUND);
         }
+        save(userId, ScrapTargetType.ARTICLE, articleId);
+        return new ScrapStatusResponse(articleId, true);
+    }
+
+    /**
+     * 스몰토크를 보관함에 저장한다(PICK-03). 이미 저장돼 있으면 그대로 둔다. 숨겼거나 연결 뉴스가 삭제된 스몰토크는 저장할 수 없다.
+     */
+    public ScrapStatusResponse saveSmalltalk(Long userId, Long smalltalkId) {
+        SmalltalkView smalltalk = smalltalkQueryService.findAllByIds(List.of(smalltalkId)).get(smalltalkId);
+        if (smalltalk == null || !smalltalk.available()) {
+            throw new BusinessException(ScrapErrorCode.SCRAP_TARGET_NOT_FOUND);
+        }
+        save(userId, ScrapTargetType.SMALLTALK, smalltalkId);
+        return new ScrapStatusResponse(smalltalkId, true);
+    }
+
+    /**
+     * 스몰토크 저장을 해제한다(PICK-03). 저장돼 있지 않으면 그대로 둔다.
+     */
+    @Transactional
+    public ScrapStatusResponse unsaveSmalltalk(Long userId, Long smalltalkId) {
+        scrapRepository.findByUserIdAndTargetTypeAndTargetId(userId, ScrapTargetType.SMALLTALK, smalltalkId)
+            .ifPresent(scrap -> scrap.delete(LocalDateTime.now(clock)));
+        return new ScrapStatusResponse(smalltalkId, false);
+    }
+
+    /**
+     * @return 주어진 스몰토크 중 사용자가 보관함에 저장한 스몰토크 ID
+     */
+    @Transactional(readOnly = true)
+    public Set<Long> findScrappedSmalltalkIds(Long userId, Collection<Long> smalltalkIds) {
+        if (smalltalkIds.isEmpty()) {
+            return Set.of();
+        }
+        return Set.copyOf(scrapRepository.findActiveTargetIds(userId, ScrapTargetType.SMALLTALK, smalltalkIds));
+    }
+
+    private void save(Long userId, ScrapTargetType type, Long targetId) {
         LocalDateTime now = LocalDateTime.now(clock);
         try {
-            scrapWriter.save(userId, ScrapTargetType.ARTICLE, articleId, now);
+            scrapWriter.save(userId, type, targetId, now);
         } catch (DataIntegrityViolationException e) {
-            // 같은 기사를 동시에 저장한 경우. 먼저 들어간 행을 살린다
-            scrapWriter.save(userId, ScrapTargetType.ARTICLE, articleId, now);
+            // 같은 콘텐츠를 동시에 저장한 경우. 먼저 들어간 행을 살린다
+            scrapWriter.save(userId, type, targetId, now);
         }
-        return new ScrapStatusResponse(articleId, true);
     }
 
     /**
@@ -109,8 +150,10 @@ public class ScrapService {
     @Transactional(readOnly = true)
     public LibraryResponse getLibrary(Long userId, LibraryType type, LibrarySort sort, Long categoryId) {
         LibraryCountResponse counts = countByType(userId);
-        if (type != LibraryType.ARTICLE) {
-            throw new BusinessException(ScrapErrorCode.SCRAP_TYPE_NOT_SUPPORTED);
+        Comparator<Scrap> order = Comparator.comparing(Scrap::getCreatedAt).thenComparing(Scrap::getId);
+        Comparator<Scrap> sorted = sort == LibrarySort.OLDEST ? order : order.reversed();
+        if (type == LibraryType.SMALLTALK) {
+            return smalltalkLibrary(userId, counts, sorted, categoryId);
         }
         List<Scrap> scraps = scrapRepository.findActive(userId, ScrapTargetType.ARTICLE);
         Set<Long> articleIds = scraps.stream().map(Scrap::getTargetId).collect(Collectors.toSet());
@@ -120,15 +163,43 @@ public class ScrapService {
 
         // 원문 기사 행이 없어진 저장(기사 삭제)은 보여 줄 내용이 없어 뺀다
         List<Scrap> visible = scraps.stream().filter(scrap -> articles.containsKey(scrap.getTargetId())).toList();
-        List<LibraryCategoryResponse> categories = categoriesOf(visible, articles, categoryNames);
+        Map<Long, Long> categoryCounts = new HashMap<>();
+        visible.forEach(scrap -> categoryCounts.merge(articles.get(scrap.getTargetId()).getCategoryId(), 1L, Long::sum));
+        List<LibraryCategoryResponse> categories = categoriesOf(categoryCounts, categoryNames);
 
-        Comparator<Scrap> order = Comparator.comparing(Scrap::getCreatedAt).thenComparing(Scrap::getId);
         List<LibraryArticleResponse> items = visible.stream()
             .filter(scrap -> categoryId == null || categoryId.equals(articles.get(scrap.getTargetId()).getCategoryId()))
-            .sorted(sort == LibrarySort.OLDEST ? order : order.reversed())
+            .sorted(sorted)
             .map(scrap -> toArticle(scrap, articles.get(scrap.getTargetId()), unavailable, categoryNames))
             .toList();
-        return new LibraryResponse(type, counts, categories, items);
+        return new LibraryResponse(type, counts, categories, items, List.of());
+    }
+
+    // 스몰토크 탭도 기사 탭처럼 카테고리 칩과 필터를 쓴다(보관함 스몰토크 화면)
+    private LibraryResponse smalltalkLibrary(Long userId, LibraryCountResponse counts, Comparator<Scrap> sorted,
+        Long categoryId) {
+        List<Scrap> scraps = scrapRepository.findActive(userId, ScrapTargetType.SMALLTALK);
+        Map<Long, SmalltalkView> smalltalks = smalltalkQueryService.findAllByIds(
+            scraps.stream().map(Scrap::getTargetId).toList());
+        List<Scrap> visible = scraps.stream().filter(scrap -> smalltalks.containsKey(scrap.getTargetId())).toList();
+        Map<Long, Long> categoryCounts = new HashMap<>();
+        visible.forEach(scrap -> {
+            Long category = smalltalks.get(scrap.getTargetId()).categoryId();
+            if (category != null) {
+                categoryCounts.merge(category, 1L, Long::sum);
+            }
+        });
+        List<LibrarySmalltalkResponse> items = visible.stream()
+            .filter(scrap -> categoryId == null || categoryId.equals(smalltalks.get(scrap.getTargetId()).categoryId()))
+            .sorted(sorted)
+            .map(scrap -> {
+                SmalltalkView view = smalltalks.get(scrap.getTargetId());
+                return new LibrarySmalltalkResponse(scrap.getId(), view.smalltalkId(), view.available(), view.hook(),
+                    view.categoryId(), view.categoryName(), view.articleTitle(), view.sourceUrl(), scrap.getCreatedAt());
+            })
+            .toList();
+        return new LibraryResponse(LibraryType.SMALLTALK, counts,
+            categoriesOf(categoryCounts, categoryMappingService.getActiveCategoryNames()), List.of(), items);
     }
 
     private Scrap findOwned(Long userId, Long scrapId) {
@@ -149,13 +220,8 @@ public class ScrapService {
             counts.getOrDefault(ScrapTargetType.SMALLTALK, 0L));
     }
 
-    // 저장 기사가 있는 카테고리만 화면 순서(display_order)대로
-    private static List<LibraryCategoryResponse> categoriesOf(List<Scrap> scraps, Map<Long, Article> articles,
-        Map<Long, String> categoryNames) {
-        Map<Long, Long> counts = new HashMap<>();
-        for (Scrap scrap : scraps) {
-            counts.merge(articles.get(scrap.getTargetId()).getCategoryId(), 1L, Long::sum);
-        }
+    // 저장한 콘텐츠가 있는 카테고리만 화면 순서(display_order)대로
+    private static List<LibraryCategoryResponse> categoriesOf(Map<Long, Long> counts, Map<Long, String> categoryNames) {
         return categoryNames.entrySet().stream()
             .filter(category -> counts.containsKey(category.getKey()))
             .map(category -> new LibraryCategoryResponse(category.getKey(), category.getValue(),
@@ -169,7 +235,8 @@ public class ScrapService {
         Integer minutes = article.getReadingMinutes() == null ? null
             : article.getReadingMinutes().setScale(0, RoundingMode.CEILING).intValue();
         return new LibraryArticleResponse(scrap.getId(), article.getId(), available, article.getTitle(),
-            article.getPressName(), article.getPublishedAt(), article.getCategoryId(), categoryNames.get(article.getCategoryId()),
+            article.getPressName(), article.getPublishedAt(), article.getCategoryId(),
+            categoryNames.get(article.getCategoryId()),
             article.getSummaryOneLine(), minutes, available ? article.linkUrl() : null, scrap.getCreatedAt());
     }
 }

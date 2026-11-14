@@ -9,6 +9,7 @@ import com.byarrival.domain.feed.dto.FeedCollectResult;
 import com.byarrival.domain.feed.dto.FetchedFeed;
 import com.byarrival.domain.feed.service.FeedCollectService;
 import com.byarrival.domain.quiz.service.QuizGenerationService;
+import com.byarrival.domain.smalltalk.service.SmalltalkGenerationService;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -33,6 +34,7 @@ public class DailyBatchService {
     private final ArticleAiService articleAiService;
     private final ArticleStoryService articleStoryService;
     private final QuizGenerationService quizGenerationService;
+    private final SmalltalkGenerationService smalltalkGenerationService;
     private final BatchMonitor batchMonitor;
     private final Clock clock;
 
@@ -63,6 +65,8 @@ public class DailyBatchService {
             articleStoryService.dedupe(serviceDate);
             // 추천 후보로 남은 기사마다 3지선다 퀴즈 1문제를 만든다(AI-03). 실패한 기사는 퀴즈 없이 노출한다
             generateQuizzes(serviceDate);
+            // 카테고리별 인기 기사로 스몰토크를 최대 2건씩 만든다(TALK-01). 실패해도 기사 추천은 계속한다
+            generateSmalltalks(serviceDate);
             if (!saveFailedFeedIds.isEmpty()) {
                 // 다시 실행할 수 있도록 실패로 남긴다. 이미 저장·가공된 기사는 재실행 때 건너뛴다.
                 fail(batchRunId.get(), serviceDate, startedAt, "기사 저장 실패 feedIds=" + saveFailedFeedIds);
@@ -105,6 +109,14 @@ public class DailyBatchService {
             quizGenerationService.generate(serviceDate);
         } catch (RuntimeException e) {
             log.error("[DailyBatch] serviceDate={} 퀴즈 생성 실패 - {}", serviceDate, e.getMessage(), e);
+        }
+    }
+
+    private void generateSmalltalks(LocalDate serviceDate) {
+        try {
+            smalltalkGenerationService.generate(serviceDate);
+        } catch (RuntimeException e) {
+            log.error("[DailyBatch] serviceDate={} 스몰토크 생성 실패 - {}", serviceDate, e.getMessage(), e);
         }
     }
 
