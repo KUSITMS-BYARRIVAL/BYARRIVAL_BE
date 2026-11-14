@@ -76,6 +76,27 @@ class QuizValidatorTest {
     }
 
     @Test
+    void 제목의_숫자_뒤에_말줄임표가_붙어도_정답_숫자를_찾는다() {
+        String title = "청약 경쟁률 28.5...분양 열기 지속";
+        QuizOutput output = new QuizOutput(title, "이번 청약의 경쟁률은?", "28.5대 1", List.of("20대 1", "25대 1"),
+            "청약 경쟁률은 28.5대 1이었어요.");
+
+        assertThatThrownBy(() -> validator.validate(output, title))
+            .hasMessageContaining("정답의 숫자가 제목에 있어");
+    }
+
+    @Test
+    void 숫자_뒤_쉼표와_자릿수_쉼표를_구분한다() {
+        // 제목의 "3,000,"은 끝 쉼표를 빼고 3000이며, 정답 "3000선"과 같은 숫자다
+        String title = "코스피 3,000, 다시 돌파할까";
+        QuizOutput output = new QuizOutput(title, "코스피가 돌파를 노리는 지수는?", "3000선", List.of("2500선", "2800선"),
+            "코스피는 3000선 돌파를 노려요.");
+
+        assertThatThrownBy(() -> validator.validate(output, title))
+            .hasMessageContaining("정답의 숫자가 제목에 있어");
+    }
+
+    @Test
     void 제목에_없는_내용을_물으면_통과한다() {
         String title = "KBO FA 시장 개장! 원태인·구자욱·양의지 등 28명";
         QuizOutput output = new QuizOutput(title, "올해 FA 협상이 시작되는 날은?", "11월 18일",

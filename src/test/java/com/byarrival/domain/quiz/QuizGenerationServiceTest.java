@@ -18,6 +18,7 @@ import com.byarrival.domain.quiz.service.QuizGenerationService.QuizGenerationRes
 import com.byarrival.domain.quiz.service.QuizGenerator;
 import com.byarrival.domain.quiz.service.QuizGenerator.QuizSource;
 import com.byarrival.support.TestcontainersConfig;
+import com.jayway.jsonpath.JsonPath;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -90,12 +91,15 @@ class QuizGenerationServiceTest {
             "SELECT question, choices::text AS choices, answer_seq, explanation, status FROM quiz WHERE article_id = ?",
             first);
         assertThat(saved.get("question")).isEqualTo("첫째 기사의 핵심은?");
-        // 선택지 순서는 서버가 섞지만, 저장된 정답 번호는 늘 정답 글("가")을 가리킨다
+        // 선택지는 정확히 3개이고 번호는 1·2·3이 하나씩이다. 저장된 정답 번호는 늘 정답 글("가")을 가리킨다
         String choices = (String) saved.get("choices");
-        assertThat(choices).contains("\"seq\": 1", "\"seq\": 3", "\"content\": \"가\"", "\"content\": \"나\"",
-            "\"content\": \"다\"");
+        List<Integer> seqs = JsonPath.read(choices, "$[*].seq");
+        List<String> contents = JsonPath.read(choices, "$[*].content");
+        assertThat(seqs).containsExactlyInAnyOrder(1, 2, 3);
+        assertThat(contents).containsExactlyInAnyOrder("가", "나", "다");
         int answerSeq = (Integer) saved.get("answer_seq");
-        assertThat(choices).contains("{\"seq\": " + answerSeq + ", \"content\": \"가\"}");
+        List<String> answer = JsonPath.read(choices, "$[?(@.seq == " + answerSeq + ")].content");
+        assertThat(answer).containsExactly("가");
         assertThat(saved.get("status")).isEqualTo("ACTIVE");
         assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM quiz WHERE article_id = ?", Integer.class,
             retried)).isEqualTo(1);
