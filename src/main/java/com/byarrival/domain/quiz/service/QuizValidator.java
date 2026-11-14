@@ -27,7 +27,8 @@ public class QuizValidator {
     private static final List<String> SOURCE_PHRASES = List.of("요약", "기사에 따르면", "기사에서", "본문");
     // 정답이 이 글자 수 이상 제목에 그대로 있으면 제목만 보고 맞힐 수 있다고 본다
     private static final int MIN_TITLE_MATCH_LENGTH = 2;
-    private static final Pattern NUMBER = Pattern.compile("\\d[\\d,.]*");
+    // 소수점·자릿수 쉼표는 숫자 사이에 있을 때만 숫자로 본다("28.5..."의 끝 마침표, "28명,"의 쉼표는 빼고 28.5, 28)
+    private static final Pattern NUMBER = Pattern.compile("\\d+(?:[.,]\\d+)*");
 
     public CheckedQuiz validate(QuizOutput output, String title) {
         if (output == null) {
