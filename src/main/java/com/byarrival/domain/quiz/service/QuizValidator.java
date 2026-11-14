@@ -7,6 +7,8 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.springframework.stereotype.Component;
 
 /**
@@ -23,6 +25,9 @@ public class QuizValidator {
     public static final int MAX_EXPLANATION_LENGTH = 60;
     // 문제와 해설은 실제 문제처럼 쓴다. "요약에 나와요"처럼 출처를 드러내는 표현은 쓰지 않는다(2026-11-14)
     private static final List<String> SOURCE_PHRASES = List.of("요약", "기사에 따르면", "기사에서", "본문");
+    // 정답이 이 글자 수 이상 제목에 그대로 있으면 제목만 보고 맞힐 수 있다고 본다
+    private static final int MIN_TITLE_MATCH_LENGTH = 2;
+    private static final Pattern NUMBER = Pattern.compile("\\d[\\d,.]*");
 
     public CheckedQuiz validate(QuizOutput output, String title) {
         if (output == null) {
@@ -81,6 +86,10 @@ public class QuizValidator {
             checkSourcePhrase(explanation, "explanation", problems);
         }
 
+        if (answer != null && wrongAnswers.size() == WRONG_ANSWER_COUNT) {
+            checkAnswerNotInTitle(title, answer, wrongAnswers, problems);
+        }
+
         if (!problems.isEmpty()) {
             throw invalid(problems);
         }
@@ -92,6 +101,40 @@ public class QuizValidator {
         if (length > max) {
             problems.add(name + "이(가) " + length + "자입니다. " + max + "자 이내로 쓰세요.");
         }
+    }
+
+    // 퀴즈 화면에 기사 제목이 함께 보이므로, 정답이 제목에 드러나면 제목만 보고 맞힐 수 있다(2026-11-14)
+    private static void checkAnswerNotInTitle(String title, String answer, List<String> wrongAnswers,
+        List<String> problems) {
+        String normalizedTitle = normalize(title);
+        String normalizedAnswer = normalize(answer);
+        if (normalizedAnswer.length() >= MIN_TITLE_MATCH_LENGTH && normalizedTitle.contains(normalizedAnswer)) {
+            problems.add("정답 '" + answer + "'이(가) 제목에 그대로 있어 제목만 보고 맞힐 수 있습니다. 제목에 없는 내용을 물으세요.");
+            return;
+        }
+        // 정답의 숫자는 제목에 있는데 오답의 숫자는 제목에 없으면, 숫자만 보고 맞힐 수 있다
+        Set<String> titleNumbers = numbersOf(title);
+        boolean answerNumberInTitle = numbersOf(answer).stream().anyMatch(titleNumbers::contains);
+        boolean wrongNumberInTitle = wrongAnswers.stream()
+            .flatMap(wrong -> numbersOf(wrong).stream())
+            .anyMatch(titleNumbers::contains);
+        if (answerNumberInTitle && !wrongNumberInTitle) {
+            problems.add("정답의 숫자가 제목에 있어 제목만 보고 맞힐 수 있습니다. 제목에 없는 내용을 물으세요.");
+        }
+    }
+
+    // 공백과 문장 부호를 빼고 비교한다
+    private static String normalize(String text) {
+        return text.replaceAll("[\\s\\p{Punct}·‘’“”…]", "");
+    }
+
+    private static Set<String> numbersOf(String text) {
+        Set<String> numbers = new HashSet<>();
+        Matcher matcher = NUMBER.matcher(text);
+        while (matcher.find()) {
+            numbers.add(matcher.group().replace(",", ""));
+        }
+        return numbers;
     }
 
     private static void checkSourcePhrase(String text, String name, List<String> problems) {
