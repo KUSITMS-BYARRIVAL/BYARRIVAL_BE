@@ -16,13 +16,15 @@ import org.springframework.stereotype.Component;
 @Component
 public class QuizValidator {
 
-    public static final int CHOICE_COUNT = 3;
+    public static final int WRONG_ANSWER_COUNT = 2;
     // 글자 수는 화면(문제 2줄, 선택지 1줄, 해설 1~2줄)에 맞춰 정한 값이다(2026-11-13)
     public static final int MAX_QUESTION_LENGTH = 50;
     public static final int MAX_CHOICE_LENGTH = 20;
     public static final int MAX_EXPLANATION_LENGTH = 60;
+    // 문제와 해설은 실제 문제처럼 쓴다. "요약에 나와요"처럼 출처를 드러내는 표현은 쓰지 않는다(2026-11-14)
+    private static final List<String> SOURCE_PHRASES = List.of("요약", "기사에 따르면", "기사에서", "본문");
 
-    public ValidatedQuiz validate(QuizOutput output, String title) {
+    public CheckedQuiz validate(QuizOutput output, String title) {
         if (output == null) {
             throw invalid(List.of("응답이 비어 있습니다."));
         }
@@ -30,73 +32,90 @@ public class QuizValidator {
         if (!title.equals(output.title())) {
             problems.add("title을 입력받은 제목과 똑같이 쓰세요.");
         }
+
         String question = strip(output.question());
         if (question == null) {
             problems.add("question이 비어 있습니다.");
         } else {
-            if (length(question) > MAX_QUESTION_LENGTH) {
-                problems.add("question이 " + length(question) + "자입니다. " + MAX_QUESTION_LENGTH + "자 이내로 쓰세요.");
-            }
+            checkLength(question, MAX_QUESTION_LENGTH, "question", problems);
             if (!question.endsWith("?")) {
                 problems.add("question은 물음표(?)로 끝내세요.");
             }
+            checkSourcePhrase(question, "question", problems);
         }
 
-        List<String> choices = new ArrayList<>();
-        if (output.choices() == null || output.choices().size() != CHOICE_COUNT) {
-            problems.add("choices는 정확히 " + CHOICE_COUNT + "개여야 합니다.");
+        String answer = strip(output.answer());
+        Set<String> seen = new HashSet<>();
+        if (answer == null) {
+            problems.add("answer가 비어 있습니다.");
         } else {
-            Set<String> seen = new HashSet<>();
-            for (int i = 0; i < output.choices().size(); i++) {
-                String choice = strip(output.choices().get(i));
-                if (choice == null) {
-                    problems.add((i + 1) + "번 선택지가 비어 있습니다.");
+            checkLength(answer, MAX_CHOICE_LENGTH, "answer", problems);
+            seen.add(answer);
+        }
+        List<String> wrongAnswers = new ArrayList<>();
+        if (output.wrongAnswers() == null || output.wrongAnswers().size() != WRONG_ANSWER_COUNT) {
+            problems.add("wrongAnswers는 정확히 " + WRONG_ANSWER_COUNT + "개여야 합니다.");
+        } else {
+            for (int i = 0; i < output.wrongAnswers().size(); i++) {
+                String wrong = strip(output.wrongAnswers().get(i));
+                if (wrong == null) {
+                    problems.add((i + 1) + "번 오답이 비어 있습니다.");
                     continue;
                 }
-                if (length(choice) > MAX_CHOICE_LENGTH) {
-                    problems.add((i + 1) + "번 선택지가 " + length(choice) + "자입니다. " + MAX_CHOICE_LENGTH + "자 이내로 쓰세요.");
+                checkLength(wrong, MAX_CHOICE_LENGTH, (i + 1) + "번 오답", problems);
+                if (!seen.add(wrong)) {
+                    problems.add((i + 1) + "번 오답이 정답이나 다른 오답과 같습니다.");
                 }
-                if (!seen.add(choice)) {
-                    problems.add((i + 1) + "번 선택지가 다른 선택지와 같습니다.");
-                }
-                choices.add(choice);
+                wrongAnswers.add(wrong);
             }
-        }
-        if (output.answer() < 1 || output.answer() > CHOICE_COUNT) {
-            problems.add("answer는 1부터 " + CHOICE_COUNT + " 사이의 선택지 번호여야 합니다.");
         }
 
         String explanation = strip(output.explanation());
         if (explanation == null) {
             problems.add("explanation이 비어 있습니다.");
         } else {
-            if (length(explanation) > MAX_EXPLANATION_LENGTH) {
-                problems.add("explanation이 " + length(explanation) + "자입니다. " + MAX_EXPLANATION_LENGTH
-                    + "자 이내로 쓰세요.");
-            }
+            checkLength(explanation, MAX_EXPLANATION_LENGTH, "explanation", problems);
             if (!explanation.endsWith("요.") && !explanation.endsWith("요")) {
                 problems.add("explanation은 '~요.'로 끝내세요.");
             }
+            checkSourcePhrase(explanation, "explanation", problems);
         }
 
         if (!problems.isEmpty()) {
             throw invalid(problems);
         }
-        return new ValidatedQuiz(question, List.copyOf(choices), output.answer(), explanation);
+        return new CheckedQuiz(question, answer, List.copyOf(wrongAnswers), explanation);
+    }
+
+    private static void checkLength(String text, int max, String name, List<String> problems) {
+        int length = text.codePointCount(0, text.length());
+        if (length > max) {
+            problems.add(name + "이(가) " + length + "자입니다. " + max + "자 이내로 쓰세요.");
+        }
+    }
+
+    private static void checkSourcePhrase(String text, String name, List<String> problems) {
+        SOURCE_PHRASES.stream().filter(text::contains).findFirst().ifPresent(phrase ->
+            problems.add(name + "에 '" + phrase + "' 같은 출처 표현을 쓰지 말고 사실만 쓰세요."));
     }
 
     private static String strip(String text) {
         return text == null || text.isBlank() ? null : text.strip();
     }
 
-    private static int length(String text) {
-        return text.codePointCount(0, text.length());
-    }
-
     private static BusinessException invalid(List<String> problems) {
         return new BusinessException(QuizErrorCode.QUIZ_RESPONSE_INVALID, String.join("\n", problems));
     }
 
+    /**
+     * 검증을 통과한 퀴즈. 아직 선택지 순서는 정하지 않았다({@link QuizChoiceShuffler}).
+     */
+    public record CheckedQuiz(String question, String answer, List<String> wrongAnswers, String explanation) {
+    }
+
+    /**
+     * 선택지 순서와 정답 번호(1부터)까지 정한, 저장할 퀴즈
+     */
     public record ValidatedQuiz(String question, List<String> choices, int answerSeq, String explanation) {
     }
 }

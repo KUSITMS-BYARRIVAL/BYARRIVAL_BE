@@ -45,6 +45,7 @@ public class QuizGenerationService {
     private final CategoryMappingService categoryMappingService;
     private final QuizGenerator generator;
     private final QuizValidator validator;
+    private final QuizChoiceShuffler shuffler;
     private final QuizStore store;
     private final ExecutorService executor;
     private final QuizProperties properties;
@@ -53,13 +54,14 @@ public class QuizGenerationService {
     private final Clock clock;
 
     public QuizGenerationService(ArticleQueryService articleQueryService, CategoryMappingService categoryMappingService,
-        QuizGenerator generator, QuizValidator validator, QuizStore store,
+        QuizGenerator generator, QuizValidator validator, QuizChoiceShuffler shuffler, QuizStore store,
         @Qualifier("quizGenerationExecutor") ExecutorService executor, QuizProperties properties,
         AnthropicProperties anthropicProperties, BatchAlertNotifier batchAlertNotifier, Clock clock) {
         this.articleQueryService = articleQueryService;
         this.categoryMappingService = categoryMappingService;
         this.generator = generator;
         this.validator = validator;
+        this.shuffler = shuffler;
         this.store = store;
         this.executor = executor;
         this.properties = properties;
@@ -163,7 +165,7 @@ public class QuizGenerationService {
                 continue;
             }
             try {
-                return validator.validate(output, source.title());
+                return shuffler.shuffle(validator.validate(output, source.title()));
             } catch (BusinessException e) {
                 lastError = e;
                 previous = output;
