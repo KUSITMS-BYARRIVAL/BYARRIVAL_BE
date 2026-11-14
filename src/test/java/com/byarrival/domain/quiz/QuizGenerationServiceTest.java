@@ -90,8 +90,12 @@ class QuizGenerationServiceTest {
             "SELECT question, choices::text AS choices, answer_seq, explanation, status FROM quiz WHERE article_id = ?",
             first);
         assertThat(saved.get("question")).isEqualTo("첫째 기사의 핵심은?");
-        assertThat((String) saved.get("choices")).contains("\"seq\": 1", "\"content\": \"가\"", "\"seq\": 3");
-        assertThat(saved.get("answer_seq")).isEqualTo(2);
+        // 선택지 순서는 서버가 섞지만, 저장된 정답 번호는 늘 정답 글("가")을 가리킨다
+        String choices = (String) saved.get("choices");
+        assertThat(choices).contains("\"seq\": 1", "\"seq\": 3", "\"content\": \"가\"", "\"content\": \"나\"",
+            "\"content\": \"다\"");
+        int answerSeq = (Integer) saved.get("answer_seq");
+        assertThat(choices).contains("{\"seq\": " + answerSeq + ", \"content\": \"가\"}");
         assertThat(saved.get("status")).isEqualTo("ACTIVE");
         assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM quiz WHERE article_id = ?", Integer.class,
             retried)).isEqualTo(1);
@@ -135,11 +139,11 @@ class QuizGenerationServiceTest {
     }
 
     private static QuizOutput valid(String title) {
-        return new QuizOutput(title, title + "의 핵심은?", List.of("가", "나", "다"), 2, "요약에 나와요.");
+        return new QuizOutput(title, title + "의 핵심은?", "가", List.of("나", "다"), "정답의 근거예요.");
     }
 
     private static QuizOutput invalid(String title) {
-        return new QuizOutput(title, "물음표 없는 문제", List.of("가", "나"), 5, "해설");
+        return new QuizOutput(title, "물음표 없는 문제", "가", List.of("나"), "요약에 나와요.");
     }
 
     private Long newArticle(boolean recommendable, String visibility, String title) {
