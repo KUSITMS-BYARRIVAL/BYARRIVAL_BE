@@ -15,6 +15,9 @@ import com.byarrival.domain.user.entity.UserStatus;
 import com.byarrival.domain.user.repository.UserInterestCategoryRepository;
 import com.byarrival.domain.user.repository.UserJobGroupRepository;
 import com.byarrival.domain.user.repository.UserRepository;
+import java.time.Clock;
+import java.time.LocalDateTime;
+import java.time.Period;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -30,10 +33,14 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class UserService {
 
+    /** 탈퇴 회원 데이터 보관 기간. 이 기간 안에 재가입하면 복원하고, 지나면 파기한다. */
+    public static final Period WITHDRAWN_RETENTION = Period.ofMonths(6);
+
     private final UserRepository userRepository;
     private final UserInterestCategoryRepository userInterestCategoryRepository;
     private final UserJobGroupRepository userJobGroupRepository;
     private final TermService termService;
+    private final Clock clock;
 
     @Transactional(readOnly = true)
     public Optional<User> findActiveUser(SocialProvider provider, String providerUserId) {
@@ -68,6 +75,52 @@ public class UserService {
     @Transactional(readOnly = true)
     public Optional<NotificationPermission> findNotificationPermission(Long userId) {
         return userRepository.findById(userId).map(User::getNotificationPermission);
+    }
+
+    /**
+     * 보관 기간 안에 탈퇴한 같은 소셜 계정이 있으면 다시 활성화한다. 보관한 프로필·설정·이용 이력을 그대로 쓴다.
+     * 같은 소셜 계정의 활성 회원이 이미 있으면 유니크 인덱스 위반(DataIntegrityViolationException)이 발생한다.
+     */
+    @Transactional
+    public Optional<User> restoreWithdrawnUser(SocialProvider provider, String providerUserId) {
+        LocalDateTime since = LocalDateTime.now(clock).minus(WITHDRAWN_RETENTION);
+        return userRepository
+            .findFirstByProviderAndProviderUserIdAndStatusAndWithdrawnAtGreaterThanEqualOrderByWithdrawnAtDesc(
+                provider, providerUserId, UserStatus.WITHDRAWN, since)
+            .map(user -> {
+                user.restore();
+                return userRepository.saveAndFlush(user);
+            });
+    }
+
+    /**
+     * 탈퇴 상태로 바꾼다. 데이터는 보관 기간 동안 남겨 둔다.
+     * 같은 회원의 설정 변경과 겹치면 users 행을 통째로 덮어쓰므로, 설정 변경처럼 행을 잠그고 바꾼다.
+     *
+     * @return 탈퇴한 회원. 소셜 연결 끊기에 provider와 providerUserId를 쓴다.
+     */
+    @Transactional
+    public User withdraw(Long userId) {
+        User user = getActiveUserForUpdate(userId);
+        user.withdraw(LocalDateTime.now(clock));
+        return user;
+    }
+
+    /**
+     * 암호화한 Apple refresh token을 저장한다. 새로 로그인할 때마다 최신 토큰으로 바꾼다.
+     */
+    @Transactional
+    public void saveAppleRefreshToken(Long userId, String encryptedRefreshToken) {
+        getActiveUserForUpdate(userId).updateAppleRefreshToken(encryptedRefreshToken);
+    }
+
+    /**
+     * 보관 기간이 지난 탈퇴 회원과 그 회원의 데이터를 지운다.
+     */
+    @Transactional
+    public int deleteExpiredWithdrawnUsers() {
+        LocalDateTime before = LocalDateTime.now(clock).minus(WITHDRAWN_RETENTION);
+        return userRepository.deleteByStatusAndWithdrawnAtBefore(UserStatus.WITHDRAWN, before);
     }
 
     /**

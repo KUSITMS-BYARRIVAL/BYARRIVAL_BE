@@ -99,7 +99,7 @@ class KakaoAuthClientTest {
 
     private SocialAuthProperties properties(Long appId) {
         return new SocialAuthProperties(Duration.ofSeconds(3), Duration.ofSeconds(5),
-            new SocialAuthProperties.Kakao(TOKEN_INFO_URI, appId), null);
+            new SocialAuthProperties.Kakao(TOKEN_INFO_URI, appId, null, null), null);
     }
 
     private void assertAuthError(Runnable call, AuthErrorCode errorCode) {

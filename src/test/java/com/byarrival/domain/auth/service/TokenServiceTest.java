@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -29,6 +30,7 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.springframework.test.util.ReflectionTestUtils;
 
 class TokenServiceTest {
@@ -73,13 +75,15 @@ class TokenServiceTest {
         RefreshToken token = storedToken(NOW.plusHours(1), null);
         given(refreshTokenRepository.findByTokenHash(anyString())).willReturn(Optional.of(token));
         given(refreshTokenRepository.revokeIfActive(10L, NOW)).willReturn(1);
-        given(userService.isActiveUser(USER_ID)).willReturn(true);
 
         TokenResponse response = tokenService.reissue("refresh-token");
 
         assertThat(response.accessToken()).isEqualTo("access-token");
         assertThat(response.refreshToken()).isNotEqualTo("refresh-token");
-        verify(refreshTokenRepository).revokeIfActive(10L, NOW);
+        // 탈퇴와 같은 순서로 회원을 먼저 잠근 뒤 토큰을 폐기한다
+        InOrder order = inOrder(userService, refreshTokenRepository);
+        order.verify(userService).getActiveUserForUpdate(USER_ID);
+        order.verify(refreshTokenRepository).revokeIfActive(10L, NOW);
         verify(refreshTokenRepository).save(any(RefreshToken.class));
     }
 
@@ -123,10 +127,11 @@ class TokenServiceTest {
     void 탈퇴한_회원의_리프레시_토큰이면_UNAUTHORIZED다() {
         given(refreshTokenRepository.findByTokenHash(anyString()))
             .willReturn(Optional.of(storedToken(NOW.plusHours(1), null)));
-        given(refreshTokenRepository.revokeIfActive(10L, NOW)).willReturn(1);
-        given(userService.isActiveUser(USER_ID)).willReturn(false);
+        given(userService.getActiveUserForUpdate(USER_ID))
+            .willThrow(new BusinessException(CommonErrorCode.UNAUTHORIZED));
 
         assertUnauthorized("refresh-token");
+        verify(refreshTokenRepository, never()).revokeIfActive(anyLong(), any());
         verify(refreshTokenRepository, never()).save(any());
     }
 
