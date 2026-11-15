@@ -95,10 +95,11 @@ public class UserService {
 
     /**
      * 탈퇴 상태로 바꾼다. 데이터는 보관 기간 동안 남겨 둔다.
+     * 같은 회원의 설정 변경과 겹치면 users 행을 통째로 덮어쓰므로, 설정 변경처럼 행을 잠그고 바꾼다.
      */
     @Transactional
     public void withdraw(Long userId) {
-        getActiveUser(userId).withdraw(LocalDateTime.now(clock));
+        getActiveUserForUpdate(userId).withdraw(LocalDateTime.now(clock));
     }
 
     /**
