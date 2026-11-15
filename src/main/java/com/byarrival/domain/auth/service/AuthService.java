@@ -11,6 +11,7 @@ import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 /**
  * 소셜 로그인·가입. 소셜 토큰 검증은 트랜잭션 밖에서 하고 회원 조회·생성만 UserService 트랜잭션으로 처리한다.
@@ -24,6 +25,7 @@ public class AuthService {
     private final UserService userService;
     private final TokenService tokenService;
     private final TermService termService;
+    private final AppleTokenService appleTokenService;
 
     public SocialLoginResponse socialLogin(SocialLoginRequest request) {
         SocialProvider provider = request.provider();
@@ -34,6 +36,9 @@ public class AuthService {
             .or(() -> restore(provider, providerUserId))
             .orElseGet(() -> signUp(provider, providerUserId));
         User user = loginUser.user();
+        if (provider == SocialProvider.APPLE && StringUtils.hasText(request.authorizationCode())) {
+            appleTokenService.storeRefreshToken(user.getId(), request.authorizationCode());
+        }
         return SocialLoginResponse.of(user, loginUser.isNewUser(), termService.hasAgreedRequiredTerms(user.getId()),
             tokenService.issue(user.getId()));
     }

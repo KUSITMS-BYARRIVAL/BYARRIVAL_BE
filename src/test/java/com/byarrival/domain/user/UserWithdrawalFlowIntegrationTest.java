@@ -1,6 +1,12 @@
 package com.byarrival.domain.user;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -9,11 +15,14 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.byarrival.common.monitoring.ServerErrorNotifier;
+import com.byarrival.domain.auth.client.KakaoUnlinkClient;
 import com.byarrival.domain.auth.client.SocialAuthClient;
 import com.byarrival.domain.auth.client.SocialAuthClients;
 import com.byarrival.domain.auth.dto.request.SocialLoginRequest;
 import com.byarrival.domain.auth.dto.response.SocialLoginResponse;
 import com.byarrival.domain.auth.dto.response.TokenResponse;
+import com.byarrival.domain.auth.service.AppleTokenService;
 import com.byarrival.domain.auth.service.AuthService;
 import com.byarrival.domain.auth.service.TokenService;
 import com.byarrival.domain.notification.repository.DeviceTokenRepository;
@@ -39,9 +48,11 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import org.springframework.web.client.ResourceAccessException;
 
 /**
  * 실제 DB와 보안 필터로 탈퇴(인증 정보 제거, 데이터 보관), 보관 기간 안 재가입 복원, 기간이 지난 회원 파기를 확인한다.
@@ -72,6 +83,15 @@ class UserWithdrawalFlowIntegrationTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @MockitoBean
+    private KakaoUnlinkClient kakaoUnlinkClient;
+
+    @MockitoBean
+    private AppleTokenService appleTokenService;
+
+    @MockitoBean
+    private ServerErrorNotifier serverErrorNotifier;
+
     private String providerUserId;
     private Long userId;
     private TokenResponse tokens;
@@ -90,7 +110,7 @@ class UserWithdrawalFlowIntegrationTest {
         SocialAuthClient kakao = fakeClient(SocialProvider.KAKAO);
         SocialAuthClient apple = fakeClient(SocialProvider.APPLE);
         authService = new AuthService(new SocialAuthClients(List.of(kakao, apple)), userService, tokenService,
-            termService);
+            termService, appleTokenService);
     }
 
     // 다른 테스트가 category를 지울 수 있도록 이 테스트의 관심 분야·카테고리를 남기지 않는다.
@@ -120,6 +140,57 @@ class UserWithdrawalFlowIntegrationTest {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
         }
+    }
+
+    @Test
+    void 카카오_회원이_탈퇴하면_카카오_연결을_끊는다() throws Exception {
+        perform(delete("/api/v1/users/me"), null).andExpect(status().isOk());
+
+        verify(kakaoUnlinkClient).unlink(providerUserId);
+        verify(serverErrorNotifier, never()).notify(any(), any(), any());
+    }
+
+    @Test
+    void 카카오_연결_끊기가_실패해도_탈퇴는_완료하고_서버_에러_채널에_알린다() throws Exception {
+        RuntimeException failure = new ResourceAccessException("카카오 연결 실패");
+        willThrow(failure).given(kakaoUnlinkClient).unlink(providerUserId);
+
+        perform(delete("/api/v1/users/me"), null)
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true));
+
+        assertThat(userRepository.findById(userId).orElseThrow().getStatus()).isEqualTo(UserStatus.WITHDRAWN);
+        verify(serverErrorNotifier).notify(eq("DELETE"), eq("/api/v1/users/me"), eq(failure));
+    }
+
+    @Test
+    void 애플_회원이_탈퇴하면_카카오를_호출하지_않는다() throws Exception {
+        Long appleUserId = userRepository.save(User.signUp(SocialProvider.APPLE, UUID.randomUUID().toString()))
+            .getId();
+        TokenResponse appleTokens = tokenService.issue(appleUserId);
+
+        mockMvc.perform(delete("/api/v1/users/me")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + appleTokens.accessToken()))
+            .andExpect(status().isOk());
+
+        verify(kakaoUnlinkClient, never()).unlink(any());
+        verify(appleTokenService).revoke(argThat(user -> user.getId().equals(appleUserId)));
+    }
+
+    @Test
+    void 애플_연결_끊기가_실패해도_탈퇴는_완료하고_서버_에러_채널에_알린다() throws Exception {
+        Long appleUserId = userRepository.save(User.signUp(SocialProvider.APPLE, UUID.randomUUID().toString()))
+            .getId();
+        TokenResponse appleTokens = tokenService.issue(appleUserId);
+        RuntimeException failure = new ResourceAccessException("Apple 연결 실패");
+        willThrow(failure).given(appleTokenService).revoke(any());
+
+        mockMvc.perform(delete("/api/v1/users/me")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + appleTokens.accessToken()))
+            .andExpect(status().isOk());
+
+        assertThat(userRepository.findById(appleUserId).orElseThrow().getStatus()).isEqualTo(UserStatus.WITHDRAWN);
+        verify(serverErrorNotifier).notify(eq("DELETE"), eq("/api/v1/users/me"), eq(failure));
     }
 
     @Test
