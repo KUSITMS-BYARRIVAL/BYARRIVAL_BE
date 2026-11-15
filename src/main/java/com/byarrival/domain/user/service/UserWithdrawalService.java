@@ -1,7 +1,5 @@
 package com.byarrival.domain.user.service;
 
-import com.byarrival.common.exception.BusinessException;
-import com.byarrival.common.exception.CommonErrorCode;
 import com.byarrival.common.monitoring.ServerErrorNotifier;
 import com.byarrival.domain.auth.client.KakaoUnlinkClient;
 import com.byarrival.domain.auth.service.AppleTokenService;
@@ -55,9 +53,8 @@ public class UserWithdrawalService {
     }
 
     private User withdrawInTransaction(Long userId) {
-        if (!userService.isActiveUser(userId)) {
-            throw new BusinessException(CommonErrorCode.UNAUTHORIZED);
-        }
+        // 재발급과 같은 순서(회원 → 토큰)로 잠근다. 탈퇴하는 동안 다른 기기의 재발급은 끝날 때까지 기다린다.
+        userService.getActiveUserForUpdate(userId);
         // 토큰 일괄 처리 쿼리가 영속성 컨텍스트를 비우므로, 회원 상태는 그 뒤에 바꾼다.
         tokenService.revokeAll(userId);
         deviceTokenService.deleteAll(userId);
