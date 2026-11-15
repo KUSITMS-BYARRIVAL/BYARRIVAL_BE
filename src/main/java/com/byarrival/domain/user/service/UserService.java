@@ -96,10 +96,22 @@ public class UserService {
     /**
      * 탈퇴 상태로 바꾼다. 데이터는 보관 기간 동안 남겨 둔다.
      * 같은 회원의 설정 변경과 겹치면 users 행을 통째로 덮어쓰므로, 설정 변경처럼 행을 잠그고 바꾼다.
+     *
+     * @return 탈퇴한 회원. 소셜 연결 끊기에 provider와 providerUserId를 쓴다.
      */
     @Transactional
-    public void withdraw(Long userId) {
-        getActiveUserForUpdate(userId).withdraw(LocalDateTime.now(clock));
+    public User withdraw(Long userId) {
+        User user = getActiveUserForUpdate(userId);
+        user.withdraw(LocalDateTime.now(clock));
+        return user;
+    }
+
+    /**
+     * 암호화한 Apple refresh token을 저장한다. 새로 로그인할 때마다 최신 토큰으로 바꾼다.
+     */
+    @Transactional
+    public void saveAppleRefreshToken(Long userId, String encryptedRefreshToken) {
+        getActiveUserForUpdate(userId).updateAppleRefreshToken(encryptedRefreshToken);
     }
 
     /**

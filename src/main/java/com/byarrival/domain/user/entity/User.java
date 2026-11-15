@@ -85,6 +85,9 @@ public class User extends BaseEntity {
     @Column(length = 10)
     private NotificationPermission notificationPermission;
 
+    // 암호화한 Apple refresh token. 탈퇴할 때 Apple 연결 끊기에 쓴다
+    private String appleRefreshToken;
+
     private User(SocialProvider provider, String providerUserId) {
         this.provider = provider;
         this.providerUserId = providerUserId;
@@ -94,6 +97,10 @@ public class User extends BaseEntity {
 
     public static User signUp(SocialProvider provider, String providerUserId) {
         return new User(provider, providerUserId);
+    }
+
+    public void updateAppleRefreshToken(String encryptedRefreshToken) {
+        this.appleRefreshToken = encryptedRefreshToken;
     }
 
     public void updateNotificationPermission(NotificationPermission permission) {
