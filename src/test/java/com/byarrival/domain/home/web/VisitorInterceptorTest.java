@@ -29,6 +29,7 @@ class VisitorInterceptorTest {
 
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
     private static final Long USER_ID = 7L;
+    private static final Long OTHER_USER_ID = 8L;
 
     private TodayVisitorStore store;
     private MutableClock clock;
@@ -75,6 +76,28 @@ class VisitorInterceptorTest {
 
         verify(store).record(eq(USER_ID), eq(LocalDate.of(2026, 11, 16)), any());
         verify(store).record(eq(USER_ID), eq(LocalDate.of(2026, 11, 17)), any());
+    }
+
+    @Test
+    void 지난_서비스일_요청이_늦게_끝나도_새_서비스일_기록을_막지_않는다() {
+        LocalDate before = LocalDate.of(2026, 11, 16);
+        LocalDate after = LocalDate.of(2026, 11, 17);
+        clock.set(ZonedDateTime.of(2026, 11, 17, 3, 59, 59, 0, KST).toInstant());
+        // 03:59:59에 시작한 요청이 Redis에 쓰는 동안 04:00이 지나고 다른 회원 요청이 캐시를 새 서비스일로 비운다
+        given(store.record(eq(USER_ID), eq(before), any())).willAnswer(invocation -> {
+            clock.advance(Duration.ofSeconds(1));
+            login(OTHER_USER_ID);
+            call();
+            login(USER_ID);
+            return true;
+        });
+
+        call();
+        clock.advance(Duration.ofSeconds(10));
+        call();
+
+        verify(store).record(eq(USER_ID), eq(before), any());
+        verify(store).record(eq(USER_ID), eq(after), any());
     }
 
     @Test

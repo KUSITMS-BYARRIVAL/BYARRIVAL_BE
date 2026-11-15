@@ -29,7 +29,7 @@ public class VisitorInterceptor implements HandlerInterceptor {
 
     private final TodayVisitorStore todayVisitorStore;
     private final Clock clock;
-    private final Map<Long, Instant> lastRecorded = new ConcurrentHashMap<>();
+    private final Map<Long, LastRecord> lastRecorded = new ConcurrentHashMap<>();
     private volatile LocalDate cachedServiceDate;
 
     public VisitorInterceptor(TodayVisitorStore todayVisitorStore, Clock clock) {
@@ -46,11 +46,13 @@ public class VisitorInterceptor implements HandlerInterceptor {
         Instant now = clock.instant();
         LocalDate serviceDate = ServiceDay.today(clock);
         resetIfStale(serviceDate);
-        Instant last = lastRecorded.get(userId);
-        if (last == null || !now.isBefore(last.plus(RECORD_INTERVAL))) {
+        LastRecord last = lastRecorded.get(userId);
+        if (last == null || !last.throttles(serviceDate, now)) {
             // 저장에 실패하면 기록하지 않은 것으로 두어 다음 요청에서 다시 시도한다
             if (todayVisitorStore.record(userId, serviceDate, now)) {
-                lastRecorded.put(userId, now);
+                // 04:00 직전에 시작한 요청이 늦게 끝나도 새 서비스일 기록을 덮어쓰지 않게 더 최근 기록을 남긴다
+                lastRecorded.merge(userId, new LastRecord(serviceDate, now),
+                    (existing, recorded) -> recorded.isAfter(existing) ? recorded : existing);
             }
         }
         return true;
@@ -69,6 +71,19 @@ public class VisitorInterceptor implements HandlerInterceptor {
                     cachedServiceDate = serviceDate;
                 }
             }
+        }
+    }
+
+    // 1분 제한은 같은 서비스일 기록에만 적용한다. 지난 서비스일 기록은 새 서비스일 기록을 막지 않는다
+    private record LastRecord(LocalDate serviceDate, Instant recordedAt) {
+
+        boolean throttles(LocalDate currentServiceDate, Instant now) {
+            return serviceDate.equals(currentServiceDate) && now.isBefore(recordedAt.plus(RECORD_INTERVAL));
+        }
+
+        boolean isAfter(LastRecord other) {
+            return serviceDate.isAfter(other.serviceDate)
+                || serviceDate.equals(other.serviceDate) && recordedAt.isAfter(other.recordedAt);
         }
     }
 
