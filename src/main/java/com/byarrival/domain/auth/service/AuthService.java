@@ -37,7 +37,7 @@ public class AuthService {
             .orElseGet(() -> signUp(provider, providerUserId));
         User user = loginUser.user();
         if (provider == SocialProvider.APPLE && StringUtils.hasText(request.authorizationCode())) {
-            appleTokenService.storeRefreshToken(user.getId(), request.authorizationCode());
+            appleTokenService.storeRefreshToken(user.getId(), providerUserId, request.authorizationCode());
         }
         return SocialLoginResponse.of(user, loginUser.isNewUser(), termService.hasAgreedRequiredTerms(user.getId()),
             tokenService.issue(user.getId()));

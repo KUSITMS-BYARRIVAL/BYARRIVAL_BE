@@ -104,7 +104,7 @@ class AuthServiceTest {
 
         authService.socialLogin(new SocialLoginRequest(SocialProvider.APPLE, TOKEN, "auth-code"));
 
-        verify(appleTokenService).storeRefreshToken(6L, "auth-code");
+        verify(appleTokenService).storeRefreshToken(6L, PROVIDER_USER_ID, "auth-code");
     }
 
     @Test
@@ -117,7 +117,7 @@ class AuthServiceTest {
         authService.socialLogin(new SocialLoginRequest(SocialProvider.APPLE, TOKEN));
         authService.socialLogin(new SocialLoginRequest(SocialProvider.KAKAO, TOKEN, "auth-code"));
 
-        verify(appleTokenService, never()).storeRefreshToken(any(), any());
+        verify(appleTokenService, never()).storeRefreshToken(any(), any(), any());
     }
 
     @Test

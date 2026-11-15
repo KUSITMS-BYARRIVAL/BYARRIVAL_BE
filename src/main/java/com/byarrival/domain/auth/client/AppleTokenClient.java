@@ -56,9 +56,10 @@ public class AppleTokenClient {
     }
 
     /**
-     * @return Apple refresh token. Apple이 실패 응답을 주거나 호출에 실패하면 RestClientException이 그대로 나간다.
+     * @return Apple refresh token과 이 code를 발급받은 Apple 계정을 확인할 id token.
+     *     Apple이 실패 응답을 주거나 호출에 실패하면 RestClientException이 그대로 나간다.
      */
-    public String exchangeRefreshToken(String authorizationCode) {
+    public AppleTokens exchangeRefreshToken(String authorizationCode) {
         MultiValueMap<String, String> form = baseForm();
         form.add("code", authorizationCode);
         form.add("grant_type", "authorization_code");
@@ -68,10 +69,11 @@ public class AppleTokenClient {
             .body(form)
             .retrieve()
             .body(AppleTokenResponse.class);
-        if (response == null || !StringUtils.hasText(response.refreshToken())) {
-            throw new IllegalStateException("Apple 토큰 응답에 refresh token이 없습니다.");
+        if (response == null || !StringUtils.hasText(response.refreshToken())
+            || !StringUtils.hasText(response.idToken())) {
+            throw new IllegalStateException("Apple 토큰 응답에 refresh token 또는 id token이 없습니다.");
         }
-        return response.refreshToken();
+        return new AppleTokens(response.refreshToken(), response.idToken());
     }
 
     public void revoke(String refreshToken) {
@@ -134,7 +136,11 @@ public class AppleTokenClient {
         }
     }
 
+    public record AppleTokens(String refreshToken, String idToken) {
+    }
+
     @JsonIgnoreProperties(ignoreUnknown = true)
-    record AppleTokenResponse(@JsonProperty("refresh_token") String refreshToken) {
+    record AppleTokenResponse(@JsonProperty("refresh_token") String refreshToken,
+                              @JsonProperty("id_token") String idToken) {
     }
 }

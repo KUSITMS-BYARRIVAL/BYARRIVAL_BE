@@ -63,8 +63,18 @@ class AppleTokenClientTest {
             .andRespond(withSuccess("{\"access_token\":\"a\",\"refresh_token\":\"apple-refresh\",\"id_token\":\"i\"}",
                 MediaType.APPLICATION_JSON));
 
-        assertThat(client.exchangeRefreshToken("auth-code")).isEqualTo("apple-refresh");
+        AppleTokenClient.AppleTokens tokens = client.exchangeRefreshToken("auth-code");
+        assertThat(tokens.refreshToken()).isEqualTo("apple-refresh");
+        assertThat(tokens.idToken()).isEqualTo("i");
         server.verify();
+    }
+
+    @Test
+    void Apple_토큰_응답에_id_token이_없으면_예외가_난다() {
+        server.expect(requestTo(TOKEN_URI))
+            .andRespond(withSuccess("{\"refresh_token\":\"apple-refresh\"}", MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> client.exchangeRefreshToken("auth-code")).isInstanceOf(IllegalStateException.class);
     }
 
     @Test

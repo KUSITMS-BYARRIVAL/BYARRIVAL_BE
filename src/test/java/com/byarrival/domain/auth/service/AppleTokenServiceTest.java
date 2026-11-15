@@ -14,7 +14,9 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import com.byarrival.common.monitoring.ServerErrorNotifier;
 import com.byarrival.common.security.TokenEncryptionProperties;
 import com.byarrival.common.security.TokenEncryptor;
+import com.byarrival.domain.auth.client.AppleAuthClient;
 import com.byarrival.domain.auth.client.AppleTokenClient;
+import com.byarrival.domain.auth.client.AppleTokenClient.AppleTokens;
 import com.byarrival.domain.user.entity.SocialProvider;
 import com.byarrival.domain.user.entity.User;
 import com.byarrival.domain.user.service.UserService;
@@ -28,8 +30,10 @@ import org.springframework.web.client.ResourceAccessException;
 class AppleTokenServiceTest {
 
     private static final Long USER_ID = 1L;
+    private static final String APPLE_SUB = "apple-sub";
 
     private AppleTokenClient appleTokenClient;
+    private AppleAuthClient appleAuthClient;
     private TokenEncryptor tokenEncryptor;
     private UserService userService;
     private ServerErrorNotifier serverErrorNotifier;
@@ -38,19 +42,23 @@ class AppleTokenServiceTest {
     @BeforeEach
     void setUp() {
         appleTokenClient = mock(AppleTokenClient.class);
+        appleAuthClient = mock(AppleAuthClient.class);
         tokenEncryptor = new TokenEncryptor(
             new TokenEncryptionProperties(Base64.getEncoder().encodeToString(new byte[32])));
         userService = mock(UserService.class);
         serverErrorNotifier = mock(ServerErrorNotifier.class);
-        appleTokenService = new AppleTokenService(appleTokenClient, tokenEncryptor, userService, serverErrorNotifier);
+        appleTokenService = new AppleTokenService(appleTokenClient, appleAuthClient, tokenEncryptor, userService,
+            serverErrorNotifier);
         given(appleTokenClient.isConfigured()).willReturn(true);
     }
 
     @Test
     void 로그인하면_Apple_refresh_token을_암호화해_저장한다() {
-        given(appleTokenClient.exchangeRefreshToken("auth-code")).willReturn("apple-refresh");
+        given(appleTokenClient.exchangeRefreshToken("auth-code"))
+            .willReturn(new AppleTokens("apple-refresh", "id-token"));
+        given(appleAuthClient.getProviderUserId("id-token")).willReturn(APPLE_SUB);
 
-        appleTokenService.storeRefreshToken(USER_ID, "auth-code");
+        appleTokenService.storeRefreshToken(USER_ID, APPLE_SUB, "auth-code");
 
         ArgumentCaptor<String> saved = ArgumentCaptor.forClass(String.class);
         verify(userService).saveAppleRefreshToken(eq(USER_ID), saved.capture());
@@ -59,11 +67,23 @@ class AppleTokenServiceTest {
     }
 
     @Test
+    void code를_발급받은_Apple_계정이_로그인한_회원과_다르면_저장하지_않고_서버_에러_채널에_알린다() {
+        given(appleTokenClient.exchangeRefreshToken("auth-code"))
+            .willReturn(new AppleTokens("other-refresh", "other-id-token"));
+        given(appleAuthClient.getProviderUserId("other-id-token")).willReturn("other-sub");
+
+        appleTokenService.storeRefreshToken(USER_ID, APPLE_SUB, "auth-code");
+
+        verify(userService, never()).saveAppleRefreshToken(any(), any());
+        verify(serverErrorNotifier).notify(eq("POST"), eq("/api/v1/auth/login"), any(IllegalStateException.class));
+    }
+
+    @Test
     void Apple_토큰_교환에_실패해도_예외를_던지지_않고_서버_에러_채널에_알린다() {
         RuntimeException failure = new ResourceAccessException("Apple 연결 실패");
         given(appleTokenClient.exchangeRefreshToken("auth-code")).willThrow(failure);
 
-        appleTokenService.storeRefreshToken(USER_ID, "auth-code");
+        appleTokenService.storeRefreshToken(USER_ID, APPLE_SUB, "auth-code");
 
         verify(userService, never()).saveAppleRefreshToken(any(), any());
         verify(serverErrorNotifier).notify("POST", "/api/v1/auth/login", failure);
@@ -73,7 +93,7 @@ class AppleTokenServiceTest {
     void Apple_키나_암호화_키가_없으면_저장을_건너뛴다() {
         given(appleTokenClient.isConfigured()).willReturn(false);
 
-        appleTokenService.storeRefreshToken(USER_ID, "auth-code");
+        appleTokenService.storeRefreshToken(USER_ID, APPLE_SUB, "auth-code");
 
         verify(appleTokenClient, never()).exchangeRefreshToken(any());
         verifyNoInteractions(userService, serverErrorNotifier);
@@ -104,7 +124,7 @@ class AppleTokenServiceTest {
     }
 
     private User appleUser(String encryptedToken) {
-        User user = User.signUp(SocialProvider.APPLE, "apple-sub");
+        User user = User.signUp(SocialProvider.APPLE, APPLE_SUB);
         ReflectionTestUtils.setField(user, "id", USER_ID);
         user.updateAppleRefreshToken(encryptedToken);
         return user;
