@@ -49,6 +49,14 @@ public class DeviceTokenService {
         return deviceTokenRepository.existsByUserId(userId);
     }
 
+    /**
+     * 회원의 모든 기기 토큰을 지운다. 탈퇴한 회원에게 푸시가 가지 않게 한다.
+     */
+    @Transactional
+    public void deleteAll(Long userId) {
+        deviceTokenRepository.deleteAllByUserId(userId);
+    }
+
     @Transactional
     public void deleteTokens(Collection<String> tokens) {
         if (!tokens.isEmpty()) {

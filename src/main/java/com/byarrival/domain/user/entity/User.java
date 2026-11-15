@@ -79,9 +79,14 @@ public class User extends BaseEntity {
     @Column(nullable = false, length = 20)
     private UserStatus status;
 
+    private LocalDateTime withdrawnAt;
+
     @Enumerated(EnumType.STRING)
     @Column(length = 10)
     private NotificationPermission notificationPermission;
+
+    // 암호화한 Apple refresh token. 탈퇴할 때 Apple 연결 끊기에 쓴다
+    private String appleRefreshToken;
 
     private User(SocialProvider provider, String providerUserId) {
         this.provider = provider;
@@ -92,6 +97,10 @@ public class User extends BaseEntity {
 
     public static User signUp(SocialProvider provider, String providerUserId) {
         return new User(provider, providerUserId);
+    }
+
+    public void updateAppleRefreshToken(String encryptedRefreshToken) {
+        this.appleRefreshToken = encryptedRefreshToken;
     }
 
     public void updateNotificationPermission(NotificationPermission permission) {
@@ -188,6 +197,24 @@ public class User extends BaseEntity {
 
     private static Integer minutes(DailyCommute commute) {
         return commute == null ? null : commute.minutes();
+    }
+
+    /**
+     * 탈퇴 상태로 바꾼다. 프로필·설정과 이용 이력은 지우지 않고 보관한다.
+     */
+    public void withdraw(LocalDateTime now) {
+        this.status = UserStatus.WITHDRAWN;
+        this.withdrawnAt = now;
+    }
+
+    /**
+     * 보관 기간 안에 재가입하면 보관한 데이터를 그대로 쓰도록 다시 활성화한다.
+     * 탈퇴 때 이미 revoke한 Apple 토큰은 지운다. 이번 로그인에 authorization code가 있으면 새 토큰이 저장된다.
+     */
+    public void restore() {
+        this.status = UserStatus.ACTIVE;
+        this.withdrawnAt = null;
+        this.appleRefreshToken = null;
     }
 
     public boolean isOnboardingCompleted() {

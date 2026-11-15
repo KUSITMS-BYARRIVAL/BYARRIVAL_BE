@@ -56,11 +56,11 @@ public class TokenService {
         RefreshToken token = refreshTokenRepository.findByTokenHash(hash(refreshToken))
             .filter(found -> found.isUsable(now))
             .orElseThrow(TokenService::unauthorized);
+        // 탈퇴와 같은 순서(회원 → 토큰)로 잠근다. 탈퇴가 먼저 잠갔으면 탈퇴가 끝난 뒤 UNAUTHORIZED로 응답해,
+        // 탈퇴 중에 새 리프레시 토큰이 발급돼 남는 일이 없다.
+        userService.getActiveUserForUpdate(token.getUserId());
         // 같은 토큰으로 재발급이 동시에 들어오면 먼저 폐기한 요청만 통과한다.
         if (refreshTokenRepository.revokeIfActive(token.getId(), now) != 1) {
-            throw unauthorized();
-        }
-        if (!userService.isActiveUser(token.getUserId())) {
             throw unauthorized();
         }
         return issue(token.getUserId());
@@ -77,6 +77,14 @@ public class TokenService {
         if (StringUtils.hasText(fcmToken)) {
             deviceTokenService.unregister(userId, fcmToken);
         }
+    }
+
+    /**
+     * 모든 기기의 리프레시 토큰을 폐기한다(탈퇴).
+     */
+    @Transactional
+    public void revokeAll(Long userId) {
+        refreshTokenRepository.revokeAllActiveByUserId(userId, LocalDateTime.now(clock));
     }
 
     private String generateRefreshToken() {

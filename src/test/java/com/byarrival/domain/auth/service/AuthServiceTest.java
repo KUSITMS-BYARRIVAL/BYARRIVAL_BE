@@ -32,23 +32,26 @@ class AuthServiceTest {
     private static final String PROVIDER_USER_ID = "12345";
 
     private SocialAuthClient kakaoClient;
+    private SocialAuthClient appleClient;
     private UserService userService;
     private TokenService tokenService;
     private TermService termService;
+    private AppleTokenService appleTokenService;
     private AuthService authService;
 
     @BeforeEach
     void setUp() {
         kakaoClient = mock(SocialAuthClient.class);
-        SocialAuthClient appleClient = mock(SocialAuthClient.class);
+        appleClient = mock(SocialAuthClient.class);
         given(kakaoClient.provider()).willReturn(SocialProvider.KAKAO);
         given(appleClient.provider()).willReturn(SocialProvider.APPLE);
         userService = mock(UserService.class);
         tokenService = mock(TokenService.class);
         termService = mock(TermService.class);
         given(tokenService.issue(any())).willReturn(TokenResponse.of("access-token", "refresh-token"));
+        appleTokenService = mock(AppleTokenService.class);
         authService = new AuthService(new SocialAuthClients(List.of(kakaoClient, appleClient)), userService,
-            tokenService, termService);
+            tokenService, termService, appleTokenService);
     }
 
     @Test
@@ -91,6 +94,60 @@ class AuthServiceTest {
         assertThat(response.refreshToken()).isEqualTo("refresh-token");
         assertThat(response.termsAgreed()).isTrue();
         verify(tokenService).issue(1L);
+    }
+
+    @Test
+    void 애플_로그인에_authorization_code가_있으면_Apple_토큰을_저장한다() {
+        User user = userWithId(6L);
+        given(appleClient.getProviderUserId(TOKEN)).willReturn(PROVIDER_USER_ID);
+        given(userService.findActiveUser(SocialProvider.APPLE, PROVIDER_USER_ID)).willReturn(Optional.of(user));
+
+        authService.socialLogin(new SocialLoginRequest(SocialProvider.APPLE, TOKEN, "auth-code"));
+
+        verify(appleTokenService).storeRefreshToken(6L, PROVIDER_USER_ID, "auth-code");
+    }
+
+    @Test
+    void authorization_code가_없거나_카카오_로그인이면_Apple_토큰을_저장하지_않는다() {
+        User user = userWithId(7L);
+        given(appleClient.getProviderUserId(TOKEN)).willReturn(PROVIDER_USER_ID);
+        given(kakaoClient.getProviderUserId(TOKEN)).willReturn(PROVIDER_USER_ID);
+        given(userService.findActiveUser(any(), any())).willReturn(Optional.of(user));
+
+        authService.socialLogin(new SocialLoginRequest(SocialProvider.APPLE, TOKEN));
+        authService.socialLogin(new SocialLoginRequest(SocialProvider.KAKAO, TOKEN, "auth-code"));
+
+        verify(appleTokenService, never()).storeRefreshToken(any(), any(), any());
+    }
+
+    @Test
+    void 보관_기간_안에_탈퇴한_계정이면_복원하고_신규_회원이_아니다() {
+        User user = userWithId(4L);
+        given(kakaoClient.getProviderUserId(TOKEN)).willReturn(PROVIDER_USER_ID);
+        given(userService.findActiveUser(SocialProvider.KAKAO, PROVIDER_USER_ID)).willReturn(Optional.empty());
+        given(userService.restoreWithdrawnUser(SocialProvider.KAKAO, PROVIDER_USER_ID)).willReturn(Optional.of(user));
+
+        SocialLoginResponse response = authService.socialLogin(new SocialLoginRequest(SocialProvider.KAKAO, TOKEN));
+
+        assertThat(response.userId()).isEqualTo(4L);
+        assertThat(response.isNewUser()).isFalse();
+        verify(userService, never()).signUp(any(), any());
+    }
+
+    @Test
+    void 복원하는_동안_같은_계정이_활성화되면_그_회원으로_응답한다() {
+        User user = userWithId(5L);
+        given(kakaoClient.getProviderUserId(TOKEN)).willReturn(PROVIDER_USER_ID);
+        given(userService.findActiveUser(SocialProvider.KAKAO, PROVIDER_USER_ID))
+            .willReturn(Optional.empty(), Optional.of(user));
+        given(userService.restoreWithdrawnUser(SocialProvider.KAKAO, PROVIDER_USER_ID))
+            .willThrow(new DataIntegrityViolationException("uk_users_provider_active"));
+
+        SocialLoginResponse response = authService.socialLogin(new SocialLoginRequest(SocialProvider.KAKAO, TOKEN));
+
+        assertThat(response.userId()).isEqualTo(5L);
+        assertThat(response.isNewUser()).isFalse();
+        verify(userService, never()).signUp(any(), any());
     }
 
     @Test

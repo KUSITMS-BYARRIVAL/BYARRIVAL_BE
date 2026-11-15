@@ -7,9 +7,11 @@ import com.byarrival.domain.term.service.TermService;
 import com.byarrival.domain.user.entity.SocialProvider;
 import com.byarrival.domain.user.entity.User;
 import com.byarrival.domain.user.service.UserService;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 /**
  * 소셜 로그인·가입. 소셜 토큰 검증은 트랜잭션 밖에서 하고 회원 조회·생성만 UserService 트랜잭션으로 처리한다.
@@ -23,6 +25,7 @@ public class AuthService {
     private final UserService userService;
     private final TokenService tokenService;
     private final TermService termService;
+    private final AppleTokenService appleTokenService;
 
     public SocialLoginResponse socialLogin(SocialLoginRequest request) {
         SocialProvider provider = request.provider();
@@ -30,10 +33,23 @@ public class AuthService {
 
         LoginUser loginUser = userService.findActiveUser(provider, providerUserId)
             .map(user -> new LoginUser(user, false))
+            .or(() -> restore(provider, providerUserId))
             .orElseGet(() -> signUp(provider, providerUserId));
         User user = loginUser.user();
+        if (provider == SocialProvider.APPLE && StringUtils.hasText(request.authorizationCode())) {
+            appleTokenService.storeRefreshToken(user.getId(), providerUserId, request.authorizationCode());
+        }
         return SocialLoginResponse.of(user, loginUser.isNewUser(), termService.hasAgreedRequiredTerms(user.getId()),
             tokenService.issue(user.getId()));
+    }
+
+    // 보관 기간 안에 탈퇴한 계정이면 다시 활성화해 기존 회원으로 응답한다. 동시에 가입·복원된 경우 그 회원으로 응답한다.
+    private Optional<LoginUser> restore(SocialProvider provider, String providerUserId) {
+        try {
+            return userService.restoreWithdrawnUser(provider, providerUserId).map(user -> new LoginUser(user, false));
+        } catch (DataIntegrityViolationException e) {
+            return userService.findActiveUser(provider, providerUserId).map(user -> new LoginUser(user, false));
+        }
     }
 
     // 같은 계정의 가입 요청이 동시에 들어와 먼저 가입된 경우 기존 회원으로 응답한다.
