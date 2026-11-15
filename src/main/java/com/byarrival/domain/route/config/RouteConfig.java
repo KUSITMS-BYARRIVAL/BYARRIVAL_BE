@@ -6,7 +6,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
-@EnableConfigurationProperties(RouteProperties.class)
+@EnableConfigurationProperties({RouteProperties.class, PopularArticleProperties.class})
 public class RouteConfig {
 
     /**

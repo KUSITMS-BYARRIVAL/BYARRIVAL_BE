@@ -2,11 +2,14 @@ package com.byarrival.domain.batch.service;
 
 import com.byarrival.common.time.ServiceDay;
 import com.byarrival.domain.article.service.ArticleAiService;
+import com.byarrival.domain.article.service.ArticleStoryService;
 import com.byarrival.domain.article.service.ArticleCollectService;
 import com.byarrival.domain.article.service.ArticleCollectService.CategoryFill;
 import com.byarrival.domain.feed.dto.FeedCollectResult;
 import com.byarrival.domain.feed.dto.FetchedFeed;
 import com.byarrival.domain.feed.service.FeedCollectService;
+import com.byarrival.domain.quiz.service.QuizGenerationService;
+import com.byarrival.domain.smalltalk.service.SmalltalkGenerationService;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -29,6 +32,9 @@ public class DailyBatchService {
     private final FeedCollectService feedCollectService;
     private final ArticleCollectService articleCollectService;
     private final ArticleAiService articleAiService;
+    private final ArticleStoryService articleStoryService;
+    private final QuizGenerationService quizGenerationService;
+    private final SmalltalkGenerationService smalltalkGenerationService;
     private final BatchMonitor batchMonitor;
     private final Clock clock;
 
@@ -55,6 +61,12 @@ public class DailyBatchService {
             // 난이도 판정과 3줄 요약(AI-01, AI-02). 일부 Feed·카테고리가 실패해도 저장된 기사는 먼저 가공해
             // 나머지 카테고리라도 추천할 수 있게 한다. 요약까지 끝난 기사만 추천 후보가 된다(RSS-08)
             articleAiService.process(serviceDate);
+            // 표현이 달라 수집 때 못 거른 같은 사건 기사를 AI로 묶어 1건만 추천 후보로 남긴다. 실패하면 건너뛴다
+            articleStoryService.dedupe(serviceDate);
+            // 추천 후보로 남은 기사마다 3지선다 퀴즈 1문제를 만든다(AI-03). 실패한 기사는 퀴즈 없이 노출한다
+            generateQuizzes(serviceDate);
+            // 카테고리별 인기 기사로 스몰토크를 최대 2건씩 만든다(TALK-01). 실패해도 기사 추천은 계속한다
+            generateSmalltalks(serviceDate);
             if (!saveFailedFeedIds.isEmpty()) {
                 // 다시 실행할 수 있도록 실패로 남긴다. 이미 저장·가공된 기사는 재실행 때 건너뛴다.
                 fail(batchRunId.get(), serviceDate, startedAt, "기사 저장 실패 feedIds=" + saveFailedFeedIds);
@@ -88,6 +100,23 @@ public class DailyBatchService {
             batchRunService.fail(batchRunId.get(), e.getMessage());
             // 예외 메시지에는 외부 URL이나 사용자 값이 섞일 수 있어 알림에는 종류만 보낸다
             batchMonitor.failed(serviceDate, startedAt, e.getClass().getName());
+        }
+    }
+
+    // 퀴즈가 실패해도 기사 추천은 할 수 있으므로 배치를 실패로 남기지 않는다
+    private void generateQuizzes(LocalDate serviceDate) {
+        try {
+            quizGenerationService.generate(serviceDate);
+        } catch (RuntimeException e) {
+            log.error("[DailyBatch] serviceDate={} 퀴즈 생성 실패 - {}", serviceDate, e.getMessage(), e);
+        }
+    }
+
+    private void generateSmalltalks(LocalDate serviceDate) {
+        try {
+            smalltalkGenerationService.generate(serviceDate);
+        } catch (RuntimeException e) {
+            log.error("[DailyBatch] serviceDate={} 스몰토크 생성 실패 - {}", serviceDate, e.getMessage(), e);
         }
     }
 

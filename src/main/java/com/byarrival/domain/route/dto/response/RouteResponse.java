@@ -17,6 +17,8 @@ public record RouteResponse(
     @Schema(description = "추천 폴백 단계 0/1/2") int fallbackStep,
     @Schema(description = "마지막으로 본 카드 순번. 없으면 null (첫 카드부터)") Integer lastViewedCardOrder,
     RouteCartResponse cart,
-    @Schema(description = "후보 카드 풀 (카드 순번 순)") List<RouteCardResponse> cards
+    @Schema(description = "후보 카드 풀 (카드 순번 순)") List<RouteCardResponse> cards,
+    @Schema(description = "운행 진행 상태. 운행 중이거나 완주한 노선만 있고, 아니면 null (이어보기 RIDE-02)")
+    RideProgressResponse ride
 ) {
 }

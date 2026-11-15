@@ -7,6 +7,7 @@ import com.byarrival.domain.article.entity.Article;
 import com.byarrival.domain.article.service.ArticleQueryService;
 import com.byarrival.domain.category.service.CategoryMappingService;
 import com.byarrival.domain.route.dto.response.BoardingPassResponse;
+import com.byarrival.domain.route.dto.response.RideProgressResponse;
 import com.byarrival.domain.route.dto.response.RouteCardResponse;
 import com.byarrival.domain.route.dto.response.RouteCartResponse;
 import com.byarrival.domain.route.dto.response.RouteResponse;
@@ -14,6 +15,7 @@ import com.byarrival.domain.route.dto.response.TodayRouteResponse;
 import com.byarrival.domain.route.entity.Route;
 import com.byarrival.domain.route.entity.RouteCard;
 import com.byarrival.domain.route.entity.RouteCondition;
+import com.byarrival.domain.route.entity.RouteStatus;
 import com.byarrival.domain.route.exception.RouteErrorCode;
 import com.byarrival.domain.route.repository.RouteCardRepository;
 import com.byarrival.domain.route.repository.RouteRepository;
@@ -48,6 +50,7 @@ public class RouteService {
     private final RouteCartPolicy routeCartPolicy;
     private final RouteHistoryRecorder routeHistoryRecorder;
     private final RouteCursorStore routeCursorStore;
+    private final RideProgressReader rideProgressReader;
     private final UserTravelSettingService userTravelSettingService;
     private final ArticleQueryService articleQueryService;
     private final CategoryMappingService categoryMappingService;
@@ -170,9 +173,13 @@ public class RouteService {
             .toList();
         RouteCartResponse cartResponse = new RouteCartResponse(cart.cartCount(), cart.totalMinutes(),
             cart.minMinutes(), cart.maxMinutes(), cart.startable(), cart.noMoreCards(), cartArticleIds);
-        return new RouteResponse(route.getId(), route.statusAt(now), route.getCondition(), route.getServiceDate(),
+        RouteStatus status = route.statusAt(now);
+        RideProgressResponse ride = status == RouteStatus.IN_PROGRESS || status == RouteStatus.COMPLETED
+            ? RideProgressResponse.from(rideProgressReader.read(cards))
+            : null;
+        return new RouteResponse(route.getId(), status, route.getCondition(), route.getServiceDate(),
             route.getExpiresAt(), route.getTargetMinutes(), route.getFallbackStep(),
-            routeCursorStore.find(route.getId()).orElse(null), cartResponse, toCardResponses(cards, cart));
+            routeCursorStore.find(route.getId()).orElse(null), cartResponse, toCardResponses(cards, cart), ride);
     }
 
     private List<RouteCardResponse> toCardResponses(List<RouteCard> cards, CartStatus cart) {
@@ -196,7 +203,8 @@ public class RouteService {
                     card.isRecommended(),
                     card.isCarted(),
                     card.getCartOrder(),
-                    cart.isAddable(card.getArticleId()));
+                    cart.isAddable(card.getArticleId()),
+                    card.isRead());
             })
             .toList();
     }

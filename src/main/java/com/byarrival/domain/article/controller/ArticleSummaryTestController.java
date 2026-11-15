@@ -11,6 +11,8 @@ import com.byarrival.domain.article.service.ArticleSummaryGenerator;
 import com.byarrival.domain.article.service.ArticleSummaryStore.SummaryInput;
 import com.byarrival.domain.article.service.ArticleSummaryStore;
 import com.byarrival.domain.batch.service.DailyBatchService;
+import com.byarrival.domain.quiz.service.QuizGenerationService;
+import com.byarrival.domain.quiz.service.QuizGenerationService.QuizGenerationResult;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.time.LocalDate;
@@ -37,6 +39,7 @@ public class ArticleSummaryTestController {
     private final ArticleSummaryStore articleSummaryStore;
     private final ArticleAiService articleAiService;
     private final ArticleSummaryGenerator articleSummaryGenerator;
+    private final QuizGenerationService quizGenerationService;
 
     @Operation(summary = "일일 수집 배치 실행", description = "23:45 배치와 같은 수집을 지금 실행한다. 서비스일은 내일이다.")
     @PostMapping("/batch")
@@ -51,6 +54,14 @@ public class ArticleSummaryTestController {
     public ApiResponse<AiProcessResult> processAi(
         @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate serviceDate) {
         return ApiResponse.ok(articleAiService.process(serviceDate));
+    }
+
+    @Operation(summary = "AI 퀴즈 생성 실행",
+        description = "서비스일의 추천 후보 기사 중 퀴즈가 없는 기사마다 3지선다 1문제를 만든다. 배치의 퀴즈 단계와 같다. 실제 API를 호출한다.")
+    @PostMapping("/quizzes")
+    public ApiResponse<QuizGenerationResult> generateQuizzes(
+        @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate serviceDate) {
+        return ApiResponse.ok(quizGenerationService.generate(serviceDate));
     }
 
     @Operation(summary = "AI 요약 미리보기",

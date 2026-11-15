@@ -76,6 +76,9 @@ route:
     NORMAL: { hard: 2, easy: 3 }
     CLOUDY: { hard: 1, easy: 4 }
     RAINY: { hard: 1, easy: 4 }
+  popular:
+    # 많이 담은 뉴스 순위를 보여 주는 최소 인원. 그날 기사를 담은 사용자가 이보다 적으면 집계중 상태 (HOME-07)
+    min-users: 30
 
 ai:
   anthropic:
@@ -100,6 +103,27 @@ ai:
     effort: low
     lead-length: 400
     max-retries: 3
+  quiz:
+    # 추천 후보 기사(약 160건)마다 요약으로 3지선다 1문제를 만든다(AI-03)
+    model: claude-haiku-5-5
+    max-tokens: 4000
+    effort: medium
+    concurrency: 8
+    max-retries: 3
+  smalltalk:
+    # 카테고리별 인기 기사(구글 뉴스 노출 순서) 상위부터 최대 2건씩 한 줄 스몰토크를 만든다(TALK-01)
+    model: claude-haiku-5-5
+    max-tokens: 4000
+    effort: medium
+    max-retries: 3
+    per-category: 2
+  story:
+    # 요약이 끝난 서비스일 기사 전체(약 160건)를 한 번에 보내 같은 사건끼리 묶는다.
+    # 2026-11-11 운영 기사 156건 시험(medium): 사람이 찾은 중복 6묶음 중 3회 평균 5.7묶음, 오판 없음, 입력 약 1.5만·출력 약 2.7천 토큰
+    model: claude-haiku-5-5
+    max-tokens: 16000
+    effort: medium
+    max-retries: 2
 
 jwt:
   secret: ${JWT_SECRET:}

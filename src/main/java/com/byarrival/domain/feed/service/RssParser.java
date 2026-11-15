@@ -200,15 +200,17 @@ public class RssParser {
     }
 
     // 구글 뉴스는 제목 끝에 " - 언론사"를 붙인다. source와 같을 때만 뗀다.
+    // 언론사가 원래 제목에 붙여 둔 " - 언론사"까지 겹쳐 오기도 하므로(예: "제목 - 머니투데이 - 머니투데이") 남지 않을 때까지 뗀다.
     private String stripSourceSuffix(String title, String source) {
         if (source == null) {
             return title;
         }
         String suffix = " - " + source;
-        if (title.endsWith(suffix) && title.length() > suffix.length()) {
-            return title.substring(0, title.length() - suffix.length()).strip();
+        String stripped = title;
+        while (stripped.endsWith(suffix) && stripped.length() > suffix.length()) {
+            stripped = stripped.substring(0, stripped.length() - suffix.length()).strip();
         }
-        return title;
+        return stripped;
     }
 
     // 하위 요소의 텍스트까지 모두 이어 붙인다. 끝나면 reader는 이 요소의 END_ELEMENT에 있다.

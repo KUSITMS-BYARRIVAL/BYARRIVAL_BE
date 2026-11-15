@@ -9,7 +9,7 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 @EnableConfigurationProperties({
     ArticleReadingProperties.class, ArticleSelectionProperties.class, ArticleCrawlProperties.class,
-    ArticleSummaryProperties.class, ArticleDifficultyProperties.class})
+    ArticleSummaryProperties.class, ArticleDifficultyProperties.class, ArticleStoryProperties.class})
 public class ArticleConfig {
 
     @Bean(destroyMethod = "shutdownNow")

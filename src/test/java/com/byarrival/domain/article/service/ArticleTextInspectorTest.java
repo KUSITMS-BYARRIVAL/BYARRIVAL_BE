@@ -65,6 +65,33 @@ class ArticleTextInspectorTest {
         assertThat(inspector.isPhotoArticle(title)).isFalse();
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "[오늘의 운세] 2026년 11월 12일 오행별 행운의 컬러",
+        "[띠별 운세] 11월 13일",
+        "[미리보는 이데일리 신문] AI,이젠 기술보다 생산성 싸움",
+        "지수와 눈맞춤·이부진과 손하트…'디올의 여자들' [영상]",
+        "출근길 빙판 주의 (영상)",
+        "[부고] 김OO씨 별세",
+        "【인사】 기획재정부"
+    })
+    void 뉴스가_아닌_말머리가_있으면_거른다(String title) {
+        assertThat(inspector.isNonNewsArticle(title)).isTrue();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "[인사이트] 반도체 슈퍼사이클의 끝",
+        "[미리보는 CES 2027] 국내 기업의 신기술 경쟁",
+        "[단독] 영상 속 남성 신원 확인",
+        "인사 청문회 앞둔 후보자",
+        "운세 앱 이용자 1천만 돌파",
+        "[KS4] 선발에서 롱릴리프로…삼성 박진만 감독"
+    })
+    void 뉴스가_아닌_말머리가_아니면_거르지_않는다(String title) {
+        assertThat(inspector.isNonNewsArticle(title)).isFalse();
+    }
+
     @Test
     void 숫자와_기호는_한글_비율에_세지_않는다() {
         assertThat(ArticleTextInspector.hangulRatio("코스피 12% 급락, 3,000선 붕괴!")).isEqualTo(1.0);
