@@ -7,6 +7,12 @@ spring:
     open-in-view: false
     hibernate:
       ddl-auto: validate
+  data:
+    redis:
+      # 접속자 기록은 로그인한 모든 API 요청에서 Redis를 기다린다. Redis가 응답하지 않을 때 요청이 기본값(60초)만큼
+      # 묶이지 않도록 짧게 끊는다. Redis를 쓰는 곳(접속자, 노선 이어보기 위치)은 실패하면 Redis 없이 응답한다
+      timeout: 500ms
+      connect-timeout: 1s
 
 management:
   endpoints:
@@ -89,6 +95,13 @@ route:
   popular:
     # 많이 담은 뉴스 순위를 보여 주는 최소 인원. 그날 기사를 담은 사용자가 이보다 적으면 집계중 상태 (HOME-07)
     min-users: 30
+
+home:
+  # 스몰토크 추천 미리보기 카드 수 (HOME-03)
+  smalltalk-preview-size: 3
+  # 출근길 공감대 칩별 순위 수 (HOME-05)와 전체보기 순위 수 (HOME-06)
+  popular-preview-size: 3
+  popular-detail-size: 10
 
 ai:
   anthropic:

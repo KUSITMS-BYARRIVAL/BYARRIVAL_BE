@@ -6,7 +6,6 @@ import com.byarrival.domain.article.service.ArticleQueryService;
 import com.byarrival.domain.category.service.CategoryMappingService;
 import com.byarrival.domain.event.service.UsageEventRecorder;
 import com.byarrival.domain.route.dto.response.ArrivalResponse;
-import com.byarrival.domain.route.dto.response.PopularArticleResponse;
 import com.byarrival.domain.route.dto.response.PopularArticlesResponse;
 import com.byarrival.domain.route.dto.response.RideProgressResponse;
 import com.byarrival.domain.route.dto.response.RideResponse;
@@ -16,7 +15,6 @@ import com.byarrival.domain.route.entity.Route;
 import com.byarrival.domain.route.entity.RouteCard;
 import com.byarrival.domain.route.entity.RouteStatus;
 import com.byarrival.domain.route.exception.RouteErrorCode;
-import com.byarrival.domain.route.repository.CartedArticleCount;
 import com.byarrival.domain.route.repository.RouteRepository;
 import com.byarrival.domain.route.service.PopularArticleService.PopularArticles;
 import com.byarrival.domain.route.service.RouteCommandService.ArriveOutcome;
@@ -26,9 +24,7 @@ import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -148,22 +144,7 @@ public class RouteRideService {
         try {
             PopularArticles popular = popularArticleService.mostCarted(route.getServiceDate(), readArticleIds,
                 POPULAR_COUNT);
-            if (!popular.ranked()) {
-                return PopularArticlesResponse.aggregating();
-            }
-            Map<Long, Article> articles = articleQueryService.findAllByIds(
-                popular.articles().stream().map(CartedArticleCount::getArticleId).toList());
-            Map<Long, String> categoryNames = categoryMappingService.getActiveCategoryNames();
-            List<PopularArticleResponse> ranked = new ArrayList<>();
-            for (CartedArticleCount count : popular.articles()) {
-                Article article = articles.get(count.getArticleId());
-                ranked.add(new PopularArticleResponse(ranked.size() + 1, article.getId(), article.getTitle(),
-                    article.getPressName(), article.getCategoryId(), categoryNames.get(article.getCategoryId()),
-                    article.getReadingMinutes() == null ? null
-                        : article.getReadingMinutes().setScale(0, RoundingMode.CEILING).intValue(),
-                    count.getUserCount(), urlOf(article)));
-            }
-            return PopularArticlesResponse.ranked(ranked);
+            return popularArticleService.toResponse(popular);
         } catch (RuntimeException e) {
             log.warn("[Route] routeId={} 많이 담은 뉴스 집계 실패", route.getId(), e);
             return null;

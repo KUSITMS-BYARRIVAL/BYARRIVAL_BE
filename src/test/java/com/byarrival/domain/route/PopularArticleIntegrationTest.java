@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.byarrival.domain.route.repository.CartedArticleCount;
 import com.byarrival.domain.route.service.PopularArticleService;
 import com.byarrival.domain.route.service.PopularArticleService.PopularArticles;
+import com.byarrival.domain.user.entity.JobGroup;
 import com.byarrival.domain.user.entity.SocialProvider;
 import com.byarrival.domain.user.entity.User;
 import com.byarrival.domain.user.repository.UserRepository;
@@ -102,8 +103,40 @@ class PopularArticleIntegrationTest {
         assertThat(popular.articles()).extracting(CartedArticleCount::getUserCount).containsExactly(20L, 20L, 10L);
     }
 
+    @Test
+    void 직군_칩은_그_직군을_고른_사용자가_담은_것만_센다() {
+        Long itArticle = newArticle("VISIBLE", 10);
+        Long designArticle = newArticle("VISIBLE", 10);
+        for (int i = 0; i < MIN_USERS; i++) {
+            Long userId = newRoute(List.of(itArticle), List.of());
+            jobGroups(userId, i < 3 ? List.of("IT_DATA", "DESIGN") : List.of("IT_DATA"));
+        }
+        for (int i = 0; i < 5; i++) {
+            jobGroups(newRoute(List.of(designArticle), List.of()), List.of("DESIGN"));
+        }
+
+        PopularArticles it = popularArticleService.mostCarted(serviceDate, JobGroup.IT_DATA, Set.of(), 3);
+        PopularArticles design = popularArticleService.mostCarted(serviceDate, JobGroup.DESIGN, Set.of(), 3);
+        PopularArticles all = popularArticleService.mostCarted(serviceDate, null, Set.of(), 3);
+
+        assertThat(it.ranked()).isTrue();
+        assertThat(it.articles()).extracting(CartedArticleCount::getArticleId).containsExactly(itArticle);
+        // 디자인 직군은 두 직군을 고른 3명 + 디자인만 고른 5명 = 8명이라 집계중이다
+        assertThat(design.ranked()).isFalse();
+        assertThat(all.ranked()).isTrue();
+        assertThat(all.articles()).extracting(CartedArticleCount::getArticleId)
+            .containsExactly(itArticle, designArticle);
+    }
+
+    private void jobGroups(Long userId, List<String> jobGroups) {
+        for (int i = 0; i < jobGroups.size(); i++) {
+            jdbcTemplate.update("INSERT INTO user_job_group (user_id, job_group, sort_order) VALUES (?, ?, ?)",
+                userId, jobGroups.get(i), i + 1);
+        }
+    }
+
     // 사용자 한 명의 그날 노선. carted는 담은 카드, removed는 담았다 뺀 카드
-    private void newRoute(List<Long> carted, List<Long> removed) {
+    private Long newRoute(List<Long> carted, List<Long> removed) {
         Long userId = userRepository.save(User.signUp(SocialProvider.KAKAO, UUID.randomUUID().toString())).getId();
         Long routeId = jdbcTemplate.queryForObject("""
             INSERT INTO route (user_id, service_date, route_condition, target_minutes, status, fallback_step, expires_at)
@@ -126,6 +159,7 @@ class PopularArticleIntegrationTest {
                 VALUES (?, ?, ?, 'EASY', 2.0, TRUE)
                 """, routeId, articleId, order);
         }
+        return userId;
     }
 
     private Long newArticle(String visibility, int hoursBeforeServiceDay) {
