@@ -209,10 +209,12 @@ public class User extends BaseEntity {
 
     /**
      * 보관 기간 안에 재가입하면 보관한 데이터를 그대로 쓰도록 다시 활성화한다.
+     * 탈퇴 때 이미 revoke한 Apple 토큰은 지운다. 이번 로그인에 authorization code가 있으면 새 토큰이 저장된다.
      */
     public void restore() {
         this.status = UserStatus.ACTIVE;
         this.withdrawnAt = null;
+        this.appleRefreshToken = null;
     }
 
     public boolean isOnboardingCompleted() {

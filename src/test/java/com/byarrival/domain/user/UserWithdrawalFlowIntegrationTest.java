@@ -208,6 +208,8 @@ class UserWithdrawalFlowIntegrationTest {
     @Test
     void 보관_기간_안에_같은_소셜_계정으로_로그인하면_같은_계정과_데이터를_복원한다() throws Exception {
         saveOnboarding();
+        // 탈퇴 때 revoke한 토큰이 남아 있어도 복원하면 지운다
+        jdbcTemplate.update("UPDATE users SET apple_refresh_token = 'revoked' WHERE id = ?", userId);
         perform(delete("/api/v1/users/me"), null).andExpect(status().isOk());
 
         SocialLoginResponse response = login();
@@ -218,6 +220,7 @@ class UserWithdrawalFlowIntegrationTest {
         assertThat(restored.getStatus()).isEqualTo(UserStatus.ACTIVE);
         assertThat(restored.getWithdrawnAt()).isNull();
         assertThat(restored.getCommuteStartTime()).isEqualTo(LocalTime.of(8, 0));
+        assertThat(restored.getAppleRefreshToken()).isNull();
         assertThat(userService.findInterestCategoryIds(userId)).isNotEmpty();
     }
 
