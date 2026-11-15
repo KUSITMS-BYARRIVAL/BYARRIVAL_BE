@@ -7,6 +7,12 @@ spring:
     open-in-view: false
     hibernate:
       ddl-auto: validate
+  data:
+    redis:
+      # 접속자 기록은 로그인한 모든 API 요청에서 Redis를 기다린다. Redis가 응답하지 않을 때 요청이 기본값(60초)만큼
+      # 묶이지 않도록 짧게 끊는다. Redis를 쓰는 곳(접속자, 노선 이어보기 위치)은 실패하면 Redis 없이 응답한다
+      timeout: 500ms
+      connect-timeout: 1s
 
 management:
   endpoints:
