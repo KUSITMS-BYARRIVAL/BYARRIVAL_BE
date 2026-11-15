@@ -111,6 +111,11 @@ GHCR 로그인은 워크플로의 `GITHUB_TOKEN`을 쓰므로 따로 등록하�
 | `DB_USERNAME`, `DB_PASSWORD` | `POSTGRES_USER`, `POSTGRES_PASSWORD`와 같은 값 |
 | `REDIS_HOST`, `REDIS_PORT` | `redis`, `6379` |
 | `KAKAO_APP_ID` | 카카오 앱 ID |
+| `APPLE_TEAM_ID` | Apple Developer Team ID. 회원 탈퇴 시 Apple 연결 끊기에 씁니다 |
+| `APPLE_KEY_ID` | 로그인용(Sign in with Apple) 키의 Key ID |
+| `APPLE_PRIVATE_KEY_BASE64` | 로그인용 .p8 키 파일을 base64로 인코딩한 한 줄. Apple 값 중 하나라도 없으면 Apple 토큰 저장과 연결 끊기를 건너뜁니다 |
+| `TOKEN_ENCRYPTION_KEY` | Apple refresh token을 DB에 암호화해 저장하는 AES 키(base64, 32바이트 권장: `openssl rand -base64 32`). 없으면 토큰을 저장하지 않습니다. 바꾸면 이미 저장한 토큰을 읽을 수 없습니다 |
+| `KAKAO_ADMIN_KEY` | 카카오 Admin 키. 회원 탈퇴 시 카카오 연결 끊기에 씁니다. 없으면 연결 끊기를 건너뜁니다 |
 | `APPLE_CLIENT_ID` | iOS 앱 Bundle ID |
 | `FCM_ENABLED` | `true`면 FCM으로 푸시를 보냅니다. 없거나 `false`면 로그만 남깁니다 |
 | `FCM_CREDENTIALS_BASE64` | Firebase 서비스 계정 키 JSON 파일을 base64로 인코딩한 한 줄 (`base64 -w0 키파일.json`) |

@@ -158,7 +158,7 @@ class AppleAuthClientTest {
         RestClient.Builder builder = RestClient.builder();
         server = MockRestServiceServer.bindTo(builder).build();
         SocialAuthProperties properties = new SocialAuthProperties(Duration.ofSeconds(3), Duration.ofSeconds(5), null,
-            new SocialAuthProperties.Apple(ISSUER, KEYS_URI, clientId));
+            new SocialAuthProperties.Apple(ISSUER, KEYS_URI, clientId, null, null, null, null, null));
         return new AppleAuthClient(builder.build(), properties, JsonMapper.builder().build(),
             Clock.fixed(NOW, ZoneId.of("Asia/Seoul")));
     }
