@@ -1,5 +1,6 @@
 package com.byarrival.domain.onboarding.dto.response;
 
+import com.byarrival.domain.region.dto.response.RegionResponse;
 import com.byarrival.domain.user.entity.JobGroup;
 import com.byarrival.domain.user.entity.TravelType;
 import com.byarrival.domain.user.entity.User;
@@ -9,7 +10,7 @@ import java.util.List;
 
 /**
  * 지금까지 저장한 온보딩 값. 앱이 중간에 이탈했다가 돌아오면 이 값으로 이어서 진행한다. 입력하지 않은 항목은 null이다.
- * jobGroups는 고른 순서대로 담긴다.
+ * jobGroups는 고른 순서대로 담긴다. region은 근무 지역이다.
  */
 public record OnboardingResponse(
     String nickname,
@@ -18,11 +19,13 @@ public record OnboardingResponse(
     Integer defaultCommuteMinutes,
     List<Long> categoryIds,
     List<JobGroup> jobGroups,
+    RegionResponse region,
     boolean onboardingCompleted
 ) {
 
-    public static OnboardingResponse of(User user, List<Long> categoryIds, List<JobGroup> jobGroups) {
+    public static OnboardingResponse of(User user, List<Long> categoryIds, List<JobGroup> jobGroups,
+        RegionResponse region) {
         return new OnboardingResponse(user.getNickname(), user.getTravelType(), user.getCommuteStartTime(),
-            user.getDefaultCommuteMinutes(), categoryIds, jobGroups, user.isOnboardingCompleted());
+            user.getDefaultCommuteMinutes(), categoryIds, jobGroups, region, user.isOnboardingCompleted());
     }
 }

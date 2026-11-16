@@ -2,6 +2,8 @@ package com.byarrival.domain.user.service;
 
 import com.byarrival.common.exception.BusinessException;
 import com.byarrival.common.exception.CommonErrorCode;
+import com.byarrival.domain.region.dto.response.RegionResponse;
+import com.byarrival.domain.region.service.RegionService;
 import com.byarrival.domain.term.service.TermService;
 import com.byarrival.domain.user.dto.response.NotificationPermissionResponse;
 import com.byarrival.domain.user.dto.response.UserMeResponse;
@@ -11,9 +13,11 @@ import com.byarrival.domain.user.entity.SocialProvider;
 import com.byarrival.domain.user.entity.User;
 import com.byarrival.domain.user.entity.UserInterestCategory;
 import com.byarrival.domain.user.entity.UserJobGroup;
+import com.byarrival.domain.user.entity.UserRegionHistory;
 import com.byarrival.domain.user.entity.UserStatus;
 import com.byarrival.domain.user.repository.UserInterestCategoryRepository;
 import com.byarrival.domain.user.repository.UserJobGroupRepository;
+import com.byarrival.domain.user.repository.UserRegionHistoryRepository;
 import com.byarrival.domain.user.repository.UserRepository;
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -39,6 +43,8 @@ public class UserService {
     private final UserRepository userRepository;
     private final UserInterestCategoryRepository userInterestCategoryRepository;
     private final UserJobGroupRepository userJobGroupRepository;
+    private final UserRegionHistoryRepository userRegionHistoryRepository;
+    private final RegionService regionService;
     private final TermService termService;
     private final Clock clock;
 
@@ -59,7 +65,7 @@ public class UserService {
     public UserMeResponse getMe(Long userId) {
         User user = getActiveUser(userId);
         return UserMeResponse.of(user, termService.hasAgreedRequiredTerms(userId), findInterestCategoryIds(userId),
-            findJobGroups(userId));
+            findJobGroups(userId), findRegion(user));
     }
 
     @Transactional
@@ -154,6 +160,24 @@ public class UserService {
     @Transactional(readOnly = true)
     public List<JobGroup> findJobGroups(Long userId) {
         return userJobGroupRepository.findJobGroupsByUserId(userId);
+    }
+
+    /**
+     * 근무 지역을 고르지 않았으면 null이다.
+     */
+    @Transactional(readOnly = true)
+    public RegionResponse findRegion(User user) {
+        return regionService.findRegion(user.getRegionSigunguId()).orElse(null);
+    }
+
+    /**
+     * 근무 지역을 바꾸고, 실제로 바뀌었으면 변경 이력을 남긴다(MY-12). 지역 존재 여부는 호출하는 쪽에서 확인한다.
+     * 엔티티를 바꾸므로 호출하는 쪽의 트랜잭션 안에서 부른다.
+     */
+    public void changeRegion(User user, Integer sigunguId) {
+        if (user.changeRegion(sigunguId)) {
+            userRegionHistoryRepository.save(UserRegionHistory.of(user.getId(), sigunguId));
+        }
     }
 
     /**
