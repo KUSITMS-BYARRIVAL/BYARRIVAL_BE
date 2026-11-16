@@ -2,6 +2,7 @@ package com.byarrival.domain.user.service;
 
 import com.byarrival.common.exception.BusinessException;
 import com.byarrival.common.exception.CommonErrorCode;
+import com.byarrival.common.storage.FileDeletionService;
 import com.byarrival.domain.region.dto.response.RegionResponse;
 import com.byarrival.domain.region.service.RegionService;
 import com.byarrival.domain.term.service.TermService;
@@ -48,6 +49,7 @@ public class UserService {
     private final UserRegionHistoryRepository userRegionHistoryRepository;
     private final RegionService regionService;
     private final TermService termService;
+    private final FileDeletionService fileDeletionService;
     private final Clock clock;
 
     @Transactional(readOnly = true)
@@ -124,22 +126,19 @@ public class UserService {
 
     /**
      * 보관 기간이 지난 탈퇴 회원과 그 회원의 데이터를 지운다.
+     * 프로필 이미지 파일은 같은 트랜잭션에서 삭제 작업으로 남기고, 파일 삭제 작업자가 지운다.
+     *
+     * @return 파기한 회원 수
      */
     @Transactional
-    public PurgedUsers deleteExpiredWithdrawnUsers() {
+    public int deleteExpiredWithdrawnUsers() {
         LocalDateTime before = LocalDateTime.now(clock).minus(WITHDRAWN_RETENTION);
         List<String> profileImageUrls = userRepository.findAllForPurge(UserStatus.WITHDRAWN, before).stream()
             .map(User::getProfileImageUrl)
             .filter(Objects::nonNull)
             .toList();
-        int deleted = userRepository.deleteByStatusAndWithdrawnAtBefore(UserStatus.WITHDRAWN, before);
-        return new PurgedUsers(deleted, profileImageUrls);
-    }
-
-    /**
-     * @param profileImageUrls 파기한 회원의 프로필 이미지. DB를 지운 뒤 파일도 지운다
-     */
-    public record PurgedUsers(int count, List<String> profileImageUrls) {
+        fileDeletionService.enqueue(profileImageUrls);
+        return userRepository.deleteByStatusAndWithdrawnAtBefore(UserStatus.WITHDRAWN, before);
     }
 
     /**
