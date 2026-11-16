@@ -9,6 +9,7 @@ import com.byarrival.domain.user.dto.request.UserUpdateRequest;
 import com.byarrival.domain.user.dto.request.WeeklyCommuteRequest;
 import com.byarrival.domain.user.dto.response.NotificationPermissionResponse;
 import com.byarrival.domain.user.dto.response.UserMeResponse;
+import com.byarrival.domain.user.service.ProfileImageService;
 import com.byarrival.domain.user.service.UserService;
 import com.byarrival.domain.user.service.UserSettingService;
 import com.byarrival.domain.user.service.UserWithdrawalService;
@@ -16,13 +17,16 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @Tag(name = "User", description = "회원")
 @RestController
@@ -33,6 +37,7 @@ public class UserController {
     private final UserService userService;
     private final UserWithdrawalService userWithdrawalService;
     private final UserSettingService userSettingService;
+    private final ProfileImageService profileImageService;
 
     @Operation(summary = "내 정보 조회",
         description = "앱 진입 시 약관 동의·온보딩 완료 여부로 화면을 분기하고, 마이 화면에 프로필과 개인 설정을 보여 준다. "
@@ -64,6 +69,21 @@ public class UserController {
     @PatchMapping("/me")
     public ApiResponse<UserMeResponse> updateMe(@LoginUserId Long userId, @Valid @RequestBody UserUpdateRequest request) {
         return ApiResponse.ok(userSettingService.updateMe(userId, request));
+    }
+
+    @Operation(summary = "프로필 이미지 변경",
+        description = "multipart/form-data의 image 파트로 JPG·PNG(최대 10MB)를 보낸다. HEIC는 앱에서 JPEG로 바꿔 보낸다. "
+            + "서버가 긴 변 1024px JPG로 줄여 저장하고, 바뀐 profileImageUrl이 담긴 내 정보를 돌려준다.")
+    @PutMapping(value = "/me/profile-image", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ApiResponse<UserMeResponse> changeProfileImage(
+        @LoginUserId Long userId, @RequestPart("image") MultipartFile image) {
+        return ApiResponse.ok(profileImageService.change(userId, image));
+    }
+
+    @Operation(summary = "프로필 이미지 삭제", description = "기본 이미지로 되돌린다. profileImageUrl이 null이 되고 앱이 기본 이미지를 보여 준다.")
+    @DeleteMapping("/me/profile-image")
+    public ApiResponse<UserMeResponse> deleteProfileImage(@LoginUserId Long userId) {
+        return ApiResponse.ok(profileImageService.delete(userId));
     }
 
     @Operation(summary = "관심 분야 저장", description = "보낸 목록으로 통째로 바꾼다. 활성 관심 분야 1개 이상. 다음 노선부터 반영된다.")

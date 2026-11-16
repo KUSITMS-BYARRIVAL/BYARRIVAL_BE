@@ -1,7 +1,9 @@
 package com.byarrival.domain.user.scheduler;
 
 import com.byarrival.common.config.ClockConfig;
+import com.byarrival.domain.user.service.ProfileImageService;
 import com.byarrival.domain.user.service.UserService;
+import com.byarrival.domain.user.service.UserService.PurgedUsers;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -16,10 +18,13 @@ import org.springframework.stereotype.Component;
 public class WithdrawnUserPurgeScheduler {
 
     private final UserService userService;
+    private final ProfileImageService profileImageService;
 
     @Scheduled(cron = "0 0 5 * * *", zone = ClockConfig.KST)
     public void purge() {
-        int deleted = userService.deleteExpiredWithdrawnUsers();
-        log.info("보관 기간이 지난 탈퇴 회원 파기: {}명", deleted);
+        PurgedUsers purged = userService.deleteExpiredWithdrawnUsers();
+        // 파일 삭제는 외부 호출이라 DB 파기를 커밋한 뒤에 한다
+        purged.profileImageUrls().forEach(profileImageService::deleteQuietly);
+        log.info("보관 기간이 지난 탈퇴 회원 파기: {}명", purged.count());
     }
 }

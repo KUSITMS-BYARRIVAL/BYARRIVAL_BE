@@ -21,6 +21,7 @@ import java.time.Period;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -118,9 +119,20 @@ public class UserService {
      * 보관 기간이 지난 탈퇴 회원과 그 회원의 데이터를 지운다.
      */
     @Transactional
-    public int deleteExpiredWithdrawnUsers() {
+    public PurgedUsers deleteExpiredWithdrawnUsers() {
         LocalDateTime before = LocalDateTime.now(clock).minus(WITHDRAWN_RETENTION);
-        return userRepository.deleteByStatusAndWithdrawnAtBefore(UserStatus.WITHDRAWN, before);
+        List<String> profileImageUrls = userRepository.findAllForPurge(UserStatus.WITHDRAWN, before).stream()
+            .map(User::getProfileImageUrl)
+            .filter(Objects::nonNull)
+            .toList();
+        int deleted = userRepository.deleteByStatusAndWithdrawnAtBefore(UserStatus.WITHDRAWN, before);
+        return new PurgedUsers(deleted, profileImageUrls);
+    }
+
+    /**
+     * @param profileImageUrls 파기한 회원의 프로필 이미지. DB를 지운 뒤 파일도 지운다
+     */
+    public record PurgedUsers(int count, List<String> profileImageUrls) {
     }
 
     /**

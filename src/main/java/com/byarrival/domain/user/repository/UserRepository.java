@@ -5,6 +5,7 @@ import com.byarrival.domain.user.entity.User;
 import com.byarrival.domain.user.entity.UserStatus;
 import jakarta.persistence.LockModeType;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -35,6 +36,11 @@ public interface UserRepository extends JpaRepository<User, Long> {
     /**
      * 보관 기간이 지난 탈퇴 회원을 지운다. 회원의 다른 데이터는 DB의 ON DELETE CASCADE로 함께 지워진다.
      */
+    // 파기 전에 행을 잠가 그사이 재가입 복원과 겹치지 않게 한다
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT u FROM User u WHERE u.status = :status AND u.withdrawnAt < :before")
+    List<User> findAllForPurge(@Param("status") UserStatus status, @Param("before") LocalDateTime before);
+
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("DELETE FROM User u WHERE u.status = :status AND u.withdrawnAt < :before")
     int deleteByStatusAndWithdrawnAtBefore(@Param("status") UserStatus status, @Param("before") LocalDateTime before);

@@ -107,6 +107,13 @@ public class User extends BaseEntity {
         this.notificationPermission = permission;
     }
 
+    /**
+     * null이면 기본 이미지로 되돌린다.
+     */
+    public void changeProfileImage(String profileImageUrl) {
+        this.profileImageUrl = profileImageUrl;
+    }
+
     public void changeNickname(String nickname) {
         this.nickname = nickname;
     }
