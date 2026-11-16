@@ -14,6 +14,11 @@ public interface FileStorage {
     String upload(String path, byte[] content, String contentType);
 
     /**
+     * 저장소 설정(키)이 있어 실제로 저장·삭제할 수 있는지
+     */
+    boolean isAvailable();
+
+    /**
      * 이 저장소가 만든 URL만 지운다. 다른 주소면 아무것도 하지 않는다.
      */
     void delete(String url);

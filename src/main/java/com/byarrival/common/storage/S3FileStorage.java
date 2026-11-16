@@ -30,6 +30,11 @@ public class S3FileStorage implements FileStorage {
     }
 
     @Override
+    public boolean isAvailable() {
+        return properties.isConfigured();
+    }
+
+    @Override
     public String upload(String path, byte[] content, String contentType) {
         if (!properties.isConfigured()) {
             throw new BusinessException(CommonErrorCode.STORAGE_UNAVAILABLE);

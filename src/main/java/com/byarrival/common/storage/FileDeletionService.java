@@ -59,13 +59,17 @@ public class FileDeletionService {
     }
 
     /**
-     * 남은 작업을 오래된 순으로 처리한다. 지운 작업은 없애고, 실패한 작업은 실패 횟수를 늘려 남긴다.
+     * 남은 작업을 실패 횟수가 적은 순, 그다음 오래된 순으로 처리한다. 지운 작업은 없애고, 실패한 작업은 실패 횟수를 늘려 남긴다.
+     * 저장소 설정이 없으면 실제로 지울 수 없으므로 작업을 건드리지 않고 남겨 둔다.
      * 블루/그린 전환 중 두 서버가 같은 작업을 처리해도, 같은 파일을 두 번 지우는 것뿐이라 결과는 같다.
      *
      * @return 지운 파일 수
      */
     public int deletePending() {
-        List<FileDeletionTask> tasks = repository.findAllByOrderByIdAsc(PageRequest.of(0, BATCH_SIZE));
+        if (!fileStorage.isAvailable()) {
+            return 0;
+        }
+        List<FileDeletionTask> tasks = repository.findAllByOrderByAttemptsAscIdAsc(PageRequest.of(0, BATCH_SIZE));
         int deleted = 0;
         for (FileDeletionTask task : tasks) {
             try {
