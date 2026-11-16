@@ -24,6 +24,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 class GlobalExceptionHandlerTest {
 
@@ -85,6 +86,13 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    void 업로드_크기를_넘으면_413을_반환한다() throws Exception {
+        mockMvc.perform(get("/test/too-large"))
+            .andExpect(status().isPayloadTooLarge())
+            .andExpect(jsonPath("$.code").value("PAYLOAD_TOO_LARGE"));
+    }
+
+    @Test
     void 처리되지_않은_예외는_500을_반환한다() throws Exception {
         mockMvc.perform(get("/test/unhandled"))
             .andExpect(status().isInternalServerError())
@@ -134,6 +142,11 @@ class GlobalExceptionHandlerTest {
 
         @PostMapping("/test/validation")
         void validation(@Valid @RequestBody TestRequest request) {
+        }
+
+        @GetMapping("/test/too-large")
+        void tooLarge() {
+            throw new MaxUploadSizeExceededException(10 * 1024 * 1024);
         }
 
         @GetMapping("/test/unhandled")
