@@ -39,12 +39,25 @@ class FileDeletionServiceTest {
         Clock clock = Clock.fixed(Instant.parse("2026-11-16T00:00:00Z"), ZoneId.of("Asia/Seoul"));
         service = new FileDeletionService(repository, fileStorage, serverErrorNotifier, clock,
             mock(PlatformTransactionManager.class));
+        given(fileStorage.isAvailable()).willReturn(true);
+    }
+
+    @Test
+    void 저장소_설정이_없으면_작업을_건드리지_않는다() {
+        given(fileStorage.isAvailable()).willReturn(false);
+
+        int deleted = service.deletePending();
+
+        assertThat(deleted).isZero();
+        verify(repository, never()).findAllByOrderByAttemptsAscIdAsc(any(Pageable.class));
+        verify(fileStorage, never()).delete(any());
+        verify(repository, never()).deleteById(any());
     }
 
     @Test
     void 파일을_지우면_작업을_없앤다() {
         FileDeletionTask task = task(1L, 0);
-        given(repository.findAllByOrderByIdAsc(any(Pageable.class))).willReturn(List.of(task));
+        given(repository.findAllByOrderByAttemptsAscIdAsc(any(Pageable.class))).willReturn(List.of(task));
 
         int deleted = service.deletePending();
 
@@ -56,7 +69,7 @@ class FileDeletionServiceTest {
     @Test
     void 지우지_못하면_작업을_남기고_실패_횟수를_늘린다() {
         FileDeletionTask task = task(1L, 0);
-        given(repository.findAllByOrderByIdAsc(any(Pageable.class))).willReturn(List.of(task));
+        given(repository.findAllByOrderByAttemptsAscIdAsc(any(Pageable.class))).willReturn(List.of(task));
         given(repository.findById(1L)).willReturn(Optional.of(task));
         willThrow(SdkClientException.create("S3 연결 실패")).given(fileStorage).delete(URL);
 
@@ -72,7 +85,7 @@ class FileDeletionServiceTest {
     @Test
     void 정해진_횟수만큼_실패하면_서버_에러_채널에_한_번_알린다() {
         FileDeletionTask task = task(1L, FileDeletionService.ALERT_ATTEMPTS - 1);
-        given(repository.findAllByOrderByIdAsc(any(Pageable.class))).willReturn(List.of(task));
+        given(repository.findAllByOrderByAttemptsAscIdAsc(any(Pageable.class))).willReturn(List.of(task));
         given(repository.findById(1L)).willReturn(Optional.of(task));
         willThrow(SdkClientException.create("S3 연결 실패")).given(fileStorage).delete(URL);
 
@@ -88,7 +101,7 @@ class FileDeletionServiceTest {
     void 한_파일이_실패해도_나머지는_계속_지운다() {
         FileDeletionTask failing = task(1L, 0);
         FileDeletionTask other = taskOf(2L, "https://cdn.test/local/profile/2/b.jpg");
-        given(repository.findAllByOrderByIdAsc(any(Pageable.class))).willReturn(List.of(failing, other));
+        given(repository.findAllByOrderByAttemptsAscIdAsc(any(Pageable.class))).willReturn(List.of(failing, other));
         given(repository.findById(1L)).willReturn(Optional.of(failing));
         willThrow(SdkClientException.create("S3 연결 실패")).given(fileStorage).delete(URL);
 

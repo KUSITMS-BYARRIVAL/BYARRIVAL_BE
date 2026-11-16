@@ -19,6 +19,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.byarrival.common.exception.BusinessException;
 import com.byarrival.common.exception.CommonErrorCode;
 import com.byarrival.common.storage.FileDeletionService;
+import com.byarrival.common.storage.FileDeletionTask;
+import com.byarrival.common.storage.FileDeletionTaskRepository;
 import com.byarrival.common.storage.FileStorage;
 import com.byarrival.domain.auth.service.TokenService;
 import com.byarrival.domain.user.entity.SocialProvider;
@@ -30,6 +32,7 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.BeforeEach;
@@ -38,6 +41,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -75,6 +79,9 @@ class ProfileImageFlowIntegrationTest {
     @Autowired
     private FileDeletionService fileDeletionService;
 
+    @Autowired
+    private FileDeletionTaskRepository fileDeletionTaskRepository;
+
     @MockitoBean
     private FileStorage fileStorage;
 
@@ -85,6 +92,7 @@ class ProfileImageFlowIntegrationTest {
     void setUp() {
         userId = userRepository.save(User.signUp(SocialProvider.KAKAO, UUID.randomUUID().toString())).getId();
         accessToken = tokenService.issue(userId).accessToken();
+        given(fileStorage.isAvailable()).willReturn(true);
         given(fileStorage.upload(anyString(), any(), anyString()))
             .willAnswer(invocation -> BASE_URL + invocation.getArgument(0));
     }
@@ -197,6 +205,39 @@ class ProfileImageFlowIntegrationTest {
         willDoNothing().given(fileStorage).delete(uploaded);
         fileDeletionService.deletePending();
         assertThat(pendingTasks(uploaded)).isZero();
+    }
+
+    @Test
+    void 저장소_설정이_없으면_삭제_작업을_지우지_않고_남겨_둔다() throws Exception {
+        upload(png()).andExpect(status().isOk());
+        String uploaded = profileImageUrl();
+        mockMvc.perform(delete(PROFILE_IMAGE).header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+            .andExpect(status().isOk());
+        given(fileStorage.isAvailable()).willReturn(false);
+
+        fileDeletionService.deletePending();
+
+        verify(fileStorage, never()).delete(uploaded);
+        assertThat(pendingTasks(uploaded)).isEqualTo(1);
+
+        given(fileStorage.isAvailable()).willReturn(true);
+        fileDeletionService.deletePending();
+        assertThat(pendingTasks(uploaded)).isZero();
+    }
+
+    @Test
+    void 실패한_작업보다_새_작업을_먼저_가져온다() {
+        String failing = BASE_URL + "profile/" + userId + "/failing.jpg";
+        String fresh = BASE_URL + "profile/" + userId + "/fresh.jpg";
+        jdbcTemplate.update("INSERT INTO file_deletion_task (url, attempts, created_at, updated_at) "
+            + "VALUES (?, 3, now(), now())", failing);
+        jdbcTemplate.update("INSERT INTO file_deletion_task (url, attempts, created_at, updated_at) "
+            + "VALUES (?, 0, now(), now())", fresh);
+
+        List<String> urls = fileDeletionTaskRepository.findAllByOrderByAttemptsAscIdAsc(PageRequest.of(0, 100))
+            .stream().map(FileDeletionTask::getUrl).filter(url -> url.equals(failing) || url.equals(fresh)).toList();
+
+        assertThat(urls).containsExactly(fresh, failing);
     }
 
     private int pendingTasks(String url) {
