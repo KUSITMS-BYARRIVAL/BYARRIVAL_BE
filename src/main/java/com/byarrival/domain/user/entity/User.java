@@ -88,6 +88,9 @@ public class User extends BaseEntity {
     // 암호화한 Apple refresh token. 탈퇴할 때 Apple 연결 끊기에 쓴다
     private String appleRefreshToken;
 
+    // 근무 지역(시/군/구). 고르기 전에는 비어 있다
+    private Integer regionSigunguId;
+
     private User(SocialProvider provider, String providerUserId) {
         this.provider = provider;
         this.providerUserId = providerUserId;
@@ -128,6 +131,17 @@ public class User extends BaseEntity {
 
     public void changeDefaultCommuteMinutes(int defaultCommuteMinutes) {
         this.defaultCommuteMinutes = defaultCommuteMinutes;
+    }
+
+    /**
+     * @return 지역이 바뀌었으면 true
+     */
+    public boolean changeRegion(Integer regionSigunguId) {
+        if (regionSigunguId.equals(this.regionSigunguId)) {
+            return false;
+        }
+        this.regionSigunguId = regionSigunguId;
+        return true;
     }
 
     /**

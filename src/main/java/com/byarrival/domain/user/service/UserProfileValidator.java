@@ -3,6 +3,7 @@ package com.byarrival.domain.user.service;
 import com.byarrival.common.exception.BusinessException;
 import com.byarrival.domain.category.service.CategoryMappingService;
 import com.byarrival.domain.onboarding.config.OnboardingProperties;
+import com.byarrival.domain.region.service.RegionService;
 import com.byarrival.domain.user.entity.DailyCommute;
 import com.byarrival.domain.user.exception.UserErrorCode;
 import java.util.Collection;
@@ -21,6 +22,7 @@ public class UserProfileValidator {
     private static final Pattern NICKNAME_CHARACTERS = Pattern.compile("^[가-힣a-zA-Z0-9]+$");
 
     private final CategoryMappingService categoryMappingService;
+    private final RegionService regionService;
     private final OnboardingProperties properties;
 
     /**
@@ -48,6 +50,12 @@ public class UserProfileValidator {
         Set<Long> activeIds = categoryMappingService.getActiveCategoryIds();
         if (!activeIds.containsAll(categoryIds)) {
             throw new BusinessException(UserErrorCode.INVALID_CATEGORY);
+        }
+    }
+
+    public void validateRegion(Integer sigunguId) {
+        if (!regionService.exists(sigunguId)) {
+            throw new BusinessException(UserErrorCode.INVALID_REGION);
         }
     }
 

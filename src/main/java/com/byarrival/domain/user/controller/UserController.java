@@ -5,6 +5,7 @@ import com.byarrival.common.security.LoginUserId;
 import com.byarrival.domain.user.dto.request.InterestCategoriesRequest;
 import com.byarrival.domain.user.dto.request.JobGroupsRequest;
 import com.byarrival.domain.user.dto.request.NotificationPermissionRequest;
+import com.byarrival.domain.user.dto.request.RegionRequest;
 import com.byarrival.domain.user.dto.request.UserUpdateRequest;
 import com.byarrival.domain.user.dto.request.WeeklyCommuteRequest;
 import com.byarrival.domain.user.dto.response.NotificationPermissionResponse;
@@ -100,6 +101,14 @@ public class UserController {
     public ApiResponse<UserMeResponse> replaceWeeklyCommute(
         @LoginUserId Long userId, @Valid @RequestBody WeeklyCommuteRequest request) {
         return ApiResponse.ok(userSettingService.replaceWeeklyCommute(userId, request.days()));
+    }
+
+    @Operation(summary = "근무 지역 변경",
+        description = "근무 지역 목록(GET /regions)에서 고른 시/군/구 id를 보낸다. 바뀌면 변경 이력을 남긴다.")
+    @PutMapping("/me/region")
+    public ApiResponse<UserMeResponse> changeRegion(
+        @LoginUserId Long userId, @Valid @RequestBody RegionRequest request) {
+        return ApiResponse.ok(userSettingService.changeRegion(userId, request.sigunguId()));
     }
 
     @Operation(summary = "직군 변경",
