@@ -78,6 +78,17 @@ public class UserSettingService {
     }
 
     /**
+     * 근무 지역을 바꾼다(MY-12). 바뀌면 변경 이력을 남긴다.
+     */
+    @Transactional
+    public UserMeResponse changeRegion(Long userId, Integer sigunguId) {
+        User user = userService.getActiveUserForUpdate(userId);
+        userProfileValidator.validateRegion(sigunguId);
+        userService.changeRegion(user, sigunguId);
+        return userService.getMe(userId);
+    }
+
+    /**
      * 직군을 바꾼다. 원래 있던 직군 중 남는 것은 기존 순서대로 앞에 두고, 새로 고른 직군은 보낸 순서대로 뒤에 붙인다.
      * 이 순서가 홈 직군 칩 순서가 된다.
      */

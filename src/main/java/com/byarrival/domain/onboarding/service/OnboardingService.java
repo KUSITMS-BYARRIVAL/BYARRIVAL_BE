@@ -35,10 +35,11 @@ public class OnboardingService {
 
     /**
      * 보낸 항목만 검증해서 저장한다. 하나라도 규칙에 어긋나면 아무것도 저장하지 않는다.
+     * 마이 설정 변경과 겹쳐도 서로 덮어쓰지 않도록 회원 행을 잠그고 처리한다.
      */
     @Transactional
     public OnboardingResponse updateOnboarding(Long userId, OnboardingUpdateRequest request) {
-        User user = userService.getActiveUser(userId);
+        User user = userService.getActiveUserForUpdate(userId);
         if (request.nickname() != null) {
             user.changeNickname(userProfileValidator.validNickname(request.nickname()));
         }
@@ -59,33 +60,41 @@ public class OnboardingService {
             // 같은 직군을 여러 번 보내면 처음 고른 순서로 한 번만 저장한다
             userService.replaceJobGroups(userId, request.jobGroups().stream().distinct().toList());
         }
+        if (request.sigunguId() != null) {
+            userProfileValidator.validateRegion(request.sigunguId());
+            userService.changeRegion(user, request.sigunguId());
+        }
         return response(user);
     }
 
     /**
-     * 이동 유형, 이동 시작 시각, 기본 이동시간, 관심 분야 1개 이상, 직군 1개 이상이 저장돼 있어야 완료한다.
-     * 이미 완료했으면 그대로 성공한다.
+     * 이동 유형, 이동 시작 시각, 기본 이동시간, 관심 분야 1개 이상, 직군 1개 이상, 근무 지역이 저장돼 있어야 완료한다.
+     * 이미 완료했으면 필수값을 다시 확인하지 않고 그대로 성공한다. 필수값이 늘기 전에 완료한 회원(예: 근무 지역 없음)도 성공한다.
      */
     @Transactional
     public OnboardingResponse completeOnboarding(Long userId) {
-        User user = userService.getActiveUser(userId);
+        User user = userService.getActiveUserForUpdate(userId);
+        if (user.isOnboardingCompleted()) {
+            return response(user);
+        }
         List<Long> categoryIds = userService.findInterestCategoryIds(userId);
         List<JobGroup> jobGroups = userService.findJobGroups(userId);
         boolean missing = user.getTravelType() == null
             || user.getCommuteStartTime() == null
             || user.getDefaultCommuteMinutes() == null
             || categoryIds.isEmpty()
-            || jobGroups.isEmpty();
+            || jobGroups.isEmpty()
+            || user.getRegionSigunguId() == null;
         if (missing) {
             throw new BusinessException(OnboardingErrorCode.ONBOARDING_INCOMPLETE);
         }
         user.completeOnboarding(LocalDateTime.now(clock));
-        return OnboardingResponse.of(user, categoryIds, jobGroups);
+        return OnboardingResponse.of(user, categoryIds, jobGroups, userService.findRegion(user));
     }
 
     private OnboardingResponse response(User user) {
         Long userId = user.getId();
         return OnboardingResponse.of(user, userService.findInterestCategoryIds(userId),
-            userService.findJobGroups(userId));
+            userService.findJobGroups(userId), userService.findRegion(user));
     }
 }

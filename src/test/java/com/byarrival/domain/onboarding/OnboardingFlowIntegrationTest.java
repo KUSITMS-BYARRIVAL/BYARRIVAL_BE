@@ -44,6 +44,9 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 class OnboardingFlowIntegrationTest {
 
     private static final String ONBOARDING = "/api/v1/users/me/onboarding";
+    // V20 시드: 서울 강남구, 경기 수원시
+    private static final int SEOUL_GANGNAM = 101;
+    private static final int GYEONGGI_SUWON = 213;
 
     @Autowired
     private MockMvc mockMvc;
@@ -221,6 +224,59 @@ class OnboardingFlowIntegrationTest {
     }
 
     @Test
+    void 근무_지역이_없으면_나머지_필수값이_있어도_온보딩을_완료할_수_없다() throws Exception {
+        perform(patch(ONBOARDING), "{\"travelType\":\"WORKER\",\"commuteStartTime\":\"08:00\","
+            + "\"defaultCommuteMinutes\":30,\"categoryIds\":[%d],\"jobGroups\":[\"DESIGN\"]}".formatted(economyId))
+            .andExpect(status().isOk());
+
+        perform(post(ONBOARDING + "/complete"), null)
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.code").value("ONBOARDING_INCOMPLETE"));
+    }
+
+    @Test
+    void 근무_지역을_저장하면_시도와_시군구를_함께_돌려주고_바꿀_때마다_이력을_남긴다() throws Exception {
+        perform(patch(ONBOARDING), "{\"sigunguId\":%d}".formatted(SEOUL_GANGNAM))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.region.sidoName").value("서울"))
+            .andExpect(jsonPath("$.data.region.sigunguId").value(SEOUL_GANGNAM))
+            .andExpect(jsonPath("$.data.region.sigunguName").value("강남구"));
+        // 같은 지역을 다시 보내면 이력을 남기지 않는다
+        perform(patch(ONBOARDING), "{\"sigunguId\":%d}".formatted(SEOUL_GANGNAM)).andExpect(status().isOk());
+        perform(patch(ONBOARDING), "{\"sigunguId\":%d}".formatted(GYEONGGI_SUWON))
+            .andExpect(jsonPath("$.data.region.sidoName").value("경기"))
+            .andExpect(jsonPath("$.data.region.sigunguName").value("수원시"));
+
+        assertThat(jdbcTemplate.queryForList(
+            "SELECT region_sigungu_id FROM user_region_history WHERE user_id = ? ORDER BY id", Integer.class, userId))
+            .containsExactly(SEOUL_GANGNAM, GYEONGGI_SUWON);
+    }
+
+    @Test
+    void 없는_근무_지역을_고르면_INVALID_REGION으로_응답하고_저장하지_않는다() throws Exception {
+        perform(patch(ONBOARDING), "{\"nickname\":\"도착이\",\"sigunguId\":99999}")
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.code").value("INVALID_REGION"));
+
+        perform(get(ONBOARDING), null)
+            .andExpect(jsonPath("$.data.region").doesNotExist())
+            .andExpect(jsonPath("$.data.nickname").doesNotExist());
+    }
+
+    @Test
+    void 근무_지역이_생기기_전에_온보딩을_완료한_회원은_다시_완료를_요청해도_성공한다() throws Exception {
+        LocalDateTime onboardedAt = LocalDateTime.of(2026, 11, 1, 9, 0);
+        jdbcTemplate.update("UPDATE users SET onboarding_status = 'COMPLETED', onboarded_at = ? WHERE id = ?",
+            onboardedAt, userId);
+
+        perform(post(ONBOARDING + "/complete"), null)
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.onboardingCompleted").value(true))
+            .andExpect(jsonPath("$.data.region").doesNotExist());
+        assertThat(userRepository.findById(userId).orElseThrow().getOnboardedAt()).isEqualTo(onboardedAt);
+    }
+
+    @Test
     void 필수값이_빠졌으면_온보딩을_완료할_수_없다() throws Exception {
         perform(patch(ONBOARDING), "{\"travelType\":\"WORKER\",\"commuteStartTime\":\"08:00\","
             + "\"defaultCommuteMinutes\":30}").andExpect(status().isOk());
@@ -233,14 +289,16 @@ class OnboardingFlowIntegrationTest {
 
     @Test
     void 필수값을_모두_저장하면_온보딩을_완료하고_다시_요청해도_처음_완료_시각을_유지한다() throws Exception {
-        perform(patch(ONBOARDING), "{\"travelType\":\"WORKER\",\"commuteStartTime\":\"07:50\","
-            + "\"defaultCommuteMinutes\":30,\"categoryIds\":[%d],\"jobGroups\":[\"ETC_FREELANCE\"]}".formatted(economyId))
+        perform(patch(ONBOARDING), ("{\"travelType\":\"WORKER\",\"commuteStartTime\":\"07:50\","
+            + "\"defaultCommuteMinutes\":30,\"categoryIds\":[%d],\"jobGroups\":[\"ETC_FREELANCE\"],"
+            + "\"sigunguId\":%d}").formatted(economyId, SEOUL_GANGNAM))
             .andExpect(status().isOk());
 
         perform(post(ONBOARDING + "/complete"), null)
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.onboardingCompleted").value(true))
-            .andExpect(jsonPath("$.data.jobGroups[0]").value("ETC_FREELANCE"));
+            .andExpect(jsonPath("$.data.jobGroups[0]").value("ETC_FREELANCE"))
+            .andExpect(jsonPath("$.data.region.sigunguName").value("강남구"));
         User completed = userRepository.findById(userId).orElseThrow();
         LocalDateTime onboardedAt = completed.getOnboardedAt();
         assertThat(onboardedAt).isNotNull();
