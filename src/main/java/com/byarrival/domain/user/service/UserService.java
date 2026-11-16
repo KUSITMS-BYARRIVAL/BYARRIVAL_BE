@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -172,8 +173,9 @@ public class UserService {
 
     /**
      * 근무 지역을 바꾸고, 실제로 바뀌었으면 변경 이력을 남긴다(MY-12). 지역 존재 여부는 호출하는 쪽에서 확인한다.
-     * 엔티티를 바꾸므로 호출하는 쪽의 트랜잭션 안에서 부른다.
+     * 엔티티를 바꾸므로 호출하는 쪽의 트랜잭션 안에서 부른다. 트랜잭션 없이 부르면 지역은 저장되지 않고 이력만 남으므로 예외를 낸다.
      */
+    @Transactional(propagation = Propagation.MANDATORY)
     public void changeRegion(User user, Integer sigunguId) {
         if (user.changeRegion(sigunguId)) {
             userRegionHistoryRepository.save(UserRegionHistory.of(user.getId(), sigunguId));
