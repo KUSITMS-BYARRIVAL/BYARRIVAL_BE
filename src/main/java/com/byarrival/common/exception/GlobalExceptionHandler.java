@@ -14,6 +14,9 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.MultipartException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /**
@@ -61,6 +64,25 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Void>> handleMissingServletRequestParameterException(
         MissingServletRequestParameterException e, HttpServletRequest request) {
         return warnAndRespond(CommonErrorCode.MISSING_REQUEST_PARAMETER, e, request);
+    }
+
+    @ExceptionHandler(MissingServletRequestPartException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMissingServletRequestPartException(
+        MissingServletRequestPartException e, HttpServletRequest request) {
+        return warnAndRespond(CommonErrorCode.MISSING_REQUEST_PARAMETER, e, request);
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMaxUploadSizeExceededException(
+        MaxUploadSizeExceededException e, HttpServletRequest request) {
+        return warnAndRespond(CommonErrorCode.PAYLOAD_TOO_LARGE, e, request);
+    }
+
+    // 파일 업로드 API에 multipart가 아닌 요청이 오면 난다
+    @ExceptionHandler(MultipartException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMultipartException(
+        MultipartException e, HttpServletRequest request) {
+        return warnAndRespond(CommonErrorCode.INVALID_REQUEST_BODY, e, request);
     }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)

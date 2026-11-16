@@ -19,6 +19,7 @@ public class WithdrawnUserPurgeScheduler {
 
     @Scheduled(cron = "0 0 5 * * *", zone = ClockConfig.KST)
     public void purge() {
+        // 프로필 이미지 파일은 파기와 함께 삭제 작업으로 남고, FileDeletionScheduler가 지운다
         int deleted = userService.deleteExpiredWithdrawnUsers();
         log.info("보관 기간이 지난 탈퇴 회원 파기: {}명", deleted);
     }
