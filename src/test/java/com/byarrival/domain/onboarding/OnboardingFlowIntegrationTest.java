@@ -264,6 +264,19 @@ class OnboardingFlowIntegrationTest {
     }
 
     @Test
+    void 근무_지역이_생기기_전에_온보딩을_완료한_회원은_다시_완료를_요청해도_성공한다() throws Exception {
+        LocalDateTime onboardedAt = LocalDateTime.of(2026, 11, 1, 9, 0);
+        jdbcTemplate.update("UPDATE users SET onboarding_status = 'COMPLETED', onboarded_at = ? WHERE id = ?",
+            onboardedAt, userId);
+
+        perform(post(ONBOARDING + "/complete"), null)
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.onboardingCompleted").value(true))
+            .andExpect(jsonPath("$.data.region").doesNotExist());
+        assertThat(userRepository.findById(userId).orElseThrow().getOnboardedAt()).isEqualTo(onboardedAt);
+    }
+
+    @Test
     void 필수값이_빠졌으면_온보딩을_완료할_수_없다() throws Exception {
         perform(patch(ONBOARDING), "{\"travelType\":\"WORKER\",\"commuteStartTime\":\"08:00\","
             + "\"defaultCommuteMinutes\":30}").andExpect(status().isOk());

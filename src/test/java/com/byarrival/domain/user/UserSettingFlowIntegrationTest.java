@@ -1,6 +1,7 @@
 package com.byarrival.domain.user;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -13,6 +14,7 @@ import com.byarrival.domain.auth.service.TokenService;
 import com.byarrival.domain.user.entity.SocialProvider;
 import com.byarrival.domain.user.entity.User;
 import com.byarrival.domain.user.repository.UserRepository;
+import com.byarrival.domain.user.service.UserService;
 import com.byarrival.support.TestcontainersConfig;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
@@ -28,6 +30,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import org.springframework.transaction.IllegalTransactionStateException;
 
 /**
  * 실제 DB와 보안 필터로 마이 화면의 프로필·개인 설정 조회와 변경을 확인한다.
@@ -50,6 +53,9 @@ class UserSettingFlowIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private UserService userService;
 
     private Long userId;
     private TokenResponse tokens;
@@ -255,6 +261,16 @@ class UserSettingFlowIntegrationTest {
         perform(get(ME), null).andExpect(jsonPath("$.data.region.sigunguId").value(701));
         assertThat(jdbcTemplate.queryForObject(
             "SELECT count(*) FROM user_region_history WHERE user_id = ?", Integer.class, userId)).isEqualTo(2);
+    }
+
+    @Test
+    void 근무_지역_변경은_트랜잭션_밖에서_부르면_예외를_내고_이력을_남기지_않는다() {
+        User user = userRepository.findById(userId).orElseThrow();
+
+        assertThatThrownBy(() -> userService.changeRegion(user, 101))
+            .isInstanceOf(IllegalTransactionStateException.class);
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT count(*) FROM user_region_history WHERE user_id = ?", Integer.class, userId)).isZero();
     }
 
     @Test
