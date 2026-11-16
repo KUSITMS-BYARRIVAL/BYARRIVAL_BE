@@ -7,6 +7,11 @@ spring:
     open-in-view: false
     hibernate:
       ddl-auto: validate
+  servlet:
+    multipart:
+      # 프로필 이미지 최대 10MB (MY-02). 요청 전체는 여유를 조금 둔다. Nginx client_max_body_size도 같이 맞춘다
+      max-file-size: 10MB
+      max-request-size: 11MB
   data:
     redis:
       # 접속자 기록은 로그인한 모든 API 요청에서 Redis를 기다린다. Redis가 응답하지 않을 때 요청이 기본값(60초)만큼
@@ -23,6 +28,18 @@ management:
   metrics:
     tags:
       application: ${spring.application.name}
+
+storage:
+  s3:
+    # 프로필 이미지 버킷. 비공개이고 CloudFront(public-base-url)로만 읽는다
+    bucket: byarrival-media
+    region: ap-northeast-2
+    # 같은 버킷을 환경별 폴더로 나눠 쓴다(local/, prod/)
+    key-prefix: local
+    public-base-url: https://d12zg2i2wojklm.cloudfront.net
+    # 비어 있으면 업로드가 503으로 끝난다(테스트). 로컬은 application-local.yaml, 운영은 .env에 넣는다
+    access-key: ${S3_ACCESS_KEY:}
+    secret-key: ${S3_SECRET_KEY:}
 
 monitoring:
   # 웹훅 URL이 비어 있으면 그 채널 알림은 보내지 않는다(로컬·테스트)
