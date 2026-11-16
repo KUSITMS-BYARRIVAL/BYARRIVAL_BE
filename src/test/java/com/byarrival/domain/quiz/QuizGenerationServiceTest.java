@@ -18,6 +18,7 @@ import com.byarrival.domain.quiz.service.QuizGenerationService.QuizGenerationRes
 import com.byarrival.domain.quiz.service.QuizGenerator;
 import com.byarrival.domain.quiz.service.QuizGenerator.QuizSource;
 import com.byarrival.support.TestcontainersConfig;
+import com.jayway.jsonpath.JsonPath;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -90,8 +91,15 @@ class QuizGenerationServiceTest {
             "SELECT question, choices::text AS choices, answer_seq, explanation, status FROM quiz WHERE article_id = ?",
             first);
         assertThat(saved.get("question")).isEqualTo("첫째 기사의 핵심은?");
-        assertThat((String) saved.get("choices")).contains("\"seq\": 1", "\"content\": \"가\"", "\"seq\": 3");
-        assertThat(saved.get("answer_seq")).isEqualTo(2);
+        // 선택지는 정확히 3개이고 번호는 1·2·3이 하나씩이다. 저장된 정답 번호는 늘 정답 글("가")을 가리킨다
+        String choices = (String) saved.get("choices");
+        List<Integer> seqs = JsonPath.read(choices, "$[*].seq");
+        List<String> contents = JsonPath.read(choices, "$[*].content");
+        assertThat(seqs).containsExactlyInAnyOrder(1, 2, 3);
+        assertThat(contents).containsExactlyInAnyOrder("가", "나", "다");
+        int answerSeq = (Integer) saved.get("answer_seq");
+        List<String> answer = JsonPath.read(choices, "$[?(@.seq == " + answerSeq + ")].content");
+        assertThat(answer).containsExactly("가");
         assertThat(saved.get("status")).isEqualTo("ACTIVE");
         assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM quiz WHERE article_id = ?", Integer.class,
             retried)).isEqualTo(1);
@@ -135,11 +143,11 @@ class QuizGenerationServiceTest {
     }
 
     private static QuizOutput valid(String title) {
-        return new QuizOutput(title, title + "의 핵심은?", List.of("가", "나", "다"), 2, "요약에 나와요.");
+        return new QuizOutput(title, title + "의 핵심은?", "가", List.of("나", "다"), "정답의 근거예요.");
     }
 
     private static QuizOutput invalid(String title) {
-        return new QuizOutput(title, "물음표 없는 문제", List.of("가", "나"), 5, "해설");
+        return new QuizOutput(title, "물음표 없는 문제", "가", List.of("나"), "요약에 나와요.");
     }
 
     private Long newArticle(boolean recommendable, String visibility, String title) {
