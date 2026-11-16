@@ -96,6 +96,16 @@ class ProfileImageProcessorTest {
         assertInvalid(bytes.toByteArray());
     }
 
+    @Test
+    void 한_변이_10000px를_넘으면_화소_수가_적어도_거절한다() throws IOException {
+        // 가늘고 긴 이미지는 화소 수는 적어도 디코더가 한 줄을 통째로 버퍼에 올린다
+        BufferedImage wide = new BufferedImage(ProfileImageProcessor.MAX_SIDE + 1, 1, BufferedImage.TYPE_INT_RGB);
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        ImageIO.write(wide, "png", bytes);
+
+        assertInvalid(bytes.toByteArray());
+    }
+
     private void assertInvalid(byte[] content) {
         assertThatThrownBy(() -> processor.toProfileJpeg(content))
             .isInstanceOfSatisfying(BusinessException.class,

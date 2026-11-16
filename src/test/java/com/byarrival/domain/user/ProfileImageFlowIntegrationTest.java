@@ -6,7 +6,9 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willDoNothing;
 import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -16,6 +18,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.byarrival.common.exception.BusinessException;
 import com.byarrival.common.exception.CommonErrorCode;
+import com.byarrival.common.storage.FileDeletionService;
 import com.byarrival.common.storage.FileStorage;
 import com.byarrival.domain.auth.service.TokenService;
 import com.byarrival.domain.user.entity.SocialProvider;
@@ -69,6 +72,9 @@ class ProfileImageFlowIntegrationTest {
     @Autowired
     private WithdrawnUserPurgeScheduler purgeScheduler;
 
+    @Autowired
+    private FileDeletionService fileDeletionService;
+
     @MockitoBean
     private FileStorage fileStorage;
 
@@ -101,7 +107,10 @@ class ProfileImageFlowIntegrationTest {
         upload(png()).andExpect(status().isOk());
 
         assertThat(profileImageUrl()).isNotEqualTo(first);
-        verify(fileStorage).delete(first);
+        // 이전 파일은 삭제 작업으로 남고 작업자가 지운다
+        fileDeletionService.deletePending();
+        verify(fileStorage, atLeastOnce()).delete(first);
+        assertThat(pendingTasks(first)).isZero();
     }
 
     @Test
@@ -113,7 +122,9 @@ class ProfileImageFlowIntegrationTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.profileImageUrl").doesNotExist());
 
-        verify(fileStorage).delete(uploaded);
+        fileDeletionService.deletePending();
+        verify(fileStorage, atLeastOnce()).delete(uploaded);
+        assertThat(pendingTasks(uploaded)).isZero();
     }
 
     @Test
@@ -153,9 +164,11 @@ class ProfileImageFlowIntegrationTest {
             LocalDateTime.now().minusMonths(6).minusDays(1), url, userId);
 
         purgeScheduler.purge();
+        fileDeletionService.deletePending();
 
         assertThat(userRepository.findById(userId)).isEmpty();
-        verify(fileStorage).delete(url);
+        verify(fileStorage, atLeastOnce()).delete(url);
+        assertThat(pendingTasks(url)).isZero();
     }
 
     @Test
@@ -168,6 +181,26 @@ class ProfileImageFlowIntegrationTest {
         return mockMvc.perform(multipart(HttpMethod.PUT, PROFILE_IMAGE)
             .file(new MockMultipartFile("image", "profile.png", "image/png", content))
             .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken));
+    }
+
+    @Test
+    void 이미지_파일을_지우지_못하면_삭제_작업을_남겨_다음에_다시_지운다() throws Exception {
+        upload(png()).andExpect(status().isOk());
+        String uploaded = profileImageUrl();
+        willThrow(new IllegalStateException("S3 장애")).given(fileStorage).delete(uploaded);
+        mockMvc.perform(delete(PROFILE_IMAGE).header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+            .andExpect(status().isOk());
+
+        fileDeletionService.deletePending();
+        assertThat(pendingTasks(uploaded)).isEqualTo(1);
+
+        willDoNothing().given(fileStorage).delete(uploaded);
+        fileDeletionService.deletePending();
+        assertThat(pendingTasks(uploaded)).isZero();
+    }
+
+    private int pendingTasks(String url) {
+        return jdbcTemplate.queryForObject("SELECT count(*) FROM file_deletion_task WHERE url = ?", Integer.class, url);
     }
 
     private String profileImageUrl() {
