@@ -216,7 +216,8 @@ class UserSettingFlowIntegrationTest {
     @Test
     void 온보딩을_처음_완료하면_출근_시각과_기본_이동시간을_월요일부터_금요일까지_넣는다() throws Exception {
         perform(patch(ME + "/onboarding"), "{\"travelType\":\"WORKER\",\"commuteStartTime\":\"07:50\","
-            + "\"defaultCommuteMinutes\":35,\"categoryIds\":[%d],\"jobGroups\":[\"DESIGN\"]}".formatted(economyId))
+            + "\"defaultCommuteMinutes\":35,\"categoryIds\":[%d],\"jobGroups\":[\"DESIGN\"],\"sigunguId\":101}"
+            .formatted(economyId))
             .andExpect(status().isOk());
 
         perform(post(ME + "/onboarding/complete"), null).andExpect(status().isOk());
@@ -235,6 +236,35 @@ class UserSettingFlowIntegrationTest {
         perform(get(ME), null)
             .andExpect(jsonPath("$.data.weeklyCommute.length()").value(1))
             .andExpect(jsonPath("$.data.weeklyCommute[0].dayOfWeek").value("SATURDAY"));
+    }
+
+    @Test
+    void 근무_지역을_바꾸면_내_정보에_보이고_바뀔_때만_이력을_남긴다() throws Exception {
+        perform(get(ME), null).andExpect(jsonPath("$.data.region").doesNotExist());
+
+        perform(put(ME + "/region"), "{\"sigunguId\":101}")
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.region.sidoId").value(1))
+            .andExpect(jsonPath("$.data.region.sidoName").value("서울"))
+            .andExpect(jsonPath("$.data.region.sigunguName").value("강남구"));
+        perform(put(ME + "/region"), "{\"sigunguId\":101}").andExpect(status().isOk());
+        perform(put(ME + "/region"), "{\"sigunguId\":701}")
+            .andExpect(jsonPath("$.data.region.sidoName").value("세종"))
+            .andExpect(jsonPath("$.data.region.sigunguName").value("세종특별자치시"));
+
+        perform(get(ME), null).andExpect(jsonPath("$.data.region.sigunguId").value(701));
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT count(*) FROM user_region_history WHERE user_id = ?", Integer.class, userId)).isEqualTo(2);
+    }
+
+    @Test
+    void 없는_근무_지역이면_INVALID_REGION_빠졌으면_INVALID_INPUT_VALUE로_응답한다() throws Exception {
+        perform(put(ME + "/region"), "{\"sigunguId\":99999}")
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.code").value("INVALID_REGION"));
+        perform(put(ME + "/region"), "{}")
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.code").value("INVALID_INPUT_VALUE"));
     }
 
     @Test
