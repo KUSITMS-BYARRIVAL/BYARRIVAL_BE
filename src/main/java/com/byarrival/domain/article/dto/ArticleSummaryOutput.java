@@ -20,6 +20,9 @@ public record ArticleSummaryOutput(
     @JsonPropertyDescription("요약 3문장. 1: 핵심 사건·변화, 2: 배경·원인·수치, 3: 결과·영향·전망. 각 문장 공백 포함 30자 이내")
     List<String> summary,
 
+    @JsonPropertyDescription("요약 3문장 각각의 근거. 기사 본문에서 그 문장의 내용이 나온 구절을 글자 그대로 옮긴 3개, summary와 같은 순서")
+    List<String> evidence,
+
     @JsonPropertyDescription("기사의 핵심 키워드 3개. 각 키워드는 공백 포함 10자 이내, # 없이")
     List<String> keywords
 ) {
