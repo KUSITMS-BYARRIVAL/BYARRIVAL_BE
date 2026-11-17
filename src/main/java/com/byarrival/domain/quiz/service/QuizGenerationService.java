@@ -3,6 +3,7 @@ package com.byarrival.domain.quiz.service;
 import com.byarrival.common.exception.BusinessException;
 import com.byarrival.common.monitoring.BatchAlertNotifier;
 import com.byarrival.domain.ai.config.AnthropicProperties;
+import com.byarrival.domain.ai.exception.AiResponseInvalidException;
 import com.byarrival.domain.ai.service.ClaudeClient.ClaudeResult;
 import com.byarrival.domain.article.entity.Article;
 import com.byarrival.domain.article.service.ArticleQueryService;
@@ -162,7 +163,7 @@ public class QuizGenerationService {
                 tally.add(result.usage().inputTokens(), result.usage().outputTokens());
                 output = result.output();
             } catch (BusinessException e) {
-                tally.add(0, 0);
+                tally.addFailed(e);
                 lastError = e;
                 previous = null;
                 problems = null;
@@ -184,7 +185,7 @@ public class QuizGenerationService {
                 check = result.output();
             } catch (BusinessException e) {
                 // 검수를 못 하면 맞는 퀴즈인지 알 수 없으므로 저장하지 않고 처음부터 다시 만든다
-                tally.add(0, 0);
+                tally.addFailed(e);
                 lastError = e;
                 previous = null;
                 problems = null;
@@ -281,6 +282,15 @@ public class QuizGenerationService {
             calls.incrementAndGet();
             inputTokens.addAndGet(input);
             outputTokens.addAndGet(output);
+        }
+
+        // 응답을 받았지만 쓸 수 없던 호출은 쓴 토큰을 넣고, 응답을 받지 못한 호출은 호출 수만 센다
+        void addFailed(BusinessException e) {
+            if (e instanceof AiResponseInvalidException invalid) {
+                add(invalid.getUsage().inputTokens(), invalid.getUsage().outputTokens());
+            } else {
+                add(0, 0);
+            }
         }
     }
 }

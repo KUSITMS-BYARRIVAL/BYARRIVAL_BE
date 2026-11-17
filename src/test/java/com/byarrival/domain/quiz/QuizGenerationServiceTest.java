@@ -12,6 +12,7 @@ import static org.mockito.Mockito.verify;
 
 import com.byarrival.common.exception.BusinessException;
 import com.byarrival.domain.ai.exception.AiErrorCode;
+import com.byarrival.domain.ai.exception.AiResponseInvalidException;
 import com.byarrival.domain.ai.service.ClaudeClient.ClaudeResult;
 import com.byarrival.domain.ai.service.ClaudeClient.TokenUsage;
 import com.byarrival.domain.quiz.dto.QuizCheckOutput;
@@ -266,5 +267,25 @@ class QuizGenerationServiceTest {
             RETURNING id
             """, Long.class, feedId, categoryId, "https://news.example.com/" + UUID.randomUUID(), title,
             serviceDate.atTime(1, 0), serviceDate, recommendable, visibility);
+    }
+
+    @Test
+    void 쓸_수_없는_검수_응답의_토큰도_비용에_넣는다() {
+        Long article = newArticle(true, "VISIBLE", "잘린 기사");
+        given(generator.generate(source(article))).willReturn(result(valid("잘린 기사")));
+        given(checker.check(any(), any()))
+            .willThrow(new AiResponseInvalidException(new TokenUsage(300, 4000), "stop_reason=max_tokens"))
+            .willAnswer(invocation -> {
+                ValidatedQuiz quiz = invocation.getArgument(1);
+                return new ClaudeResult<>(new QuizCheckOutput(List.of(quiz.answerSeq()), true, "정답만 맞아요."), USAGE);
+            });
+
+        QuizGenerationResult result = quizGenerationService.generate(serviceDate);
+
+        assertThat(result.succeeded()).isEqualTo(1);
+        // 생성 2회(각 100/50) + 잘린 검수(300/4000) + 성공한 검수(100/50)
+        assertThat(result.calls()).isEqualTo(4);
+        assertThat(result.inputTokens()).isEqualTo(600);
+        assertThat(result.outputTokens()).isEqualTo(4150);
     }
 }

@@ -13,6 +13,7 @@ import com.anthropic.models.messages.StructuredOutputConfig;
 import com.anthropic.models.messages.Usage;
 import com.byarrival.common.exception.BusinessException;
 import com.byarrival.domain.ai.exception.AiErrorCode;
+import com.byarrival.domain.ai.exception.AiResponseInvalidException;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -49,24 +50,25 @@ public class ClaudeClient {
         StopReason stopReason = response.stopReason().orElse(null);
         if (!StopReason.END_TURN.equals(stopReason)) {
             // max_tokens면 JSON이 잘렸고, refusal이면 내용이 없다
-            throw new BusinessException(AiErrorCode.AI_RESPONSE_INVALID, "stop_reason=" + stopReason);
+            // 응답을 받았으므로 토큰은 이미 쓰였다. 비용 집계에 넣을 수 있게 사용량을 함께 넘긴다
+            throw new AiResponseInvalidException(usage, "stop_reason=" + stopReason);
         }
-        List<T> outputs = extractOutputs(response);
+        List<T> outputs = extractOutputs(response, usage);
         if (outputs.size() != 1) {
-            throw new BusinessException(AiErrorCode.AI_RESPONSE_INVALID, "응답 JSON 개수=" + outputs.size());
+            throw new AiResponseInvalidException(usage, "응답 JSON 개수=" + outputs.size());
         }
         return new ClaudeResult<>(outputs.getFirst(), usage);
     }
 
     // 구조화 출력 JSON은 text()를 부를 때 타입으로 바뀐다. 변환 실패 메시지에는 응답 본문이 들어 있어 종류만 남긴다
-    private <T> List<T> extractOutputs(StructuredMessage<T> response) {
+    private <T> List<T> extractOutputs(StructuredMessage<T> response, TokenUsage usage) {
         try {
             return response.content().stream()
                 .flatMap(block -> block.text().stream())
                 .map(block -> block.text())
                 .toList();
         } catch (AnthropicInvalidDataException e) {
-            throw new BusinessException(AiErrorCode.AI_RESPONSE_INVALID, e.getClass().getSimpleName());
+            throw new AiResponseInvalidException(usage, e.getClass().getSimpleName());
         }
     }
 

@@ -17,6 +17,7 @@ import com.anthropic.models.messages.OutputConfig;
 import com.anthropic.services.blocking.MessageService;
 import com.byarrival.common.exception.BusinessException;
 import com.byarrival.domain.ai.exception.AiErrorCode;
+import com.byarrival.domain.ai.exception.AiResponseInvalidException;
 import com.byarrival.domain.ai.service.ClaudeClient.ClaudeRequest;
 import com.byarrival.domain.ai.service.ClaudeClient.ClaudeResult;
 import com.byarrival.domain.ai.service.ClaudeClient.TokenUsage;
@@ -85,6 +86,16 @@ class ClaudeClientTest {
         respond("max_tokens", "{\"title\":\"제목\"");
 
         assertError(AiErrorCode.AI_RESPONSE_INVALID);
+    }
+
+    @Test
+    void 응답은_받았지만_쓸_수_없으면_쓴_토큰을_예외에_담는다() {
+        respond("max_tokens", "{\"title\":\"제목\"");
+
+        assertThatThrownBy(() -> claudeClient.generate(REQUEST, Sample.class))
+            .isInstanceOf(AiResponseInvalidException.class)
+            .extracting(e -> ((AiResponseInvalidException) e).getUsage())
+            .isEqualTo(new TokenUsage(10, 10));
     }
 
     @Test
