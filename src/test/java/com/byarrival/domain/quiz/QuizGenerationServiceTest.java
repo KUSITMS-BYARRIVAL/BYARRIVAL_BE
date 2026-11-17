@@ -10,6 +10,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import com.byarrival.common.exception.BusinessException;
+import com.byarrival.domain.ai.exception.AiErrorCode;
 import com.byarrival.domain.ai.service.ClaudeClient.ClaudeResult;
 import com.byarrival.domain.ai.service.ClaudeClient.TokenUsage;
 import com.byarrival.domain.quiz.dto.QuizCheckOutput;
@@ -191,6 +193,50 @@ class QuizGenerationServiceTest {
         assertThat(result.failedArticleIds()).containsExactly(article);
         assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM quiz WHERE article_id = ?", Integer.class,
             article)).isZero();
+    }
+
+    @Test
+    void 검수_호출이_실패하면_저장하지_않고_처음부터_다시_만든다() {
+        Long article = newArticle(true, "VISIBLE", "끊긴 기사");
+        given(generator.generate(source(article))).willReturn(result(valid("끊긴 기사")));
+        given(checker.check(any(), any()))
+            .willThrow(new BusinessException(AiErrorCode.AI_CALL_FAILED, "AnthropicIoException"))
+            .willAnswer(invocation -> {
+                ValidatedQuiz quiz = invocation.getArgument(1);
+                return new ClaudeResult<>(new QuizCheckOutput(List.of(quiz.answerSeq()), true, "정답만 맞아요."), USAGE);
+            });
+
+        QuizGenerationResult result = quizGenerationService.generate(serviceDate);
+
+        assertThat(result.succeeded()).isEqualTo(1);
+        // 검수 실패 뒤에는 피드백 없이 처음부터 다시 만든다. 생성 2회 + 검수 2회(1회 실패)
+        verify(generator, times(2)).generate(source(article));
+        verify(generator, never()).regenerate(source(article), any(), anyString());
+        assertThat(result.calls()).isEqualTo(4);
+    }
+
+    @Test
+    void 검수에서_해설만_정답과_맞지_않아도_다시_만든다() {
+        Long article = newArticle(true, "VISIBLE", "해설 기사");
+        QuizOutput fixed = new QuizOutput("해설 기사", EVIDENCE, "해설 기사로 확인된 사실은?", "가나다라",
+            List.of("마바사아", "자차카타"), "가나다라가 근거예요.");
+        given(generator.generate(source(article))).willReturn(result(valid("해설 기사")));
+        given(generator.regenerate(source(article), any(), anyString())).willReturn(result(fixed));
+        given(checker.check(any(), argThat(quiz -> quiz != null && quiz.question().equals("해설 기사의 핵심은?"))))
+            .willAnswer(invocation -> {
+                ValidatedQuiz quiz = invocation.getArgument(1);
+                return new ClaudeResult<>(new QuizCheckOutput(List.of(quiz.answerSeq()), false, "해설이 오답을 설명해요."),
+                    USAGE);
+            });
+
+        QuizGenerationResult result = quizGenerationService.generate(serviceDate);
+
+        assertThat(result.succeeded()).isEqualTo(1);
+        verify(generator).regenerate(source(article), any(),
+            argThat(problems -> problems.contains("해설이 정답 '가나다라'의 근거를 설명하지 않습니다")
+                && !problems.contains("올바른 답으로 본 선택지가")));
+        assertThat(jdbcTemplate.queryForObject("SELECT explanation FROM quiz WHERE article_id = ?", String.class,
+            article)).isEqualTo("가나다라가 근거예요.");
     }
 
     private static QuizSource source(Long articleId) {

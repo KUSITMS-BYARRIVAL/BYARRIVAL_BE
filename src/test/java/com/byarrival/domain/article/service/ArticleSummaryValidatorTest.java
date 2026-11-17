@@ -157,6 +157,27 @@ class ArticleSummaryValidatorTest {
     }
 
     @Test
+    void 근거_구절이_비었거나_너무_짧으면_실패한다() {
+        ArticleSummaryOutput output = new ArticleSummaryOutput(TITLE, ArticleDifficulty.EASY, ONE_LINE,
+            List.of("첫째 문장입니다.", "둘째 문장입니다.", "셋째 문장입니다."),
+            Arrays.asList(null, "동결했다", "시장에서는 연내 인하를 점친다"), KEYWORDS);
+
+        assertThatThrownBy(() -> validator.validate(output, TITLE, CONTENT, ArticleDifficulty.EASY))
+            .hasMessageContaining("evidence 1번이 기사 본문에 없습니다")
+            .hasMessageContaining("evidence 2번이 기사 본문에 없습니다");
+    }
+
+    @Test
+    void 근거_구절이_없고_한_줄_요약_숫자도_틀리면_둘_다_알려_준다() {
+        ArticleSummaryOutput output = new ArticleSummaryOutput(TITLE, ArticleDifficulty.EASY, "기준금리를 5회 동결했습니다.",
+            List.of("첫째 문장입니다.", "둘째 문장입니다.", "셋째 문장입니다."), null, KEYWORDS);
+
+        assertThatThrownBy(() -> validator.validate(output, TITLE, CONTENT, ArticleDifficulty.EASY))
+            .hasMessageContaining("oneLine의 숫자 [5]가 기사 본문에 없습니다")
+            .hasMessageContaining("evidence는 summary 문장마다 하나씩");
+    }
+
+    @Test
     void 근거_구절이_3개가_아니면_실패한다() {
         ArticleSummaryOutput output = new ArticleSummaryOutput(TITLE, ArticleDifficulty.EASY, ONE_LINE,
             List.of("첫째 문장입니다.", "둘째 문장입니다.", "셋째 문장입니다."), List.of("한국은행이 기준금리를 동결했다"), KEYWORDS);
