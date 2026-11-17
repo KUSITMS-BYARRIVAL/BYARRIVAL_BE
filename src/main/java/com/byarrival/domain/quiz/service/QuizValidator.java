@@ -1,6 +1,7 @@
 package com.byarrival.domain.quiz.service;
 
 import com.byarrival.common.exception.BusinessException;
+import com.byarrival.domain.ai.service.AiTextMatcher;
 import com.byarrival.domain.quiz.dto.QuizOutput;
 import com.byarrival.domain.quiz.exception.QuizErrorCode;
 import com.byarrival.domain.quiz.service.QuizGenerator.QuizSource;
@@ -29,7 +30,10 @@ public class QuizValidator {
     // 문제와 해설은 실제 문제처럼 쓴다. "요약에 나와요"처럼 출처를 드러내는 표현은 쓰지 않는다(2026-11-14)
     private static final List<String> SOURCE_PHRASES = List.of("요약", "기사에 따르면", "기사에서", "본문");
     // 부정형 문제는 AI가 정답과 오답을 뒤집기 쉬워 내지 않는다(2026-11-17 운영 점검에서 2문제 모두 정답 오류)
-    private static final Pattern NEGATIVE_QUESTION = Pattern.compile("(아닌|않은|틀린|없는)\\s*(것|선택지|내용)");
+    // "~이 아닌 것은?", "사실과 다른 것은?", "옳지 않은 답은?"처럼 사실이 아닌 선택지를 고르게 하는 표현을 막는다.
+    // "기준금리를 올리지 않은 이유는?"처럼 부정 사실을 묻는 질문은 선택 대상이 아니므로 허용한다
+    private static final Pattern NEGATIVE_QUESTION = Pattern.compile(
+        "(아닌|않은|틀린|없는|다른|잘못된|어긋난)\\s*(것|선택지|내용|답|설명|보기|항목|사례|주장)");
     // 정답이 이 글자 수 이상 제목에 그대로 있으면 제목만 보고 맞힐 수 있다고 본다
     private static final int MIN_TITLE_MATCH_LENGTH = 2;
     // 소수점·자릿수 쉼표는 숫자 사이에 있을 때만 숫자로 본다("28.5..."의 끝 마침표, "28명,"의 쉼표는 빼고 28.5, 28)
@@ -146,32 +150,35 @@ public class QuizValidator {
         }
     }
 
-    // 근거 문장은 입력 문장을 그대로 옮기거나 그 일부를 옮긴 것이어야 한다
+    // 근거 문장은 입력 문장을 그대로 옮기거나 그 일부를 옮긴 것이어야 한다.
+    // 공백·문장 부호는 무시하지만 소수점과 음수 부호는 남겨 비교한다("3.5%"를 "35%"로 바꾼 근거는 다른 문장이다)
     private static boolean isInputSentence(String evidence, QuizSource source) {
-        String normalized = normalize(evidence);
-        if (normalized.codePointCount(0, normalized.length()) < MIN_EVIDENCE_LENGTH) {
+        String normalized = AiTextMatcher.normalize(evidence);
+        if (AiTextMatcher.length(normalized) < MIN_EVIDENCE_LENGTH) {
             return false;
         }
         return Stream.concat(Stream.ofNullable(source.oneLine()), source.summary().stream())
             .filter(Objects::nonNull)
-            .map(QuizValidator::normalize)
+            .map(AiTextMatcher::normalize)
             .anyMatch(sentence -> sentence.contains(normalized));
     }
 
-    // 정답의 숫자는 모두 근거 문장에 있어야 하고, 정답의 낱말 하나 이상이 근거 문장에 있어야 한다.
-    // 조사가 붙어 낱말이 그대로 안 맞을 수 있어 끝 글자 하나를 뗀 형태도 본다("주고받기와" → "주고받기")
+    // 정답의 숫자는 값으로 모두 근거 문장에 있어야 한다("3.50%"와 "3.5%"는 같다). 숫자가 없는 낱말은 하나 이상 근거 문장에 있어야 하고,
+    // 조사가 붙어 낱말이 그대로 안 맞을 수 있어 끝 글자 하나를 뗀 형태도 본다("주고받기와" → "주고받기").
+    // 숫자가 든 낱말은 숫자 비교로 이미 확인했으므로 낱말 비교에서 뺀다
     private static boolean isGrounded(String answer, String evidence) {
-        Set<String> evidenceNumbers = numbersOf(evidence);
-        if (!evidenceNumbers.containsAll(numbersOf(answer))) {
+        Set<String> answerNumbers = AiTextMatcher.numbersOf(answer);
+        if (!AiTextMatcher.numbersOf(evidence).containsAll(answerNumbers)) {
             return false;
         }
         String normalizedEvidence = normalize(evidence);
         List<String> words = Stream.of(answer.split("\\s+"))
+            .filter(word -> word.chars().noneMatch(Character::isDigit))
             .map(QuizValidator::normalize)
             .filter(word -> word.codePointCount(0, word.length()) >= MIN_GROUNDING_WORD_LENGTH)
             .toList();
         if (words.isEmpty()) {
-            return normalizedEvidence.contains(normalize(answer));
+            return !answerNumbers.isEmpty() || normalizedEvidence.contains(normalize(answer));
         }
         return words.stream().anyMatch(word -> normalizedEvidence.contains(word)
             || (word.codePointCount(0, word.length()) > MIN_GROUNDING_WORD_LENGTH

@@ -215,4 +215,26 @@ class ArticleSummaryValidatorTest {
         assertThat(validator.validate(output, TITLE, CONTENT, ArticleDifficulty.EASY).sentences())
             .containsExactly("기준금리를 연 3%로 동결했습니다.", "물가 둔화를 반영했습니다.", "연내 인하 전망이 나옵니다.");
     }
+
+    @Test
+    void 근거_구절의_소수점을_지워_숫자를_바꾸면_실패한다() {
+        // 본문은 "연 3.0%"인데 근거 구절과 요약을 "30%"로 바꾼 경우
+        ArticleSummaryOutput output = new ArticleSummaryOutput(TITLE, ArticleDifficulty.EASY, ONE_LINE,
+            List.of("기준금리는 연 30%입니다.", "둘째 문장입니다.", "셋째 문장입니다."),
+            List.of("기준금리는 연 30%다", "물가 상승세가 둔화됐다는 판단이다", "시장에서는 연내 인하를 점친다"), KEYWORDS);
+
+        assertThatThrownBy(() -> validator.validate(output, TITLE, CONTENT, ArticleDifficulty.EASY))
+            .hasMessageContaining("evidence 1번이 기사 본문에 없습니다");
+    }
+
+    @Test
+    void 음수를_양수로_바꾼_요약은_실패한다() {
+        String content = "이번 분기 성장률은 -0.5%입니다. 물가 상승세가 둔화됐다는 판단이다. 시장에서는 연내 인하를 점친다.";
+        ArticleSummaryOutput output = new ArticleSummaryOutput(TITLE, ArticleDifficulty.EASY, ONE_LINE,
+            List.of("성장률은 0.5%입니다.", "둘째 문장입니다.", "셋째 문장입니다."),
+            List.of("이번 분기 성장률은 -0.5%입니다", "물가 상승세가 둔화됐다는 판단이다", "시장에서는 연내 인하를 점친다"), KEYWORDS);
+
+        assertThatThrownBy(() -> validator.validate(output, TITLE, content, ArticleDifficulty.EASY))
+            .hasMessageContaining("summary 1번 문장의 숫자 [0.5]가 evidence 1번 구절에 없습니다");
+    }
 }

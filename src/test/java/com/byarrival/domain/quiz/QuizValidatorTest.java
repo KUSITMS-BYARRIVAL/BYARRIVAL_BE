@@ -202,4 +202,32 @@ class QuizValidatorTest {
 
         assertThat(validate(output, TITLE).question()).isEqualTo(question);
     }
+
+    @Test
+    void 소수점을_지워_숫자를_바꾼_근거_문장은_입력_문장이_아니다() {
+        QuizOutput output = new QuizOutput(TITLE, "정부는 금리를 35%로 유지했습니다.", "정부가 유지한 금리는?", "35%",
+            List.of("30%", "40%"), "금리를 35%로 유지했어요.");
+
+        assertThatThrownBy(() -> validator.validate(output, source(TITLE, "정부는 금리를 3.5%로 유지했습니다.")))
+            .hasMessageContaining("evidence에는 입력의");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"3.5%", "3.50%"})
+    void 소수점_끝_0이_달라도_같은_숫자면_통과한다(String answer) {
+        String evidence = answer.equals("3.5%") ? "기준금리는 3.50%로 유지됐습니다." : "기준금리는 3.5%로 유지됐습니다.";
+        QuizOutput output = new QuizOutput(TITLE, evidence, "유지된 기준금리는?", answer, List.of("3.25%", "3.75%"),
+            "기준금리가 유지됐어요.");
+
+        assertThat(validate(output, TITLE).answer()).isEqualTo(answer);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"다음 중 사실과 다른 것은?", "옳지 않은 답은?", "설명으로 잘못된 것은?"})
+    void 다른_표현의_부정형_문제도_실패한다(String question) {
+        QuizOutput output = new QuizOutput(TITLE, EVIDENCE, question, "정답", List.of("오답1", "오답2"), "근거예요.");
+
+        assertThatThrownBy(() -> validate(output, TITLE))
+            .hasMessageContaining("부정형 문제");
+    }
 }
