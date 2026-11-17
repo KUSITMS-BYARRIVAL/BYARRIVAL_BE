@@ -8,7 +8,9 @@ import com.byarrival.domain.article.entity.Article;
 import com.byarrival.domain.article.service.ArticleQueryService;
 import com.byarrival.domain.category.service.CategoryMappingService;
 import com.byarrival.domain.quiz.config.QuizProperties;
+import com.byarrival.domain.quiz.dto.QuizCheckOutput;
 import com.byarrival.domain.quiz.dto.QuizOutput;
+import com.byarrival.domain.quiz.exception.QuizErrorCode;
 import com.byarrival.domain.quiz.service.QuizGenerator.QuizSource;
 import com.byarrival.domain.quiz.service.QuizValidator.ValidatedQuiz;
 import java.time.Clock;
@@ -46,6 +48,7 @@ public class QuizGenerationService {
     private final QuizGenerator generator;
     private final QuizValidator validator;
     private final QuizChoiceShuffler shuffler;
+    private final QuizChecker checker;
     private final QuizStore store;
     private final ExecutorService executor;
     private final QuizProperties properties;
@@ -54,14 +57,15 @@ public class QuizGenerationService {
     private final Clock clock;
 
     public QuizGenerationService(ArticleQueryService articleQueryService, CategoryMappingService categoryMappingService,
-        QuizGenerator generator, QuizValidator validator, QuizChoiceShuffler shuffler, QuizStore store,
-        @Qualifier("quizGenerationExecutor") ExecutorService executor, QuizProperties properties,
+        QuizGenerator generator, QuizValidator validator, QuizChoiceShuffler shuffler, QuizChecker checker,
+        QuizStore store, @Qualifier("quizGenerationExecutor") ExecutorService executor, QuizProperties properties,
         AnthropicProperties anthropicProperties, BatchAlertNotifier batchAlertNotifier, Clock clock) {
         this.articleQueryService = articleQueryService;
         this.categoryMappingService = categoryMappingService;
         this.generator = generator;
         this.validator = validator;
         this.shuffler = shuffler;
+        this.checker = checker;
         this.store = store;
         this.executor = executor;
         this.properties = properties;
@@ -164,17 +168,69 @@ public class QuizGenerationService {
                 problems = null;
                 continue;
             }
+            ValidatedQuiz quiz;
             try {
-                return shuffler.shuffle(validator.validate(output, source.title()));
+                quiz = shuffler.shuffle(validator.validate(output, source));
             } catch (BusinessException e) {
                 lastError = e;
                 previous = output;
                 problems = e.getMessage();
+                continue;
             }
+            QuizCheckOutput check;
+            try {
+                ClaudeResult<QuizCheckOutput> result = checker.check(source, quiz);
+                tally.add(result.usage().inputTokens(), result.usage().outputTokens());
+                check = result.output();
+            } catch (BusinessException e) {
+                // 검수를 못 하면 맞는 퀴즈인지 알 수 없으므로 저장하지 않고 처음부터 다시 만든다
+                tally.add(0, 0);
+                lastError = e;
+                previous = null;
+                problems = null;
+                continue;
+            }
+            String checkProblems = checkProblems(check, quiz);
+            if (checkProblems == null) {
+                return quiz;
+            }
+            lastError = new BusinessException(QuizErrorCode.QUIZ_RESPONSE_INVALID, checkProblems);
+            previous = output;
+            problems = checkProblems;
         }
         log.warn("[AI 퀴즈 실패] articleId={} attempts={} reason={}", source.articleId(), attempts,
             lastError.getMessage().replace('\n', ' '));
         return null;
+    }
+
+    /**
+     * 검수 결과 정답 선택지가 저장할 정답 하나뿐이고 해설이 그 정답을 설명해야 통과다. 어긋나면 다시 만들 때 알려 줄 문제를 돌려준다.
+     * 번호는 섞은 순서라 출제 AI는 모르므로 선택지 글로 알려 준다.
+     */
+    static String checkProblems(QuizCheckOutput check, ValidatedQuiz quiz) {
+        List<String> problems = new ArrayList<>();
+        List<Integer> correct = check == null || check.correctChoices() == null
+            ? List.of() : check.correctChoices().stream().filter(Objects::nonNull).distinct().toList();
+        String answer = quiz.choices().get(quiz.answerSeq() - 1);
+        if (!correct.equals(List.of(quiz.answerSeq()))) {
+            List<String> correctTexts = correct.stream()
+                .filter(seq -> seq >= 1 && seq <= quiz.choices().size())
+                .map(seq -> "'" + quiz.choices().get(seq - 1) + "'")
+                .toList();
+            problems.add("다른 사람이 요약만 보고 풀었을 때 올바른 답으로 본 선택지가 "
+                + (correctTexts.isEmpty() ? "없었습니다" : String.join(", ", correctTexts) + "였습니다")
+                + ". 정답 '" + answer + "' 하나만 문제의 답이 되고 오답은 확실히 틀리게, 문제가 묻는 것과 정답이 맞게 다시 쓰세요.");
+        }
+        if (check == null || !check.explanationMatches()) {
+            problems.add("해설이 정답 '" + answer + "'의 근거를 설명하지 않습니다. 정답의 근거를 설명하세요.");
+        }
+        if (problems.isEmpty()) {
+            return null;
+        }
+        if (check != null && check.reason() != null && !check.reason().isBlank()) {
+            problems.add("검수 의견: " + check.reason().strip());
+        }
+        return String.join("\n", problems);
     }
 
     // 알림이 실패해도 퀴즈 결과에는 영향을 주지 않는다

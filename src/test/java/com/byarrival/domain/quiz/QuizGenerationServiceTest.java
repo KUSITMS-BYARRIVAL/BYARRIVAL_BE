@@ -12,11 +12,14 @@ import static org.mockito.Mockito.verify;
 
 import com.byarrival.domain.ai.service.ClaudeClient.ClaudeResult;
 import com.byarrival.domain.ai.service.ClaudeClient.TokenUsage;
+import com.byarrival.domain.quiz.dto.QuizCheckOutput;
 import com.byarrival.domain.quiz.dto.QuizOutput;
+import com.byarrival.domain.quiz.service.QuizChecker;
 import com.byarrival.domain.quiz.service.QuizGenerationService;
 import com.byarrival.domain.quiz.service.QuizGenerationService.QuizGenerationResult;
 import com.byarrival.domain.quiz.service.QuizGenerator;
 import com.byarrival.domain.quiz.service.QuizGenerator.QuizSource;
+import com.byarrival.domain.quiz.service.QuizValidator.ValidatedQuiz;
 import com.byarrival.support.TestcontainersConfig;
 import com.jayway.jsonpath.JsonPath;
 import java.time.LocalDate;
@@ -39,6 +42,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 class QuizGenerationServiceTest {
 
     private static final TokenUsage USAGE = new TokenUsage(100, 50);
+    private static final String EVIDENCE = "가나다라 첫째 문장입니다.";
 
     @Autowired
     private QuizGenerationService quizGenerationService;
@@ -48,6 +52,9 @@ class QuizGenerationServiceTest {
 
     @MockitoBean
     private QuizGenerator generator;
+
+    @MockitoBean
+    private QuizChecker checker;
 
     private Long feedId;
     private Long categoryId;
@@ -62,6 +69,15 @@ class QuizGenerationServiceTest {
             "INSERT INTO category (name, display_order) VALUES (?, 99) RETURNING id", Long.class,
             "테스트-" + UUID.randomUUID().toString().substring(0, 8));
         // 다른 테스트의 추천 후보와 섞이지 않는 서비스일
+        // 검수는 기본으로 저장할 정답 하나만 맞다고 본다
+        given(checker.check(any(), any())).willAnswer(invocation -> {
+            ValidatedQuiz quiz = invocation.getArgument(1);
+            // 테스트에서 다시 스텁할 때 인자 없이 한 번 불린다
+            if (quiz == null) {
+                return null;
+            }
+            return new ClaudeResult<>(new QuizCheckOutput(List.of(quiz.answerSeq()), true, "정답만 맞아요."), USAGE);
+        });
         serviceDate = LocalDate.of(2031, 1, 1).plusDays(Math.abs(UUID.randomUUID().getMostSignificantBits() % 3000));
     }
 
@@ -91,15 +107,15 @@ class QuizGenerationServiceTest {
             "SELECT question, choices::text AS choices, answer_seq, explanation, status FROM quiz WHERE article_id = ?",
             first);
         assertThat(saved.get("question")).isEqualTo("첫째 기사의 핵심은?");
-        // 선택지는 정확히 3개이고 번호는 1·2·3이 하나씩이다. 저장된 정답 번호는 늘 정답 글("가")을 가리킨다
+        // 선택지는 정확히 3개이고 번호는 1·2·3이 하나씩이다. 저장된 정답 번호는 늘 정답 글("가나다라")을 가리킨다
         String choices = (String) saved.get("choices");
         List<Integer> seqs = JsonPath.read(choices, "$[*].seq");
         List<String> contents = JsonPath.read(choices, "$[*].content");
         assertThat(seqs).containsExactlyInAnyOrder(1, 2, 3);
-        assertThat(contents).containsExactlyInAnyOrder("가", "나", "다");
+        assertThat(contents).containsExactlyInAnyOrder("가나다라", "마바사아", "자차카타");
         int answerSeq = (Integer) saved.get("answer_seq");
         List<String> answer = JsonPath.read(choices, "$[?(@.seq == " + answerSeq + ")].content");
-        assertThat(answer).containsExactly("가");
+        assertThat(answer).containsExactly("가나다라");
         assertThat(saved.get("status")).isEqualTo("ACTIVE");
         assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM quiz WHERE article_id = ?", Integer.class,
             retried)).isEqualTo(1);
@@ -134,6 +150,49 @@ class QuizGenerationServiceTest {
             .isEqualTo("먼저 저장된 문제?");
     }
 
+    @Test
+    void 검수에서_정답이_하나로_정해지지_않으면_검수_의견을_알려_주고_다시_만든다() {
+        Long article = newArticle(true, "VISIBLE", "검수 기사");
+        QuizOutput ambiguous = valid("검수 기사");
+        QuizOutput fixed = new QuizOutput("검수 기사", EVIDENCE, "검수 기사로 확인된 사실은?", "가나다라",
+            List.of("마바사아", "자차카타"), "정답의 근거예요.");
+        given(generator.generate(source(article))).willReturn(result(ambiguous));
+        given(generator.regenerate(source(article), any(), anyString())).willReturn(result(fixed));
+        // 첫 퀴즈는 오답 하나도 맞다고 보고, 다시 만든 퀴즈는 정답만 맞다고 본다
+        given(checker.check(any(), argThat(quiz -> quiz != null && quiz.question().equals("검수 기사의 핵심은?"))))
+            .willAnswer(invocation -> {
+                ValidatedQuiz quiz = invocation.getArgument(1);
+                int wrong = quiz.answerSeq() == 1 ? 2 : 1;
+                return new ClaudeResult<>(new QuizCheckOutput(List.of(quiz.answerSeq(), wrong), true, "오답도 맞아요."),
+                    USAGE);
+            });
+
+        QuizGenerationResult result = quizGenerationService.generate(serviceDate);
+
+        assertThat(result.succeeded()).isEqualTo(1);
+        // 생성 2회 + 검수 2회
+        assertThat(result.calls()).isEqualTo(4);
+        verify(generator).regenerate(source(article), any(),
+            argThat(problems -> problems.contains("올바른 답으로 본 선택지가") && problems.contains("검수 의견: 오답도 맞아요.")));
+        assertThat(jdbcTemplate.queryForObject("SELECT question FROM quiz WHERE article_id = ?", String.class, article))
+            .isEqualTo("검수 기사로 확인된 사실은?");
+    }
+
+    @Test
+    void 검수를_계속_통과하지_못하면_퀴즈를_저장하지_않는다() {
+        Long article = newArticle(true, "VISIBLE", "틀린 기사");
+        given(generator.generate(source(article))).willReturn(result(valid("틀린 기사")));
+        given(generator.regenerate(source(article), any(), anyString())).willReturn(result(valid("틀린 기사")));
+        given(checker.check(any(), any())).willReturn(
+            new ClaudeResult<>(new QuizCheckOutput(List.of(), false, "맞는 답이 없어요."), USAGE));
+
+        QuizGenerationResult result = quizGenerationService.generate(serviceDate);
+
+        assertThat(result.failedArticleIds()).containsExactly(article);
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM quiz WHERE article_id = ?", Integer.class,
+            article)).isZero();
+    }
+
     private static QuizSource source(Long articleId) {
         return argThat(source -> source != null && source.articleId().equals(articleId));
     }
@@ -143,11 +202,12 @@ class QuizGenerationServiceTest {
     }
 
     private static QuizOutput valid(String title) {
-        return new QuizOutput(title, title + "의 핵심은?", "가", List.of("나", "다"), "정답의 근거예요.");
+        return new QuizOutput(title, EVIDENCE, title + "의 핵심은?", "가나다라", List.of("마바사아", "자차카타"),
+            "정답의 근거예요.");
     }
 
     private static QuizOutput invalid(String title) {
-        return new QuizOutput(title, "물음표 없는 문제", "가", List.of("나"), "요약에 나와요.");
+        return new QuizOutput(title, EVIDENCE, "물음표 없는 문제", "가나다라", List.of("나"), "요약에 나와요.");
     }
 
     private Long newArticle(boolean recommendable, String visibility, String title) {
@@ -155,7 +215,7 @@ class QuizGenerationServiceTest {
             INSERT INTO article (feed_id, category_id, original_url, title, press_name, published_at, service_date,
                 difficulty, reading_minutes, summary_sentence1, summary_sentence2, summary_sentence3,
                 summary_one_line, process_status, recommendable, visibility)
-            VALUES (?, ?, ?, ?, '테스트일보', ?, ?, 'EASY', 2.0, '첫 문장', '둘째 문장', '셋째 문장', '한 줄 요약',
+            VALUES (?, ?, ?, ?, '테스트일보', ?, ?, 'EASY', 2.0, '가나다라 첫째 문장입니다.', '둘째 문장입니다.', '셋째 문장입니다.', '한 줄 요약',
                 'READY', ?, ?)
             RETURNING id
             """, Long.class, feedId, categoryId, "https://news.example.com/" + UUID.randomUUID(), title,

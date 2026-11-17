@@ -150,6 +150,12 @@ ai:
     effort: medium
     concurrency: 8
     max-retries: 3
+  quiz-check:
+    # 만든 퀴즈를 요약만 보고 다시 풀어 정답이 하나로 정해지는지 확인한다(AI-04). 퀴즈 한 번 만들 때마다 1회 호출한다.
+    # 2026-11-17 운영 점검에서 135문제 중 3문제의 정답이 틀려(부정형 2, 문제와 엇나간 정답 1) 추가했다
+    model: claude-haiku-5-5
+    max-tokens: 4000
+    effort: medium
   smalltalk:
     # 카테고리별 인기 기사(구글 뉴스 노출 순서) 상위부터 최대 2건씩 한 줄 스몰토크를 만든다(TALK-01)
     model: claude-haiku-5-5

@@ -39,6 +39,7 @@ public class QuizGenerator {
      */
     public ClaudeResult<QuizOutput> regenerate(QuizSource source, QuizOutput previous, String problems) {
         String message = userMessage(source) + "\n\n<previous_answer>\n"
+            + "evidence: " + previous.evidence() + "\n"
             + "question: " + previous.question() + "\n"
             + "answer: " + previous.answer() + "\n"
             + "wrongAnswers: " + previous.wrongAnswers() + "\n"
