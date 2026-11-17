@@ -65,6 +65,42 @@ public final class AiTextMatcher {
         return normalized.toString();
     }
 
+    /**
+     * 인용 구절이 원문 안에 있는지 확인한다. {@link #normalize}한 글로 비교하고, 원문의 일부만 옮긴 인용은 허용한다.
+     * 다만 인용이 원문 숫자의 중간에서 시작하거나 끝나면 인정하지 않는다. "-0.5%"에서 부호를 뗀 "0.5%",
+     * "130%"에서 앞자리를 뗀 "30%", "3.5"에서 소수 자리를 뗀 "3"은 원문과 다른 숫자다.
+     */
+    public static boolean containsQuote(String text, String quote) {
+        String source = normalize(text);
+        String target = normalize(quote);
+        if (target.isEmpty()) {
+            return false;
+        }
+        for (int from = source.indexOf(target); from >= 0; from = source.indexOf(target, from + 1)) {
+            if (startsAtNumberBoundary(source, from) && endsAtNumberBoundary(source, from + target.length())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // normalize한 글에는 음수 부호와 숫자 사이의 소수점·쉼표만 남으므로, 바로 앞이 숫자·부호·구분자면 숫자 중간이다
+    private static boolean startsAtNumberBoundary(String source, int start) {
+        if (start == 0 || !Character.isDigit(source.charAt(start))) {
+            return true;
+        }
+        char before = source.charAt(start - 1);
+        return !Character.isDigit(before) && before != '-' && before != '.' && before != ',';
+    }
+
+    private static boolean endsAtNumberBoundary(String source, int end) {
+        if (end == source.length() || !Character.isDigit(source.charAt(end - 1))) {
+            return true;
+        }
+        char after = source.charAt(end);
+        return !Character.isDigit(after) && after != '.' && after != ',';
+    }
+
     public static int length(String text) {
         return text.codePointCount(0, text.length());
     }

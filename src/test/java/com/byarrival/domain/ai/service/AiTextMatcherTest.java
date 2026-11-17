@@ -45,4 +45,24 @@ class AiTextMatcherTest {
         assertThat(AiTextMatcher.normalize("성장률은 -0.5%다")).isEqualTo("성장률은-0.5다");
         assertThat(AiTextMatcher.normalize("1,000명, 2026-11-17")).isEqualTo("1,000명20261117");
     }
+
+    @Test
+    void 원문의_일부만_옮긴_인용은_인정한다() {
+        assertThat(AiTextMatcher.containsQuote("한국은행은 기준금리를 연 3.0%로 동결했다.", "기준금리를 연 3.0%로")).isTrue();
+        assertThat(AiTextMatcher.containsQuote("성장률은 -0.5%로 유지됐다.", "-0.5%로 유지됐다")).isTrue();
+    }
+
+    @Test
+    void 숫자의_부호나_자릿수를_잘라_낸_인용은_인정하지_않는다() {
+        assertThat(AiTextMatcher.containsQuote("기준금리는 -0.5%로 유지됐습니다.", "0.5%로 유지됐습니다.")).isFalse();
+        assertThat(AiTextMatcher.containsQuote("수출이 130% 늘었다.", "30% 늘었다")).isFalse();
+        assertThat(AiTextMatcher.containsQuote("금리는 3.5%다.", "금리는 3")).isFalse();
+        assertThat(AiTextMatcher.containsQuote("총 1,200명이 참여했다.", "200명이 참여했다")).isFalse();
+    }
+
+    @Test
+    void 같은_구절이_여러_번_나오면_숫자_경계가_맞는_곳이_하나만_있어도_인정한다() {
+        assertThat(AiTextMatcher.containsQuote("-0.5%로 내렸다가 0.5%로 올랐다.", "0.5%로 올랐다")).isTrue();
+        assertThat(AiTextMatcher.containsQuote("130%와 30% 증가", "30% 증가")).isTrue();
+    }
 }

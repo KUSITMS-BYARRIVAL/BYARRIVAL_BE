@@ -237,4 +237,15 @@ class ArticleSummaryValidatorTest {
         assertThatThrownBy(() -> validator.validate(output, TITLE, content, ArticleDifficulty.EASY))
             .hasMessageContaining("summary 1번 문장의 숫자 [0.5]가 evidence 1번 구절에 없습니다");
     }
+
+    @Test
+    void 숫자_앞자리를_잘라_옮긴_근거_구절은_본문에_없는_것으로_본다() {
+        String content = "올해 수출이 130% 늘었다는 집계다. 물가 상승세가 둔화됐다는 판단이다. 시장에서는 연내 인하를 점친다.";
+        ArticleSummaryOutput output = new ArticleSummaryOutput(TITLE, ArticleDifficulty.EASY, ONE_LINE,
+            List.of("수출이 30% 늘었습니다.", "둘째 문장입니다.", "셋째 문장입니다."),
+            List.of("30% 늘었다는 집계다", "물가 상승세가 둔화됐다는 판단이다", "시장에서는 연내 인하를 점친다"), KEYWORDS);
+
+        assertThatThrownBy(() -> validator.validate(output, TITLE, content, ArticleDifficulty.EASY))
+            .hasMessageContaining("evidence 1번이 기사 본문에 없습니다");
+    }
 }

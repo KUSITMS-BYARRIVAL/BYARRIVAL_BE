@@ -152,15 +152,14 @@ public class QuizValidator {
 
     // 근거 문장은 입력 문장을 그대로 옮기거나 그 일부를 옮긴 것이어야 한다.
     // 공백·문장 부호는 무시하지만 소수점과 음수 부호는 남겨 비교한다("3.5%"를 "35%"로 바꾼 근거는 다른 문장이다)
+    // 숫자의 부호나 자릿수를 잘라 낸 일부 인용("-0.5%" → "0.5%")도 다른 문장으로 본다
     private static boolean isInputSentence(String evidence, QuizSource source) {
-        String normalized = AiTextMatcher.normalize(evidence);
-        if (AiTextMatcher.length(normalized) < MIN_EVIDENCE_LENGTH) {
+        if (AiTextMatcher.length(AiTextMatcher.normalize(evidence)) < MIN_EVIDENCE_LENGTH) {
             return false;
         }
         return Stream.concat(Stream.ofNullable(source.oneLine()), source.summary().stream())
             .filter(Objects::nonNull)
-            .map(AiTextMatcher::normalize)
-            .anyMatch(sentence -> sentence.contains(normalized));
+            .anyMatch(sentence -> AiTextMatcher.containsQuote(sentence, evidence));
     }
 
     // 정답의 숫자는 값으로 모두 근거 문장에 있어야 한다("3.50%"와 "3.5%"는 같다). 숫자가 없는 낱말은 하나 이상 근거 문장에 있어야 하고,

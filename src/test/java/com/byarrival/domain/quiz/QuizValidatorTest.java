@@ -230,4 +230,13 @@ class QuizValidatorTest {
         assertThatThrownBy(() -> validate(output, TITLE))
             .hasMessageContaining("부정형 문제");
     }
+
+    @Test
+    void 음수_부호를_떼고_옮긴_근거_문장은_입력_문장이_아니다() {
+        QuizOutput output = new QuizOutput(TITLE, "0.5%로 유지됐습니다.", "유지된 기준금리는?", "0.5%",
+            List.of("1.0%", "1.5%"), "기준금리는 0.5%로 유지됐어요.");
+
+        assertThatThrownBy(() -> validator.validate(output, source(TITLE, "기준금리는 -0.5%로 유지됐습니다.")))
+            .hasMessageContaining("evidence에는 입력의");
+    }
 }

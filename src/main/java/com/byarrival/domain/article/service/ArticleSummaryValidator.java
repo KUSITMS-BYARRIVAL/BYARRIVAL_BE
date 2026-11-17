@@ -96,7 +96,6 @@ public class ArticleSummaryValidator {
      */
     private void checkGrounding(String oneLine, List<String> sentences, List<String> evidence, String title,
         String content, List<String> problems) {
-        String normalizedContent = AiTextMatcher.normalize(content);
         Set<String> sourceNumbers = new HashSet<>(AiTextMatcher.numbersOf(content));
         sourceNumbers.addAll(AiTextMatcher.numbersOf(title));
         if (oneLine != null) {
@@ -113,7 +112,7 @@ public class ArticleSummaryValidator {
             String quote = evidence.get(i) == null ? "" : evidence.get(i).strip();
             String normalizedQuote = AiTextMatcher.normalize(quote);
             boolean tooShort = AiTextMatcher.length(normalizedQuote) < MIN_EVIDENCE_LENGTH;
-            if (tooShort || !normalizedContent.contains(normalizedQuote)) {
+            if (tooShort || !AiTextMatcher.containsQuote(content, quote)) {
                 problems.add("evidence " + (i + 1) + "번이 기사 본문에 없습니다. 본문 구절을 고치지 말고 글자 그대로 옮기세요: \""
                     + quote + "\"");
                 continue;
