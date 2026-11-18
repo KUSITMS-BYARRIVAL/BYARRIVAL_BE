@@ -124,10 +124,12 @@ class AuthFlowIntegrationTest {
     void 필수_약관에_모두_동의하면_내_정보의_약관_동의_여부가_true가_된다() throws Exception {
         mockMvc.perform(get("/api/v1/terms").header(HttpHeaders.AUTHORIZATION, bearer(tokens.accessToken())))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.length()").value(2))
+            .andExpect(jsonPath("$.data.length()").value(3))
             .andExpect(jsonPath("$.data[0].type").value("SERVICE"))
             .andExpect(jsonPath("$.data[0].required").value(true))
-            .andExpect(jsonPath("$.data[1].type").value("PRIVACY"));
+            .andExpect(jsonPath("$.data[1].type").value("PRIVACY"))
+            .andExpect(jsonPath("$.data[2].type").value("MARKETING"))
+            .andExpect(jsonPath("$.data[2].required").value(false));
 
         mockMvc.perform(post("/api/v1/terms/agreements")
                 .header(HttpHeaders.AUTHORIZATION, bearer(tokens.accessToken()))
@@ -139,6 +141,22 @@ class AuthFlowIntegrationTest {
 
         mockMvc.perform(get("/api/v1/users/me").header(HttpHeaders.AUTHORIZATION, bearer(tokens.accessToken())))
             .andExpect(jsonPath("$.data.termsAgreed").value(true));
+    }
+
+    @Test
+    void 마케팅_수신은_선택이라_동의하든_안_하든_필수_약관만_동의하면_약관_동의가_완료된다() throws Exception {
+        for (boolean marketingAgreed : new boolean[]{false, true}) {
+            mockMvc.perform(post("/api/v1/terms/agreements")
+                    .header(HttpHeaders.AUTHORIZATION, bearer(tokens.accessToken()))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(agreementBodyWithMarketing(marketingAgreed)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(3))
+                .andExpect(jsonPath("$.data[2].agreed").value(marketingAgreed));
+
+            mockMvc.perform(get("/api/v1/users/me").header(HttpHeaders.AUTHORIZATION, bearer(tokens.accessToken())))
+                .andExpect(jsonPath("$.data.termsAgreed").value(true));
+        }
     }
 
     @Test
@@ -237,6 +255,16 @@ class AuthFlowIntegrationTest {
         return """
             {"agreements":[{"termsId":%d,"agreed":%s},{"termsId":%d,"agreed":%s}]}
             """.formatted(serviceId, serviceAgreed, privacyId, privacyAgreed);
+    }
+
+    private String agreementBodyWithMarketing(boolean marketingAgreed) throws Exception {
+        String terms = mockMvc.perform(get("/api/v1/terms")
+                .header(HttpHeaders.AUTHORIZATION, bearer(tokens.accessToken())))
+            .andReturn().getResponse().getContentAsString();
+        long marketingId = Long.parseLong(terms.replaceAll(".*?\"termsId\":(\\d+),\"type\":\"MARKETING\".*", "$1"));
+        String required = agreementBody(true, true).strip();
+        return required.substring(0, required.length() - 2)
+            + ",{\"termsId\":%d,\"agreed\":%s}]}".formatted(marketingId, marketingAgreed);
     }
 
     private static String refreshBody(String refreshToken) {
