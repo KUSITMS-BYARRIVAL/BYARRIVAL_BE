@@ -13,7 +13,7 @@ import java.util.List;
  *
  * @param commuteStartTime 이동 시작 시각 (HH:mm)
  * @param categoryIds      관심 분야. 보내면 이 목록으로 통째로 바꾸므로 1개 이상이어야 한다.
- * @param jobGroups        직군 1~2개. 보내면 이 목록으로 통째로 바꾸고, 보낸 순서가 홈 직군 칩 순서가 된다.
+ * @param jobGroups        직군. 지금은 1개만 보낸다. 보내면 이 목록으로 통째로 바꾼다.
  * @param sigunguId        근무 지역. 근무 지역 목록(GET /regions)의 시/군/구 id
  */
 public record OnboardingUpdateRequest(

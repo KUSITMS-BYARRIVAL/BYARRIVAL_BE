@@ -33,7 +33,7 @@ public class OnboardingController {
     @Operation(summary = "온보딩 정보 저장",
         description = "화면마다 입력한 값만 보낸다. 보내지 않은 항목은 바꾸지 않는다. "
             + "categoryIds를 보내면 그 목록으로 통째로 바꾼다. commuteStartTime은 HH:mm 형식이다. "
-            + "jobGroups는 1~2개이며 보낸 순서가 홈 직군 칩 순서가 된다.")
+            + "jobGroups는 1개만 보낸다.")
     @PatchMapping
     public ApiResponse<OnboardingResponse> updateOnboarding(
         @LoginUserId Long userId, @Valid @RequestBody OnboardingUpdateRequest request) {

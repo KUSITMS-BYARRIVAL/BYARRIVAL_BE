@@ -112,7 +112,7 @@ public class UserController {
     }
 
     @Operation(summary = "직군 변경",
-        description = "바꾼 뒤의 직군 1~2개를 보낸다. 남는 직군은 기존 순서대로 앞에, 새로 고른 직군은 뒤에 붙고 이 순서가 홈 직군 칩 순서가 된다.")
+        description = "바꾼 뒤의 직군 1개를 보낸다.")
     @PutMapping("/me/job-groups")
     public ApiResponse<UserMeResponse> replaceJobGroups(
         @LoginUserId Long userId, @Valid @RequestBody JobGroupsRequest request) {

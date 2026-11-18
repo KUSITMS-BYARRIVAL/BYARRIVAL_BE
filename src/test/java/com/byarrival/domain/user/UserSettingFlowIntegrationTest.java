@@ -200,21 +200,21 @@ class UserSettingFlowIntegrationTest {
     }
 
     @Test
-    void 직군을_바꾸면_남는_직군은_앞에_새_직군은_뒤에_둔다() throws Exception {
-        perform(put(ME + "/job-groups"), "{\"jobGroups\":[\"IT_DATA\",\"DESIGN\"]}").andExpect(status().isOk());
+    void 직군을_바꾸면_새_직군_하나만_남는다() throws Exception {
+        perform(put(ME + "/job-groups"), "{\"jobGroups\":[\"IT_DATA\"]}").andExpect(status().isOk());
 
-        perform(put(ME + "/job-groups"), "{\"jobGroups\":[\"MEDICAL\",\"DESIGN\"]}")
+        perform(put(ME + "/job-groups"), "{\"jobGroups\":[\"MEDICAL\"]}")
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.jobGroups[0]").value("DESIGN"))
-            .andExpect(jsonPath("$.data.jobGroups[1]").value("MEDICAL"));
+            .andExpect(jsonPath("$.data.jobGroups.length()").value(1))
+            .andExpect(jsonPath("$.data.jobGroups[0]").value("MEDICAL"));
     }
 
     @Test
-    void 직군을_비우거나_3개_이상_보내면_INVALID_INPUT_VALUE로_응답한다() throws Exception {
+    void 직군을_비우거나_2개_이상_보내면_INVALID_INPUT_VALUE로_응답한다() throws Exception {
         perform(put(ME + "/job-groups"), "{\"jobGroups\":[]}")
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.code").value("INVALID_INPUT_VALUE"));
-        perform(put(ME + "/job-groups"), "{\"jobGroups\":[\"DESIGN\",\"MEDICAL\",\"IT_DATA\"]}")
+        perform(put(ME + "/job-groups"), "{\"jobGroups\":[\"DESIGN\",\"MEDICAL\"]}")
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.code").value("INVALID_INPUT_VALUE"));
     }
