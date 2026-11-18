@@ -179,13 +179,12 @@ class OnboardingFlowIntegrationTest {
     }
 
     @Test
-    void 직군은_보낸_순서대로_통째로_바꾸고_중복은_처음_순서로_한_번만_저장한다() throws Exception {
-        perform(patch(ONBOARDING), "{\"jobGroups\":[\"IT_DATA\",\"FINANCE_ACCOUNTING\"]}")
+    void 직군은_보낸_직군으로_통째로_바꾼다() throws Exception {
+        perform(patch(ONBOARDING), "{\"jobGroups\":[\"IT_DATA\"]}")
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.jobGroups[0]").value("IT_DATA"))
-            .andExpect(jsonPath("$.data.jobGroups[1]").value("FINANCE_ACCOUNTING"));
+            .andExpect(jsonPath("$.data.jobGroups[0]").value("IT_DATA"));
 
-        perform(patch(ONBOARDING), "{\"jobGroups\":[\"DESIGN\",\"DESIGN\"]}")
+        perform(patch(ONBOARDING), "{\"jobGroups\":[\"DESIGN\"]}")
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.jobGroups.length()").value(1))
             .andExpect(jsonPath("$.data.jobGroups[0]").value("DESIGN"));
@@ -196,11 +195,11 @@ class OnboardingFlowIntegrationTest {
     }
 
     @Test
-    void 직군을_비우거나_3개_이상_보내면_INVALID_INPUT_VALUE로_응답한다() throws Exception {
+    void 직군을_비우거나_2개_이상_보내면_INVALID_INPUT_VALUE로_응답한다() throws Exception {
         perform(patch(ONBOARDING), "{\"jobGroups\":[]}")
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.code").value("INVALID_INPUT_VALUE"));
-        perform(patch(ONBOARDING), "{\"jobGroups\":[\"DESIGN\",\"MEDICAL\",\"IT_DATA\"]}")
+        perform(patch(ONBOARDING), "{\"jobGroups\":[\"DESIGN\",\"MEDICAL\"]}")
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.code").value("INVALID_INPUT_VALUE"));
     }

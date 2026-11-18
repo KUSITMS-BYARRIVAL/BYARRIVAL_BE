@@ -27,6 +27,7 @@ import com.byarrival.domain.user.repository.UserRepository;
 import com.byarrival.support.TestcontainersConfig;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -153,11 +154,13 @@ class NotificationFlowIntegrationTest {
     }
 
     @Test
-    void 행동_유도_알림은_유형별_하루_1번_합쳐서_하루_2번까지만_저장된다() {
+    void 자동_알림은_유형별_하루_1번이고_스트릭_이탈과_인기_기사만_합쳐서_하루_2번까지다() {
         assertThat(notificationSendService.send(action(NotificationType.ROUTE_READY))).isPresent();
         assertThat(notificationSendService.send(action(NotificationType.ROUTE_READY))).isEmpty();
         assertThat(notificationSendService.send(action(NotificationType.STREAK_BREAK))).isPresent();
-        assertThat(notificationSendService.send(action(NotificationType.ROUTE_INCOMPLETE))).isEmpty();
+        assertThat(notificationSendService.send(action(NotificationType.ROUTE_INCOMPLETE))).isPresent();
+        assertThat(notificationSendService.send(action(NotificationType.POPULAR_ARTICLE))).isPresent();
+        assertThat(notificationSendService.send(action(NotificationType.SMALLTALK))).isPresent();
         assertThat(notificationSendService.send(notice(userId))).isPresent();
     }
 
@@ -291,7 +294,7 @@ class NotificationFlowIntegrationTest {
             .isInstanceOf(DataIntegrityViolationException.class);
         notificationRepository.saveAndFlush(routeReady(today.plusDays(1)));
         assertThat(notificationRepository.countByUserIdAndServiceDateAndTypeIn(
-            userId, today, NotificationType.actionTypes())).isEqualTo(1);
+            userId, today, List.of(NotificationType.ROUTE_READY))).isEqualTo(1);
     }
 
     @Test

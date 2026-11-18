@@ -187,6 +187,21 @@ notification:
     # Firebase 서비스 계정 키 JSON 파일을 base64로 인코딩한 한 줄
     fcm-credentials-base64: ${FCM_CREDENTIALS_BASE64:}
     android-channel-id: default
+  # 자동 알림 발송 조건 (DCK-34). 시각은 해당 요일의 출근 시각 기준이다
+  auto:
+    # false면 시각 기준 자동 알림 작업을 돌리지 않는다(테스트)
+    enabled: true
+    # 서버 재시작·배포로 1분 단위 작업을 건너뛰어도 이 시간 안이면 보낸다(유형별 하루 1번이라 중복은 없다)
+    grace-minutes: 10
+    route-ready-before-minutes: 10
+    route-incomplete-idle-minutes: 120
+    streak-break-after-minutes: 180
+    streak-break-min-days: 3
+    streak-milestones: [3, 7, 14, 30]
+    popular-after-minutes: 30
+    # 인기 기사로 보는 최소 인원. 그날 이 기사를 담은 사용자가 이보다 적으면 후보가 아니다
+    popular-min-users: 30
+    popular-top-size: 10
 
 onboarding:
   # 기획 확정 전 가정값. 기본 이동시간은 DB 제약(5~90분, 5분 단위)과 같아야 한다

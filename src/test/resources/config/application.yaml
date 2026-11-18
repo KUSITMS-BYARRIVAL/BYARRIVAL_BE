@@ -1,3 +1,8 @@
 # 테스트 전용 설정. classpath:/config/application.yaml은 기본 application.yaml에 덧붙여 적용된다.
 jwt:
   secret: test-secret-key-for-jwt-signing-must-be-32-bytes-or-more
+
+# 1분마다 도는 자동 알림 작업이 다른 테스트의 알림 수를 바꾸지 않게 끈다. 자동 알림 테스트는 작업을 직접 부른다
+notification:
+  auto:
+    enabled: false

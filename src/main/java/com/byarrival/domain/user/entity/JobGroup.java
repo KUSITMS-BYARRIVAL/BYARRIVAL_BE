@@ -22,8 +22,8 @@ public enum JobGroup {
     PUBLIC_WELFARE("공공·복지"),
     ETC_FREELANCE("기타·프리랜서");
 
-    /** 한 사람이 고를 수 있는 최대 직군 수 */
-    public static final int MAX_SELECTION = 2;
+    /** 한 사람이 고를 수 있는 최대 직군 수. 지금은 1개만 고른다(테이블은 여러 개를 저장할 수 있게 둔다) */
+    public static final int MAX_SELECTION = 1;
 
     private final String displayName;
 }

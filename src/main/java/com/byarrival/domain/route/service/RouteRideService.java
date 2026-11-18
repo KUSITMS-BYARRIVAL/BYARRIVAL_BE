@@ -14,6 +14,7 @@ import com.byarrival.domain.route.dto.response.StopReadResponse;
 import com.byarrival.domain.route.entity.Route;
 import com.byarrival.domain.route.entity.RouteCard;
 import com.byarrival.domain.route.entity.RouteStatus;
+import com.byarrival.domain.route.event.RouteCompletedEvent;
 import com.byarrival.domain.route.exception.RouteErrorCode;
 import com.byarrival.domain.route.repository.RouteRepository;
 import com.byarrival.domain.route.service.PopularArticleService.PopularArticles;
@@ -30,6 +31,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -53,6 +55,7 @@ public class RouteRideService {
     private final CategoryMappingService categoryMappingService;
     private final PopularArticleService popularArticleService;
     private final ScrapService scrapService;
+    private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
 
     public RideResponse depart(Long userId, Long routeId) {
@@ -126,6 +129,7 @@ public class RouteRideService {
         Route route = outcome.route();
         if (outcome.newlyCompleted()) {
             usageEventRecorder.recordRouteCompleted(userId, route.getId(), route.getServiceDate(), now);
+            eventPublisher.publishEvent(new RouteCompletedEvent(userId, route.getId(), route.getServiceDate()));
         }
         RideProgress progress = rideProgressReader.read(route);
         int streak = routeStreakService.streakDays(userId, route.getServiceDate());
