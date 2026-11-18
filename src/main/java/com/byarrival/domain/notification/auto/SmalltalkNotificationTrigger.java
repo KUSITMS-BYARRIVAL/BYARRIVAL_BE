@@ -36,10 +36,19 @@ public class SmalltalkNotificationTrigger {
         SmalltalkView first = smalltalks.getFirst();
         Map<String, String> params = Map.of(SMALLTALK_ID_KEY, String.valueOf(first.smalltalkId()));
         for (Long userId : targetService.findNotifiableUserIds()) {
-            if (sender.isSentToday(userId, NotificationType.SMALLTALK)) {
-                continue;
+            // 한 회원에서 실패해도 다른 회원에게는 계속 보낸다. 하루 한 번 도는 작업이라 멈추면 다시 보내지 않는다
+            try {
+                send(userId, first, params);
+            } catch (RuntimeException e) {
+                log.error("[AutoNotification] 스몰토크 알림 처리 실패: userId={}", userId, e);
             }
-            sender.send(userId, NotificationType.SMALLTALK, messages.smalltalkTitle(), first.hook(), params);
         }
+    }
+
+    private void send(Long userId, SmalltalkView smalltalk, Map<String, String> params) {
+        if (sender.isSentToday(userId, NotificationType.SMALLTALK)) {
+            return;
+        }
+        sender.send(userId, NotificationType.SMALLTALK, messages.smalltalkTitle(), smalltalk.hook(), params);
     }
 }
