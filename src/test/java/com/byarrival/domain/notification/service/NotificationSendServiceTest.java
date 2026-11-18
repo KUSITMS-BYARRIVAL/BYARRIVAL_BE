@@ -23,6 +23,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -147,12 +148,21 @@ class NotificationSendServiceTest {
     }
 
     @Test
-    void 행동_유도_알림을_하루_2번_보냈으면_더_보내지_않는다() {
+    void 스트릭_이탈과_인기_기사를_합쳐_하루_2번_보냈으면_더_보내지_않는다() {
         given(notificationRepository.countByUserIdAndServiceDateAndTypeIn(
-            USER_ID, LocalDate.of(2026, 11, 8), NotificationType.actionTypes())).willReturn(2L);
+            USER_ID, LocalDate.of(2026, 11, 8), NotificationType.dailyCappedTypes())).willReturn(2L);
 
-        assertThat(sendService.send(routeReady())).isEmpty();
+        assertThat(sendService.send(new NotificationRequest(USER_ID, NotificationType.POPULAR_ARTICLE, "기사", "내용",
+            Map.of()))).isEmpty();
         verify(notificationRepository, never()).save(any());
+    }
+
+    @Test
+    void 횟수_제한에_들지_않는_자동_알림은_하루_2번을_넘어도_유형별_1번은_보낸다() {
+        given(notificationRepository.countByUserIdAndServiceDateAndTypeIn(any(), any(), any())).willReturn(2L);
+        given(userService.findNotificationPermission(USER_ID)).willReturn(Optional.empty());
+
+        assertThat(sendService.send(routeReady())).contains(100L);
     }
 
     @Test

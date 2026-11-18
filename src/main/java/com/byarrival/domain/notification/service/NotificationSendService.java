@@ -21,7 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * 다른 기능이 알림을 보내는 입구. 발송 정책을 확인하고 알림함에 저장한 뒤, 푸시는 커밋 후 비동기로 보낸다.
  * <ul>
- *     <li>행동 유도 알림은 서비스일마다 유형별 1번, 합쳐서 하루 2번까지만 보낸다.</li>
+ *     <li>자동 알림은 서비스일마다 유형별 1번만 보낸다. 스트릭 이탈·인기 기사는 합쳐서 하루 2번까지만 보낸다.</li>
  *     <li>OS 알림 권한이 거부됐거나 수신 설정이 꺼져 있으면 운영 안내까지 알림함에만 저장하고 푸시는 보내지 않는다.</li>
  *     <li>운영 안내는 횟수 제한 없이 보낸다.</li>
  * </ul>
@@ -31,7 +31,7 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class NotificationSendService {
 
-    static final int DAILY_ACTION_LIMIT = 2;
+    static final int DAILY_CAPPED_LIMIT = 2;
 
     private final NotificationRepository notificationRepository;
     private final NotificationSettingService settingService;
@@ -51,7 +51,7 @@ public class NotificationSendService {
 
         Long userId = request.userId();
         LocalDate serviceDate = ServiceDay.today(clock);
-        if (type.isAction() && !withinDailyLimits(userId, type, serviceDate)) {
+        if (!withinDailyLimits(userId, type, serviceDate)) {
             log.info("알림 발송 제한으로 건너뜀: userId={}, type={}", userId, type);
             return Optional.empty();
         }
@@ -75,13 +75,25 @@ public class NotificationSendService {
         return notification.getId();
     }
 
+    /**
+     * 이 유형을 오늘 이미 보냈는지(서비스일 기준)
+     */
+    @Transactional(readOnly = true)
+    public boolean isSentToday(Long userId, NotificationType type) {
+        return notificationRepository.existsByUserIdAndTypeAndServiceDate(userId, type, ServiceDay.today(clock));
+    }
+
     private boolean withinDailyLimits(Long userId, NotificationType type, LocalDate serviceDate) {
-        if (notificationRepository.existsByUserIdAndTypeAndServiceDate(userId, type, serviceDate)) {
+        if (type.isOncePerDay()
+            && notificationRepository.existsByUserIdAndTypeAndServiceDate(userId, type, serviceDate)) {
             return false;
         }
+        if (!type.isDailyCapped()) {
+            return true;
+        }
         long sentToday = notificationRepository.countByUserIdAndServiceDateAndTypeIn(
-            userId, serviceDate, NotificationType.actionTypes());
-        return sentToday < DAILY_ACTION_LIMIT;
+            userId, serviceDate, NotificationType.dailyCappedTypes());
+        return sentToday < DAILY_CAPPED_LIMIT;
     }
 
     private boolean canPush(Long userId, NotificationType type) {
