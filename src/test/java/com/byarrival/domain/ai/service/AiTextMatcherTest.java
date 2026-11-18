@@ -65,4 +65,18 @@ class AiTextMatcherTest {
         assertThat(AiTextMatcher.containsQuote("-0.5%로 내렸다가 0.5%로 올랐다.", "0.5%로 올랐다")).isTrue();
         assertThat(AiTextMatcher.containsQuote("130%와 30% 증가", "30% 증가")).isTrue();
     }
+
+    @Test
+    void 숫자_뒤에_문장_부호와_다른_숫자가_이어져도_원문_구절이면_인정한다() {
+        // 정규화하면 "30%. 2026"이 "302026"으로 붙지만, 원문에서는 30 뒤가 %라 숫자가 끝난 자리다
+        assertThat(AiTextMatcher.containsQuote("올해 수출 증가율은 30%. 2026년 전망은 밝다.", "올해 수출 증가율은 30%")).isTrue();
+        assertThat(AiTextMatcher.containsQuote("목표는 3. 4분기에 달성한다.", "목표는 3")).isTrue();
+        assertThat(AiTextMatcher.containsQuote("총 -5, 10도 차이", "10도 차이")).isTrue();
+    }
+
+    @Test
+    void 숫자_끝에_소수점이_붙어도_뒤에_숫자가_없으면_숫자가_끝난_자리다() {
+        assertThat(AiTextMatcher.containsQuote("물가는 3.", "물가는 3")).isTrue();
+        assertThat(AiTextMatcher.containsQuote("물가는 3.2%다", "물가는 3")).isFalse();
+    }
 }

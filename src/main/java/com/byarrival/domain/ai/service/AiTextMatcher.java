@@ -50,55 +50,82 @@ public final class AiTextMatcher {
      * 숫자 사이의 소수점·쉼표("3.0"이 "30"이 되지 않게)와 음수 부호("-0.5"가 "0.5"가 되지 않게)는 지우지 않는다.
      */
     public static String normalize(String text) {
-        if (text == null) {
-            return "";
-        }
-        StringBuilder normalized = new StringBuilder(text.length());
-        for (int i = 0; i < text.length(); i++) {
-            char c = text.charAt(i);
-            if (isDigitSeparator(text, i) || isMinusSign(text, i)) {
-                normalized.append(c == '−' ? '-' : c);
-            } else if (!IGNORABLE.matcher(String.valueOf(c)).matches()) {
-                normalized.append(c);
-            }
-        }
-        return normalized.toString();
+        return normalizeWithOrigin(text).text();
     }
 
     /**
      * 인용 구절이 원문 안에 있는지 확인한다. {@link #normalize}한 글로 비교하고, 원문의 일부만 옮긴 인용은 허용한다.
      * 다만 인용이 원문 숫자의 중간에서 시작하거나 끝나면 인정하지 않는다. "-0.5%"에서 부호를 뗀 "0.5%",
      * "130%"에서 앞자리를 뗀 "30%", "3.5"에서 소수 자리를 뗀 "3"은 원문과 다른 숫자다.
+     * 숫자 경계는 정규화 전 원문에서 확인한다. 정규화하면 "30%. 2026"이 "302026"처럼 붙어 경계를 알 수 없다.
      */
     public static boolean containsQuote(String text, String quote) {
-        String source = normalize(text);
+        if (text == null) {
+            return false;
+        }
+        Normalized source = normalizeWithOrigin(text);
         String target = normalize(quote);
         if (target.isEmpty()) {
             return false;
         }
-        for (int from = source.indexOf(target); from >= 0; from = source.indexOf(target, from + 1)) {
-            if (startsAtNumberBoundary(source, from) && endsAtNumberBoundary(source, from + target.length())) {
+        String normalizedSource = source.text();
+        for (int from = normalizedSource.indexOf(target); from >= 0;
+            from = normalizedSource.indexOf(target, from + 1)) {
+            int start = source.origin()[from];
+            int end = source.origin()[from + target.length() - 1];
+            if (startsAtNumberBoundary(text, start) && endsAtNumberBoundary(text, end)) {
                 return true;
             }
         }
         return false;
     }
 
-    // normalize한 글에는 음수 부호와 숫자 사이의 소수점·쉼표만 남으므로, 바로 앞이 숫자·부호·구분자면 숫자 중간이다
-    private static boolean startsAtNumberBoundary(String source, int start) {
-        if (start == 0 || !Character.isDigit(source.charAt(start))) {
-            return true;
+    // 정규화한 글과, 정규화한 글자마다 원문에서의 위치
+    private static Normalized normalizeWithOrigin(String text) {
+        if (text == null) {
+            return new Normalized("", new int[0]);
         }
-        char before = source.charAt(start - 1);
-        return !Character.isDigit(before) && before != '-' && before != '.' && before != ',';
+        StringBuilder normalized = new StringBuilder(text.length());
+        int[] origin = new int[text.length()];
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (isDigitSeparator(text, i) || isMinusSign(text, i)) {
+                origin[normalized.length()] = i;
+                normalized.append(c == '−' ? '-' : c);
+            } else if (!IGNORABLE.matcher(String.valueOf(c)).matches()) {
+                origin[normalized.length()] = i;
+                normalized.append(c);
+            }
+        }
+        return new Normalized(normalized.toString(), origin);
     }
 
-    private static boolean endsAtNumberBoundary(String source, int end) {
-        if (end == source.length() || !Character.isDigit(source.charAt(end - 1))) {
+    // 원문에서 인용 첫 글자(start) 바로 앞이 숫자, 숫자 사이의 소수점·쉼표, 음수 부호면 숫자 중간에서 시작한 것이다
+    private static boolean startsAtNumberBoundary(String text, int start) {
+        if (start == 0 || !Character.isDigit(text.charAt(start))) {
             return true;
         }
-        char after = source.charAt(end);
-        return !Character.isDigit(after) && after != '.' && after != ',';
+        char before = text.charAt(start - 1);
+        if (Character.isDigit(before) || isMinusSign(text, start - 1)) {
+            return false;
+        }
+        return !((before == '.' || before == ',') && start >= 2 && Character.isDigit(text.charAt(start - 2)));
+    }
+
+    // 원문에서 인용 마지막 글자(end) 바로 뒤가 숫자이거나, 뒤에 숫자가 이어지는 소수점·쉼표면 숫자 중간에서 끝난 것이다
+    private static boolean endsAtNumberBoundary(String text, int end) {
+        if (end == text.length() - 1 || !Character.isDigit(text.charAt(end))) {
+            return true;
+        }
+        char after = text.charAt(end + 1);
+        if (Character.isDigit(after)) {
+            return false;
+        }
+        return !((after == '.' || after == ',') && end + 2 < text.length()
+            && Character.isDigit(text.charAt(end + 2)));
+    }
+
+    private record Normalized(String text, int[] origin) {
     }
 
     public static int length(String text) {

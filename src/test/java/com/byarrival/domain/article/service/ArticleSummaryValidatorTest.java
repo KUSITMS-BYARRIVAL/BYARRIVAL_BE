@@ -248,4 +248,15 @@ class ArticleSummaryValidatorTest {
         assertThatThrownBy(() -> validator.validate(output, TITLE, content, ArticleDifficulty.EASY))
             .hasMessageContaining("evidence 1번이 기사 본문에 없습니다");
     }
+
+    @Test
+    void 근거_구절_끝_숫자_뒤에_다른_숫자가_이어지는_본문도_통과한다() {
+        String content = "올해 수출 증가율은 30%. 2026년 전망은 밝다. 물가 상승세가 둔화됐다는 판단이다. 시장에서는 연내 인하를 점친다.";
+        ArticleSummaryOutput output = new ArticleSummaryOutput(TITLE, ArticleDifficulty.EASY, ONE_LINE,
+            List.of("수출 증가율은 30%입니다.", "둘째 문장입니다.", "셋째 문장입니다."),
+            List.of("올해 수출 증가율은 30%", "물가 상승세가 둔화됐다는 판단이다", "시장에서는 연내 인하를 점친다"), KEYWORDS);
+
+        assertThat(validator.validate(output, TITLE, content, ArticleDifficulty.EASY).sentences())
+            .startsWith("수출 증가율은 30%입니다.");
+    }
 }
