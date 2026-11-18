@@ -121,6 +121,18 @@ class AuthFlowIntegrationTest {
     }
 
     @Test
+    void 약관_목록은_서비스_이용약관과_개인정보처리방침의_노션_공개_URL을_돌려준다() throws Exception {
+        mockMvc.perform(get("/api/v1/terms").header(HttpHeaders.AUTHORIZATION, bearer(tokens.accessToken())))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data[0].type").value("SERVICE"))
+            .andExpect(jsonPath("$.data[0].contentUrl")
+                .value("https://hyunjin-lee.notion.site/406a5a553281800ab919c5bc3a5fb9d8"))
+            .andExpect(jsonPath("$.data[1].type").value("PRIVACY"))
+            .andExpect(jsonPath("$.data[1].contentUrl")
+                .value("https://hyunjin-lee.notion.site/406a5a5532818056926be2b8a92583f1"));
+    }
+
+    @Test
     void 필수_약관에_모두_동의하면_내_정보의_약관_동의_여부가_true가_된다() throws Exception {
         mockMvc.perform(get("/api/v1/terms").header(HttpHeaders.AUTHORIZATION, bearer(tokens.accessToken())))
             .andExpect(status().isOk())
