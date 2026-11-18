@@ -28,6 +28,13 @@ public interface UserRepository extends JpaRepository<User, Long> {
     boolean existsByIdAndStatus(Long id, UserStatus status);
 
     /**
+     * 자동 알림을 받을 수 있는 회원: 활동 중이고 온보딩을 마친 회원
+     */
+    @Query("SELECT u.id FROM User u WHERE u.status = com.byarrival.domain.user.entity.UserStatus.ACTIVE "
+        + "AND u.onboardingStatus = com.byarrival.domain.user.entity.OnboardingStatus.COMPLETED ORDER BY u.id")
+    List<Long> findNotifiableUserIds();
+
+    /**
      * 같은 소셜 계정으로 since 이후에 탈퇴한 회원 중 가장 최근에 탈퇴한 회원
      */
     Optional<User> findFirstByProviderAndProviderUserIdAndStatusAndWithdrawnAtGreaterThanEqualOrderByWithdrawnAtDesc(
