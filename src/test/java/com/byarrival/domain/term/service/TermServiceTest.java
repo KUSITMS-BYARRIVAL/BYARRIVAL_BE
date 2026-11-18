@@ -62,6 +62,19 @@ class TermServiceTest {
     }
 
     @Test
+    void 선택_약관은_동의하지_않아도_필수_약관에_동의하면_이력을_쌓는다() {
+        given(termsRepository.findLatestOfEachType()).willReturn(List.of(
+            terms(1L, TermsType.SERVICE, true), terms(2L, TermsType.PRIVACY, true),
+            terms(3L, TermsType.MARKETING, false)));
+
+        List<TermsAgreementResponse> responses = termService.agree(USER_ID,
+            List.of(new Agreement(1L, true), new Agreement(2L, true), new Agreement(3L, false)));
+
+        assertThat(responses).extracting(TermsAgreementResponse::termsId).containsExactly(1L, 2L, 3L);
+        assertThat(responses).extracting(TermsAgreementResponse::agreed).containsExactly(true, true, false);
+    }
+
+    @Test
     void 필수_약관이_빠지면_진행할_수_없다() {
         assertAgreeError(List.of(new Agreement(1L, true)), TermErrorCode.REQUIRED_TERMS_NOT_AGREED);
     }
