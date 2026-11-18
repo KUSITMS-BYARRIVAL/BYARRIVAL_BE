@@ -118,7 +118,7 @@ public class ArticleSummaryService {
                 continue;
             }
             try {
-                ValidatedSummary summary = validator.validate(output, input.title(), difficulty);
+                ValidatedSummary summary = validator.validate(output, input.title(), input.content(), difficulty);
                 if (attempt > 1) {
                     log.info("[AI 요약] articleId={} {}번째 시도에 검증 통과", input.articleId(), attempt);
                 }

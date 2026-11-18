@@ -141,7 +141,7 @@ public class SmalltalkGenerationService {
                 continue;
             }
             try {
-                return validator.validate(output, source.title());
+                return validator.validate(output, source);
             } catch (UnsuitableArticleException e) {
                 log.info("[AI 스몰토크] articleId={} 대화 소재로 알맞지 않아 다음 기사로", source.articleId());
                 return null;

@@ -1,14 +1,18 @@
 package com.byarrival.domain.quiz.service;
 
 import com.byarrival.common.exception.BusinessException;
+import com.byarrival.domain.ai.service.AiTextMatcher;
 import com.byarrival.domain.quiz.dto.QuizOutput;
 import com.byarrival.domain.quiz.exception.QuizErrorCode;
+import com.byarrival.domain.quiz.service.QuizGenerator.QuizSource;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 import org.springframework.stereotype.Component;
 
 /**
@@ -25,18 +29,33 @@ public class QuizValidator {
     public static final int MAX_EXPLANATION_LENGTH = 60;
     // 문제와 해설은 실제 문제처럼 쓴다. "요약에 나와요"처럼 출처를 드러내는 표현은 쓰지 않는다(2026-11-14)
     private static final List<String> SOURCE_PHRASES = List.of("요약", "기사에 따르면", "기사에서", "본문");
+    // 부정형 문제는 AI가 정답과 오답을 뒤집기 쉬워 내지 않는다(2026-11-17 운영 점검에서 2문제 모두 정답 오류)
+    // "~이 아닌 것은?", "사실과 다른 것은?", "옳지 않은 답은?"처럼 사실이 아닌 선택지를 고르게 하는 표현을 막는다.
+    // "기준금리를 올리지 않은 이유는?"처럼 부정 사실을 묻는 질문은 선택 대상이 아니므로 허용한다
+    private static final Pattern NEGATIVE_QUESTION = Pattern.compile(
+        "(아닌|않은|틀린|없는|다른|잘못된|어긋난)\\s*(것|선택지|내용|답|설명|보기|항목|사례|주장)");
     // 정답이 이 글자 수 이상 제목에 그대로 있으면 제목만 보고 맞힐 수 있다고 본다
     private static final int MIN_TITLE_MATCH_LENGTH = 2;
     // 소수점·자릿수 쉼표는 숫자 사이에 있을 때만 숫자로 본다("28.5..."의 끝 마침표, "28명,"의 쉼표는 빼고 28.5, 28)
     private static final Pattern NUMBER = Pattern.compile("\\d+(?:[.,]\\d+)*");
+    // 근거 문장이 너무 짧으면 어느 문장에서 옮겼는지 알 수 없다
+    private static final int MIN_EVIDENCE_LENGTH = 8;
+    private static final int MIN_GROUNDING_WORD_LENGTH = 2;
 
-    public CheckedQuiz validate(QuizOutput output, String title) {
+    public CheckedQuiz validate(QuizOutput output, QuizSource source) {
         if (output == null) {
             throw invalid(List.of("응답이 비어 있습니다."));
         }
+        String title = source.title();
         List<String> problems = new ArrayList<>();
         if (!title.equals(output.title())) {
             problems.add("title을 입력받은 제목과 똑같이 쓰세요.");
+        }
+        String evidence = strip(output.evidence());
+        if (evidence == null) {
+            problems.add("evidence가 비어 있습니다.");
+        } else if (!isInputSentence(evidence, source)) {
+            problems.add("evidence에는 입력의 한 줄 요약이나 3문장 요약 중 한 문장을 그대로 옮기세요.");
         }
 
         String question = strip(output.question());
@@ -48,6 +67,9 @@ public class QuizValidator {
                 problems.add("question은 물음표(?)로 끝내세요.");
             }
             checkSourcePhrase(question, "question", problems);
+            if (NEGATIVE_QUESTION.matcher(question).find()) {
+                problems.add("'~이 아닌 것은?' 같은 부정형 문제는 내지 마세요. 사실인 정답 하나를 고르는 긍정형으로 물으세요.");
+            }
         }
 
         String answer = strip(output.answer());
@@ -90,6 +112,10 @@ public class QuizValidator {
         if (answer != null && wrongAnswers.size() == WRONG_ANSWER_COUNT) {
             checkAnswerNotInTitle(title, answer, wrongAnswers, problems);
         }
+        if (answer != null && evidence != null && isInputSentence(evidence, source)
+            && !isGrounded(answer, evidence)) {
+            problems.add("정답 '" + answer + "'이(가) evidence 문장에 없습니다. evidence 문장에 나온 사실을 정답으로 쓰세요.");
+        }
 
         if (!problems.isEmpty()) {
             throw invalid(problems);
@@ -122,6 +148,41 @@ public class QuizValidator {
         if (answerNumberInTitle && !wrongNumberInTitle) {
             problems.add("정답의 숫자가 제목에 있어 제목만 보고 맞힐 수 있습니다. 제목에 없는 내용을 물으세요.");
         }
+    }
+
+    // 근거 문장은 입력 문장을 그대로 옮기거나 그 일부를 옮긴 것이어야 한다.
+    // 공백·문장 부호는 무시하지만 소수점과 음수 부호는 남겨 비교한다("3.5%"를 "35%"로 바꾼 근거는 다른 문장이다)
+    // 숫자의 부호나 자릿수를 잘라 낸 일부 인용("-0.5%" → "0.5%")도 다른 문장으로 본다
+    private static boolean isInputSentence(String evidence, QuizSource source) {
+        if (AiTextMatcher.length(AiTextMatcher.normalize(evidence)) < MIN_EVIDENCE_LENGTH) {
+            return false;
+        }
+        return Stream.concat(Stream.ofNullable(source.oneLine()), source.summary().stream())
+            .filter(Objects::nonNull)
+            .anyMatch(sentence -> AiTextMatcher.containsQuote(sentence, evidence));
+    }
+
+    // 정답의 숫자는 값으로 모두 근거 문장에 있어야 한다("3.50%"와 "3.5%"는 같다). 숫자가 없는 낱말은 하나 이상 근거 문장에 있어야 하고,
+    // 조사가 붙어 낱말이 그대로 안 맞을 수 있어 끝 글자 하나를 뗀 형태도 본다("주고받기와" → "주고받기").
+    // 숫자가 든 낱말은 숫자 비교로 이미 확인했으므로 낱말 비교에서 뺀다
+    private static boolean isGrounded(String answer, String evidence) {
+        Set<String> answerNumbers = AiTextMatcher.numbersOf(answer);
+        if (!AiTextMatcher.numbersOf(evidence).containsAll(answerNumbers)) {
+            return false;
+        }
+        String normalizedEvidence = normalize(evidence);
+        List<String> words = Stream.of(answer.split("\\s+"))
+            .filter(word -> word.chars().noneMatch(Character::isDigit))
+            .map(QuizValidator::normalize)
+            .filter(word -> word.codePointCount(0, word.length()) >= MIN_GROUNDING_WORD_LENGTH)
+            .toList();
+        if (words.isEmpty()) {
+            return !answerNumbers.isEmpty() || normalizedEvidence.contains(normalize(answer));
+        }
+        return words.stream().anyMatch(word -> normalizedEvidence.contains(word)
+            || (word.codePointCount(0, word.length()) > MIN_GROUNDING_WORD_LENGTH
+            && normalizedEvidence.contains(word.substring(0, word.offsetByCodePoints(0,
+            word.codePointCount(0, word.length()) - 1)))));
     }
 
     // 공백과 문장 부호를 빼고 비교한다

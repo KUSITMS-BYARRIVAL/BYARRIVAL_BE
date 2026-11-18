@@ -46,6 +46,8 @@ class ArticleSummaryServiceTest {
 
     private static final LocalDate SERVICE_DATE = LocalDate.of(2026, 11, 9);
     private static final String BODY = "기사 본문입니다. ".repeat(50);
+    private static final List<String> EVIDENCE = List.of("기사 본문입니다. 기사 본문입니다.", "기사 본문입니다. 기사 본문입니다.",
+        "기사 본문입니다. 기사 본문입니다.");
 
     @Autowired
     private ArticleSummaryService articleSummaryService;
@@ -114,7 +116,7 @@ class ArticleSummaryServiceTest {
             .willReturn(result(output("첫째 기사", ArticleDifficulty.EASY)));
         given(generator.generate("둘째 기사", BODY, ArticleDifficulty.EASY))
             .willReturn(result(new ArticleSummaryOutput("둘째 기사", ArticleDifficulty.EASY, "한 줄 요약입니다.",
-                List.of("가".repeat(31) + "니다.", "둘째 문장입니다.", "셋째 문장입니다."), List.of("기준금리", "한국은행", "물가"))));
+                List.of("가".repeat(31) + "니다.", "둘째 문장입니다.", "셋째 문장입니다."), EVIDENCE, List.of("기준금리", "한국은행", "물가"))));
 
         SummaryResult result = articleSummaryService.summarize(List.of(
             new SummaryTarget(valid.getId(), ArticleDifficulty.EASY),
@@ -136,7 +138,7 @@ class ArticleSummaryServiceTest {
     void 검증에_실패하면_어긴_규칙을_알려주고_다시_요청해_통과하면_저장한다() {
         Article article = cleanedArticle("1", "첫째 기사");
         ArticleSummaryOutput tooLong = new ArticleSummaryOutput("첫째 기사", ArticleDifficulty.HARD, "한 줄 요약입니다.",
-            List.of("가".repeat(31) + "니다.", "둘째 문장입니다.", "셋째 문장입니다."), List.of("기준금리", "한국은행", "물가"));
+            List.of("가".repeat(31) + "니다.", "둘째 문장입니다.", "셋째 문장입니다."), EVIDENCE, List.of("기준금리", "한국은행", "물가"));
         given(generator.generate("첫째 기사", BODY, ArticleDifficulty.HARD)).willReturn(result(tooLong));
         given(generator.regenerate(eq("첫째 기사"), eq(BODY), eq(ArticleDifficulty.HARD), eq(tooLong),
             contains("summary 1번 문장이 34자입니다"))).willReturn(result(output("첫째 기사", ArticleDifficulty.HARD)));
@@ -154,7 +156,7 @@ class ArticleSummaryServiceTest {
     void 다시_요청해도_3회까지_통과하지_못하면_실패로_남긴다() {
         Article article = cleanedArticle("1", "첫째 기사");
         ArticleSummaryOutput tooLong = new ArticleSummaryOutput("첫째 기사", ArticleDifficulty.EASY, "한 줄 요약입니다.",
-            List.of("가".repeat(31) + "니다.", "둘째 문장입니다.", "셋째 문장입니다."), List.of("기준금리", "한국은행", "물가"));
+            List.of("가".repeat(31) + "니다.", "둘째 문장입니다.", "셋째 문장입니다."), EVIDENCE, List.of("기준금리", "한국은행", "물가"));
         given(generator.generate("첫째 기사", BODY, ArticleDifficulty.EASY)).willReturn(result(tooLong));
         given(generator.regenerate(anyString(), anyString(), any(), any(), anyString())).willReturn(result(tooLong));
 
@@ -222,6 +224,6 @@ class ArticleSummaryServiceTest {
 
     private static ArticleSummaryOutput output(String title, ArticleDifficulty difficulty) {
         return new ArticleSummaryOutput(title, difficulty, "한 줄 요약입니다.",
-            List.of("첫째 문장입니다.", "둘째 문장입니다.", "셋째 문장입니다."), List.of("기준금리", "한국은행", "물가"));
+            List.of("첫째 문장입니다.", "둘째 문장입니다.", "셋째 문장입니다."), EVIDENCE, List.of("기준금리", "한국은행", "물가"));
     }
 }

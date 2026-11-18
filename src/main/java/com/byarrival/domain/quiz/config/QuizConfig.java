@@ -8,7 +8,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
-@EnableConfigurationProperties(QuizProperties.class)
+@EnableConfigurationProperties({QuizProperties.class, QuizCheckProperties.class})
 public class QuizConfig {
 
     @Bean(destroyMethod = "shutdownNow")

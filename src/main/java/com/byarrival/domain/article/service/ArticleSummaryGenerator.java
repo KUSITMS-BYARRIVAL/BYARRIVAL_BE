@@ -51,6 +51,7 @@ public class ArticleSummaryGenerator {
         return "<previous_answer>\n"
             + "oneLine: " + previous.oneLine() + "\n"
             + "summary: " + previous.summary() + "\n"
+            + "evidence: " + previous.evidence() + "\n"
             + "keywords: " + previous.keywords() + "\n"
             + "</previous_answer>\n"
             + "<problems>\n" + problems + "\n</problems>\n"

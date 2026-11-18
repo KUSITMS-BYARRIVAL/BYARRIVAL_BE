@@ -2,10 +2,14 @@ package com.byarrival.domain.article.service;
 
 import com.byarrival.common.exception.BusinessException;
 import com.byarrival.domain.ai.exception.AiErrorCode;
+import com.byarrival.domain.ai.service.AiTextMatcher;
 import com.byarrival.domain.article.dto.ArticleSummaryOutput;
 import com.byarrival.domain.article.entity.ArticleDifficulty;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
 import org.springframework.stereotype.Component;
 
 /**
@@ -23,11 +27,14 @@ public class ArticleSummaryValidator {
     public static final int MAX_KEYWORD_LENGTH = 10;
     // 문체는 "~했습니다/~입니다"로 고정한다(2026-11-10 AI 파트 기준)
     private static final String POLITE_ENDING = "니다";
+    // 근거 구절이 너무 짧으면 본문 아무 데나 들어맞는다
+    private static final int MIN_EVIDENCE_LENGTH = 8;
 
     /**
      * @return 앞뒤 공백을 뗀 한 줄 요약, 3문장, 핵심 키워드
      */
-    public ValidatedSummary validate(ArticleSummaryOutput output, String title, ArticleDifficulty difficulty) {
+    public ValidatedSummary validate(ArticleSummaryOutput output, String title, String content,
+        ArticleDifficulty difficulty) {
         if (output == null) {
             throw invalid(List.of("응답이 비어 있습니다."));
         }
@@ -54,6 +61,8 @@ public class ArticleSummaryValidator {
 
         List<String> keywords = checkKeywords(output.keywords(), problems);
 
+        checkGrounding(oneLine, sentences, output.evidence(), title, content, problems);
+
         if (!problems.isEmpty()) {
             throw invalid(problems);
         }
@@ -78,6 +87,50 @@ public class ArticleSummaryValidator {
             problems.add(name + "이 제목을 그대로 반복합니다. 다른 말로 쓰세요.");
         }
         return stripped;
+    }
+
+    /**
+     * 요약이 원문에 근거하는지 추가 AI 호출 없이 확인한다(2026-11-17). 근거 구절은 원문에 그대로 있어야 하고,
+     * 요약 문장의 숫자는 그 문장의 근거 구절에, 한 줄 요약의 숫자는 원문이나 제목에 있어야 한다.
+     * 원문에 없는 숫자를 지어내는 것을 막는다. 표현을 바꿔 뜻을 틀리게 쓴 경우는 잡지 못한다.
+     */
+    private void checkGrounding(String oneLine, List<String> sentences, List<String> evidence, String title,
+        String content, List<String> problems) {
+        Set<String> sourceNumbers = new HashSet<>(AiTextMatcher.numbersOf(content));
+        sourceNumbers.addAll(AiTextMatcher.numbersOf(title));
+        if (oneLine != null) {
+            Set<String> missing = missingNumbers(oneLine, sourceNumbers);
+            if (!missing.isEmpty()) {
+                problems.add("oneLine의 숫자 " + missing + "가 기사 본문에 없습니다. 본문에 적힌 숫자를 그대로 쓰세요.");
+            }
+        }
+        if (evidence == null || evidence.size() != SENTENCE_COUNT) {
+            problems.add("evidence는 summary 문장마다 하나씩 정확히 " + SENTENCE_COUNT + "개여야 합니다.");
+            return;
+        }
+        for (int i = 0; i < evidence.size(); i++) {
+            String quote = evidence.get(i) == null ? "" : evidence.get(i).strip();
+            String normalizedQuote = AiTextMatcher.normalize(quote);
+            boolean tooShort = AiTextMatcher.length(normalizedQuote) < MIN_EVIDENCE_LENGTH;
+            if (tooShort || !AiTextMatcher.containsQuote(content, quote)) {
+                problems.add("evidence " + (i + 1) + "번이 기사 본문에 없습니다. 본문 구절을 고치지 말고 글자 그대로 옮기세요: \""
+                    + quote + "\"");
+                continue;
+            }
+            if (i < sentences.size() && sentences.get(i) != null) {
+                Set<String> missing = missingNumbers(sentences.get(i), AiTextMatcher.numbersOf(quote));
+                if (!missing.isEmpty()) {
+                    problems.add("summary " + (i + 1) + "번 문장의 숫자 " + missing + "가 evidence " + (i + 1)
+                        + "번 구절에 없습니다. 근거 구절에 적힌 숫자를 그대로 쓰세요.");
+                }
+            }
+        }
+    }
+
+    private static Set<String> missingNumbers(String text, Set<String> sourceNumbers) {
+        Set<String> missing = new TreeSet<>(AiTextMatcher.numbersOf(text));
+        missing.removeAll(sourceNumbers);
+        return missing;
     }
 
     // 마침표는 있어도 없어도 된다
