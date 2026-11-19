@@ -21,11 +21,20 @@ class SmalltalkValidatorTest {
     private final SmalltalkValidator validator = new SmalltalkValidator();
 
     @Test
-    void 해요체_30자_이내_한_줄은_통과한다() {
+    void 해요체_질문으로_끝나는_30자_이내_한_줄은_통과한다() {
         assertThat(validator.validate(new SmalltalkOutput(TITLE, true, " 요즘 앤트로픽 상장 얘기 들으셨어요? "), SOURCE))
             .isEqualTo("요즘 앤트로픽 상장 얘기 들으셨어요?");
-        assertThat(validator.validate(new SmalltalkOutput(TITLE, true, "\"역대 최대 상장\"이라고 해요."), SOURCE))
-            .isEqualTo("\"역대 최대 상장\"이라고 해요.");
+        assertThat(validator.validate(new SmalltalkOutput(TITLE, true, "\"역대 최대 상장\"이라던데 들으셨어요?\""), SOURCE))
+            .isEqualTo("\"역대 최대 상장\"이라던데 들으셨어요?\"");
+    }
+
+    @Test
+    void 질문으로_끝나지_않으면_실패한다() {
+        assertThatThrownBy(() -> validator.validate(new SmalltalkOutput(TITLE, true, "\"역대 최대 상장\"이라고 해요."), SOURCE))
+            .isInstanceOf(BusinessException.class)
+            .hasMessageContaining("해요체 질문");
+        assertThatThrownBy(() -> validator.validate(new SmalltalkOutput(TITLE, true, "상장 소식 들었어?"), SOURCE))
+            .hasMessageContaining("해요체 질문");
     }
 
     @Test
@@ -49,18 +58,18 @@ class SmalltalkValidatorTest {
             .isInstanceOf(BusinessException.class)
             .hasMessageContaining("title을 입력받은 제목과 똑같이")
             .hasMessageContaining("hook이 33자")
-            .hasMessageContaining("해요체");
+            .hasMessageContaining("해요체 질문");
     }
 
     @Test
     void 요약에_있는_숫자는_통과한다() {
-        assertThat(validator.validate(new SmalltalkOutput(TITLE, true, "앤트로픽 공모에 5배 수요가 몰렸대요."), SOURCE))
-            .isEqualTo("앤트로픽 공모에 5배 수요가 몰렸대요.");
+        assertThat(validator.validate(new SmalltalkOutput(TITLE, true, "공모에 5배 수요가 몰렸대요, 들으셨어요?"), SOURCE))
+            .isEqualTo("공모에 5배 수요가 몰렸대요, 들으셨어요?");
     }
 
     @Test
     void 요약에_없는_숫자를_쓰면_실패한다() {
-        assertThatThrownBy(() -> validator.validate(new SmalltalkOutput(TITLE, true, "앤트로픽 공모에 7배 수요가 몰렸대요."),
+        assertThatThrownBy(() -> validator.validate(new SmalltalkOutput(TITLE, true, "공모에 7배 수요가 몰렸대요, 들으셨어요?"),
             SOURCE))
             .isInstanceOf(BusinessException.class)
             .hasMessageContaining("hook의 숫자 [7]가 요약에 없습니다");
