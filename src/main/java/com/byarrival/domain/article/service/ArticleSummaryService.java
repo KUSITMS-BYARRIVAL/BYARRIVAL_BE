@@ -142,8 +142,9 @@ public class ArticleSummaryService {
         return null;
     }
 
+    // \r이 남으면 터미널에서 줄 앞부분을 덮어쓰므로 \r\n, \r, \n을 모두 구분자로 바꾼다
     private static String oneLine(String message) {
-        return message == null ? "" : message.replace("\n", " | ");
+        return message == null ? "" : message.replaceAll("\\R", " | ");
     }
 
     public record SummaryTarget(Long articleId, ArticleDifficulty difficulty) {
