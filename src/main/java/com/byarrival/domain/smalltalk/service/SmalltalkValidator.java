@@ -48,9 +48,10 @@ public class SmalltalkValidator {
             if (length > MAX_HOOK_LENGTH) {
                 problems.add("hook이 " + length + "자입니다. " + MAX_HOOK_LENGTH + "자 이내로 쓰세요.");
             }
-            String ending = hook.replaceAll("[\\s\"'”’.?!]+$", "");
-            if (!ending.endsWith("요")) {
-                problems.add("hook은 해요체(~요, ~요?)로 끝내세요.");
+            // 대화를 여는 말이라 상대에게 묻는 해요체 질문(~요?)으로 끝낸다(2026-11-19 QA)
+            String ending = hook.replaceAll("[\\s\"'”’]+$", "");
+            if (!ending.endsWith("요?")) {
+                problems.add("hook은 해요체 질문(~요?)으로 끝내세요.");
             }
             checkNumbers(hook, source, problems);
         }

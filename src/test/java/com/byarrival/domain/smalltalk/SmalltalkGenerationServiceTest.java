@@ -70,12 +70,12 @@ class SmalltalkGenerationServiceTest {
         Long fifth = newArticle(economy, "경제 5위");
         // 스포츠: 1건뿐이라 1건만 만든다
         Long only = newArticle(sports, "스포츠 1위");
-        given(generator.generate(source(failed))).willReturn(result("경제 1위", true, "가".repeat(31) + "요"));
+        given(generator.generate(source(failed))).willReturn(result("경제 1위", true, "가".repeat(31) + "요?"));
         given(generator.regenerate(source(failed), any(), anyString()))
             .willReturn(result("경제 1위", true, "해요체가 아닌 문장이다."));
         given(generator.generate(source(unsuitable))).willReturn(result("경제 2위", false, ""));
         given(generator.generate(source(third))).willReturn(result("경제 3위", true, "경제 3위 소식 들으셨어요?"));
-        given(generator.generate(source(fourth))).willReturn(result("경제 4위", true, "경제 4위가 화제라고 해요."));
+        given(generator.generate(source(fourth))).willReturn(result("경제 4위", true, "경제 4위가 화제라던데 아셨어요?"));
         given(generator.generate(source(only))).willReturn(result("스포츠 1위", true, "어제 경기 보셨어요?"));
 
         Map<Long, Integer> counts = smalltalkGenerationService.generate(serviceDate);
