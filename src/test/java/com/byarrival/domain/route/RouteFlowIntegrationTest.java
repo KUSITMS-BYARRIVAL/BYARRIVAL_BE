@@ -137,15 +137,39 @@ class RouteFlowIntegrationTest {
         assertThat(poolArticleIds).doesNotContain(hiddenId.intValue());
         assertThat(recommended.stream().filter(Boolean::booleanValue)).hasSize(5);
 
-        // 오늘 이미 만든 노선이 있으면 컨디션을 바꿔도 같은 노선을 돌려준다
-        perform(user, post("/api/v1/routes"), "{\"condition\":\"RAINY\"}")
+        assertThat(recommendationLogRepository.findByRouteId(routeId).orElseThrow().getSelectedHardCount())
+            .isEqualTo(3);
+
+        // 탑승 전(카드 선택 단계)에 컨디션을 다시 고르면 같은 노선을 새 컨디션 기준으로 다시 만든다. 담은 카드는 버린다
+        addCard(user, routeId, poolArticleIds.get(0)).andExpect(status().isOk());
+        perform(user, put("/api/v1/routes/{routeId}/cursor", routeId), "{\"cardOrder\":3}")
+            .andExpect(status().isOk());
+        String rebuilt = perform(user, post("/api/v1/routes"), "{\"condition\":\"RAINY\"}")
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.state").value("CREATED"))
             .andExpect(jsonPath("$.data.route.routeId").value(routeId))
-            .andExpect(jsonPath("$.data.route.condition").value("SUNNY"));
-        assertThat(conditionHistoryRepository.existsByRouteId(routeId)).isTrue();
+            .andExpect(jsonPath("$.data.route.condition").value("RAINY"))
+            .andExpect(jsonPath("$.data.route.cards.length()").value(10))
+            .andExpect(jsonPath("$.data.route.cart.count").value(0))
+            .andExpect(jsonPath("$.data.route.lastViewedCardOrder").doesNotExist())
+            .andReturn().getResponse().getContentAsString();
+        poolArticleIds = JsonPath.read(rebuilt, "$.data.route.cards[*].articleId");
+        List<String> recommendedDifficulties = JsonPath.read(rebuilt,
+            "$.data.route.cards[?(@.recommended == true)].difficulty");
+        assertThat(recommendedDifficulties).hasSize(5).containsOnlyOnce("HARD");
+        assertThat(conditionHistoryRepository.findByRouteId(routeId).orElseThrow().getCondition())
+            .isEqualTo(RouteCondition.RAINY);
         RecommendationLog log = recommendationLogRepository.findByRouteId(routeId).orElseThrow();
+        assertThat(log.getCondition()).isEqualTo(RouteCondition.RAINY);
         assertThat(log.getCandidateCount()).isEqualTo(10);
         assertThat(log.getSelectedArticleIds()).hasSize(5);
+        assertThat(log.getSelectedHardCount()).isEqualTo(1);
         assertThat(log.getPoolSize()).isEqualTo(10);
+
+        // 같은 컨디션을 다시 고르면 노선을 그대로 돌려준다
+        perform(user, post("/api/v1/routes"), "{\"condition\":\"RAINY\"}")
+            .andExpect(jsonPath("$.data.route.routeId").value(routeId))
+            .andExpect(jsonPath("$.data.route.cards[*].articleId").value(poolArticleIds));
 
         // 3장(6분)은 최소 시간 미달, 4장(8분)부터 시작할 수 있다. 같은 카드를 연타해도 한 번만 담긴다
         for (int i = 0; i < 3; i++) {
@@ -331,6 +355,12 @@ class RouteFlowIntegrationTest {
         // 연타해도 같은 결과
         perform(user, post("/api/v1/routes/{routeId}/departure", routeId), null)
             .andExpect(jsonPath("$.data.status").value("IN_PROGRESS"));
+        // 운행 중에는 컨디션을 다시 골라도 노선이 바뀌지 않는다
+        perform(user, post("/api/v1/routes"), "{\"condition\":\"RAINY\"}")
+            .andExpect(jsonPath("$.data.route.routeId").value(routeId))
+            .andExpect(jsonPath("$.data.route.condition").value("SUNNY"))
+            .andExpect(jsonPath("$.data.route.status").value("IN_PROGRESS"))
+            .andExpect(jsonPath("$.data.route.cart.count").value(3));
 
         perform(user, get("/api/v1/routes/{routeId}/stops/1", routeId), null)
             .andExpect(status().isOk())
