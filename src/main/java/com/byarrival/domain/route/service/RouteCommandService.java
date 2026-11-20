@@ -52,14 +52,19 @@ public class RouteCommandService {
 
     /**
      * 탑승 전(카드 선택 단계) 노선을 새 컨디션 기준 추천으로 다시 만든다. 담은 카드는 이전 풀과 함께 버린다.
-     * 잠금을 얻은 뒤 다시 확인해 이미 시작했거나 같은 컨디션이면 그대로 둔다.
+     * 잠금을 얻은 뒤 다시 확인해 그새 만료됐거나 이미 시작했거나 같은 컨디션이면 그대로 둔다.
      *
      * @return 다시 만들었으면 true
      */
     @Transactional
     public boolean rebuild(Long userId, Long routeId, RouteCondition condition, int targetMinutes,
         RouteRecommendation recommendation, LocalDateTime now) {
-        Route route = lockActive(userId, routeId, now);
+        Route route = routeRepository.findForUpdate(routeId, userId)
+            .orElseThrow(() -> new BusinessException(RouteErrorCode.ROUTE_NOT_FOUND));
+        // 잠금을 기다리는 동안 04:00이 지났으면 오류 대신 기존 노선을 그대로 돌려준다
+        if (route.isExpired(now) || route.isExpired(LocalDateTime.now(clock))) {
+            return false;
+        }
         if (route.getStatus() != RouteStatus.CREATED || route.getCondition() == condition) {
             return false;
         }
