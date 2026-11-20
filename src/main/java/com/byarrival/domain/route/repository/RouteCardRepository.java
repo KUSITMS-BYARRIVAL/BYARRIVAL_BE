@@ -5,12 +5,20 @@ import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface RouteCardRepository extends JpaRepository<RouteCard, Long> {
 
     List<RouteCard> findAllByRouteIdOrderByPoolOrder(Long routeId);
+
+    /**
+     * 노선의 후보 카드 풀을 지운다. 새 풀을 같은 트랜잭션에서 넣기 전에 바로 지워 유니크 제약과 엇갈리지 않게 한다.
+     */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("DELETE FROM RouteCard c WHERE c.routeId = :routeId")
+    void deleteAllByRouteId(@Param("routeId") Long routeId);
 
     /**
      * 그 서비스일에 노선에서 기사를 1건 이상 담은 사용자 수. 담았다가 뺀 카드는 세지 않는다.

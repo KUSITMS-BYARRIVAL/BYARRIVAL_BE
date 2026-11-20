@@ -112,6 +112,27 @@ public class RecommendationLog extends BaseEntity {
     }
 
     /**
+     * 탑승 전에 컨디션을 다시 골라 노선을 다시 만들면 새 추천 결과로 덮어쓰고, 이전 풀에서 담았던 기록은 지운다.
+     */
+    public void replaceRecommendation(RecommendationLog rebuilt) {
+        this.condition = rebuilt.condition;
+        this.targetMinutes = rebuilt.targetMinutes;
+        this.interestCategoryIds = rebuilt.interestCategoryIds;
+        this.candidateCount = rebuilt.candidateCount;
+        this.candidateHardCount = rebuilt.candidateHardCount;
+        this.candidateEasyCount = rebuilt.candidateEasyCount;
+        this.fallbackStep = rebuilt.fallbackStep;
+        this.selectedArticleIds = rebuilt.selectedArticleIds;
+        this.selectedHardCount = rebuilt.selectedHardCount;
+        this.selectedEasyCount = rebuilt.selectedEasyCount;
+        this.selectedMinutes = rebuilt.selectedMinutes;
+        this.poolSize = rebuilt.poolSize;
+        this.cartArticleIds = null;
+        this.cartMinutes = null;
+        this.boardedAt = null;
+    }
+
+    /**
      * 시작하기 시점에 담은 카드와 합계 시간을 남긴다. 보딩패스에서 돌아가 다시 시작하면 마지막 값으로 덮어쓴다.
      */
     public void recordBoarding(List<Long> cartArticleIds, BigDecimal cartMinutes, LocalDateTime boardedAt) {

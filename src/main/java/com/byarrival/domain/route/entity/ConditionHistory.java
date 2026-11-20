@@ -48,4 +48,11 @@ public class ConditionHistory extends BaseEntity {
         history.routeId = route.getId();
         return history;
     }
+
+    /**
+     * 탑승 전에 컨디션을 다시 골라 노선을 다시 만들면 마지막으로 고른 컨디션으로 바꾼다.
+     */
+    public void changeCondition(RouteCondition condition) {
+        this.condition = condition;
+    }
 }

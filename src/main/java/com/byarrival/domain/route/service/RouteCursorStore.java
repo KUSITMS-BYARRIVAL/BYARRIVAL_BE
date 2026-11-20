@@ -43,6 +43,14 @@ public class RouteCursorStore {
         }
     }
 
+    public void delete(Long routeId) {
+        try {
+            redisTemplate.delete(key(routeId));
+        } catch (RuntimeException e) {
+            log.warn("[RouteCursor] routeId={} 카드 위치 삭제 실패: {}", routeId, e.getClass().getSimpleName());
+        }
+    }
+
     private String key(Long routeId) {
         return KEY_PREFIX + routeId;
     }
