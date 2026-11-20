@@ -109,6 +109,15 @@ public class Route extends BaseEntity {
     }
 
     /**
+     * 탑승 전(카드 선택 단계)에 컨디션을 다시 골랐을 때 새 컨디션 기준 추천으로 노선을 다시 만든다. 후보 카드 풀은 따로 바꾼다.
+     */
+    public void rebuild(RouteCondition condition, int targetMinutes, int fallbackStep) {
+        this.condition = condition;
+        this.targetMinutes = targetMinutes;
+        this.fallbackStep = fallbackStep;
+    }
+
+    /**
      * 보딩패스에서 뒤로 가기: 담은 카드는 그대로 두고 카드 선택 단계로 돌아간다.
      */
     public void returnToCardSelection() {

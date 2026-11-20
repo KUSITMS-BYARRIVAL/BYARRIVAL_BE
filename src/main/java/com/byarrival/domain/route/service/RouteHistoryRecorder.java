@@ -19,6 +19,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * 컨디션 이력과 추천 로그를 노선 트랜잭션과 따로 저장한다. 저장에 실패해도 노선 생성·시작하기는 막지 않고 몇 번 다시 시도한다.
+ * 단, 탑승 전 노선 재생성은 이미 남긴 기록을 바꾸는 일이라 어긋나지 않도록 노선 트랜잭션에 함께 넣는다({@link #applyRebuilt}).
  */
 @Slf4j
 @Component
@@ -53,6 +54,21 @@ public class RouteHistoryRecorder {
                     route.getCondition(), route.getTargetMinutes(), interestCategoryIds, recommendation));
             }
         });
+    }
+
+    /**
+     * 탑승 전에 컨디션을 다시 골라 노선을 다시 만들 때 컨디션 이력과 추천 로그를 새 값으로 바꾼다. 없으면 새로 남긴다.
+     * 다른 기록과 달리 따로 재시도하지 않고 노선 재생성 트랜잭션에 함께 들어가, 실패하면 노선 재생성도 함께 취소된다.
+     */
+    public void applyRebuilt(Route route, RouteRecommendation recommendation, List<Long> interestCategoryIds) {
+        conditionHistoryRepository.findByRouteId(route.getId())
+            .ifPresentOrElse(history -> history.changeCondition(route.getCondition()),
+                () -> conditionHistoryRepository.save(ConditionHistory.of(route)));
+        RecommendationLog rebuilt = buildLog(route.getId(), route.getUserId(), route.getServiceDate(),
+            route.getCondition(), route.getTargetMinutes(), interestCategoryIds, recommendation);
+        recommendationLogRepository.findByRouteId(route.getId())
+            .ifPresentOrElse(entry -> entry.replaceRecommendation(rebuilt),
+                () -> recommendationLogRepository.save(rebuilt));
     }
 
     /**

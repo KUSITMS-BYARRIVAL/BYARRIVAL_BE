@@ -68,6 +68,7 @@ public class RouteService {
 
     /**
      * 컨디션을 받아 오늘의 노선(후보 카드 풀)을 만든다. 오늘 이미 만든 노선이 있으면 새로 만들지 않고 그 노선을 돌려준다.
+     * 단, 아직 탑승 전(카드 선택 단계)인 노선에 다른 컨디션이 오면 새 컨디션 기준으로 노선을 다시 만든다.
      * 추천 결과가 0건이면 노선을 만들지 않고 EMPTY를 돌려준다.
      */
     public TodayRouteResponse create(Long userId, RouteCondition condition) {
@@ -75,7 +76,11 @@ public class RouteService {
         LocalDate serviceDate = ServiceDay.of(now);
         Optional<Route> existing = routeRepository.findByUserIdAndServiceDate(userId, serviceDate);
         if (existing.isPresent()) {
-            return TodayRouteResponse.from(toResponse(existing.get(), now));
+            Route route = existing.get();
+            if (route.statusAt(now) == RouteStatus.CREATED && route.getCondition() != condition) {
+                return rebuild(userId, route, condition, now);
+            }
+            return TodayRouteResponse.from(toResponse(route, now));
         }
 
         UserTravelSetting setting = userTravelSettingService.getTravelSetting(userId);
@@ -83,10 +88,7 @@ public class RouteService {
         if (targetMinutes == null || targetMinutes <= 0) {
             throw new BusinessException(RouteErrorCode.ROUTE_TRAVEL_TIME_NOT_SET);
         }
-        List<RouteCandidate> candidates = articleQueryService
-            .findRecommendable(serviceDate, setting.interestCategoryIds()).stream()
-            .map(article -> new RouteCandidate(article.getId(), article.getDifficulty(), article.getReadingMinutes()))
-            .toList();
+        List<RouteCandidate> candidates = findCandidates(serviceDate, setting);
         RouteRecommendation recommendation = routeRecommender.recommend(candidates, targetMinutes, condition);
 
         if (recommendation.isEmpty()) {
@@ -105,6 +107,28 @@ public class RouteService {
         }
         routeHistoryRecorder.recordCreated(route, recommendation, setting.interestCategoryIds());
         return TodayRouteResponse.from(toResponse(route, now));
+    }
+
+    // 추천 결과가 0건이면 지금 노선을 그대로 둔다
+    private TodayRouteResponse rebuild(Long userId, Route route, RouteCondition condition, LocalDateTime now) {
+        UserTravelSetting setting = userTravelSettingService.getTravelSetting(userId);
+        Integer targetMinutes = setting.targetMinutes(route.getServiceDate().getDayOfWeek());
+        if (targetMinutes == null || targetMinutes <= 0) {
+            throw new BusinessException(RouteErrorCode.ROUTE_TRAVEL_TIME_NOT_SET);
+        }
+        RouteRecommendation recommendation = routeRecommender.recommend(
+            findCandidates(route.getServiceDate(), setting), targetMinutes, condition);
+        if (!recommendation.isEmpty() && routeCommandService.rebuild(userId, route.getId(), condition, targetMinutes,
+            setting.interestCategoryIds(), recommendation, now)) {
+            routeCursorStore.delete(route.getId());
+        }
+        return TodayRouteResponse.from(toResponse(getRoute(userId, route.getId()), now));
+    }
+
+    private List<RouteCandidate> findCandidates(LocalDate serviceDate, UserTravelSetting setting) {
+        return articleQueryService.findRecommendable(serviceDate, setting.interestCategoryIds()).stream()
+            .map(article -> new RouteCandidate(article.getId(), article.getDifficulty(), article.getReadingMinutes()))
+            .toList();
     }
 
     public RouteResponse addCard(Long userId, Long routeId, Long articleId) {
