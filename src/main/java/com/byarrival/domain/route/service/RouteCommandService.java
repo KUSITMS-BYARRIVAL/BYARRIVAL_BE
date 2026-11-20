@@ -46,13 +46,37 @@ public class RouteCommandService {
             .fallbackStep(recommendation.fallbackStep())
             .expiresAt(ServiceDay.endOf(serviceDate))
             .build());
+        saveCards(route.getId(), recommendation);
+        return route;
+    }
 
+    /**
+     * 탑승 전(카드 선택 단계) 노선을 새 컨디션 기준 추천으로 다시 만든다. 담은 카드는 이전 풀과 함께 버린다.
+     * 잠금을 얻은 뒤 다시 확인해 이미 시작했거나 같은 컨디션이면 그대로 둔다.
+     *
+     * @return 다시 만들었으면 true
+     */
+    @Transactional
+    public boolean rebuild(Long userId, Long routeId, RouteCondition condition, int targetMinutes,
+        RouteRecommendation recommendation, LocalDateTime now) {
+        Route route = lockActive(userId, routeId, now);
+        if (route.getStatus() != RouteStatus.CREATED || route.getCondition() == condition) {
+            return false;
+        }
+        routeCardRepository.deleteAllByRouteId(route.getId());
+        route = routeRepository.findById(route.getId()).orElseThrow();
+        route.rebuild(condition, targetMinutes, recommendation.fallbackStep());
+        saveCards(route.getId(), recommendation);
+        return true;
+    }
+
+    private void saveCards(Long routeId, RouteRecommendation recommendation) {
         List<RouteCard> cards = new ArrayList<>();
         List<RouteCandidate> pool = recommendation.pool();
         for (int i = 0; i < pool.size(); i++) {
             RouteCandidate candidate = pool.get(i);
             cards.add(RouteCard.builder()
-                .routeId(route.getId())
+                .routeId(routeId)
                 .articleId(candidate.articleId())
                 .poolOrder(i + 1)
                 .difficulty(candidate.difficulty())
@@ -61,7 +85,6 @@ public class RouteCommandService {
                 .build());
         }
         routeCardRepository.saveAll(cards);
-        return route;
     }
 
     /**

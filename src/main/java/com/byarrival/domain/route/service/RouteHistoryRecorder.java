@@ -56,6 +56,23 @@ public class RouteHistoryRecorder {
     }
 
     /**
+     * 탑승 전에 컨디션을 다시 골라 노선을 다시 만든 뒤 컨디션 이력과 추천 로그를 새 값으로 바꾼다. 없으면 새로 남긴다.
+     */
+    public void recordRebuilt(Route route, RouteRecommendation recommendation, List<Long> interestCategoryIds) {
+        retry("condition_history rebuild routeId=" + route.getId(), () -> conditionHistoryRepository
+            .findByRouteId(route.getId())
+            .ifPresentOrElse(history -> history.changeCondition(route.getCondition()),
+                () -> conditionHistoryRepository.save(ConditionHistory.of(route))));
+        retry("recommendation_log rebuild routeId=" + route.getId(), () -> {
+            RecommendationLog rebuilt = buildLog(route.getId(), route.getUserId(), route.getServiceDate(),
+                route.getCondition(), route.getTargetMinutes(), interestCategoryIds, recommendation);
+            recommendationLogRepository.findByRouteId(route.getId())
+                .ifPresentOrElse(entry -> entry.replaceRecommendation(rebuilt),
+                    () -> recommendationLogRepository.save(rebuilt));
+        });
+    }
+
+    /**
      * 추천 결과가 0건이라 노선을 만들지 않은 경우도 추천 로그를 남긴다.
      */
     public void recordEmpty(Long userId, LocalDate serviceDate, RouteCondition condition, int targetMinutes,
