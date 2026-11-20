@@ -5,10 +5,8 @@ import com.byarrival.domain.route.entity.ConditionHistory;
 import com.byarrival.domain.route.entity.RecommendationLog;
 import com.byarrival.domain.route.entity.Route;
 import com.byarrival.domain.route.entity.RouteCondition;
-import com.byarrival.domain.route.entity.RouteStatus;
 import com.byarrival.domain.route.repository.ConditionHistoryRepository;
 import com.byarrival.domain.route.repository.RecommendationLogRepository;
-import com.byarrival.domain.route.repository.RouteRepository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -21,6 +19,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * 컨디션 이력과 추천 로그를 노선 트랜잭션과 따로 저장한다. 저장에 실패해도 노선 생성·시작하기는 막지 않고 몇 번 다시 시도한다.
+ * 단, 탑승 전 노선 재생성은 이미 남긴 기록을 바꾸는 일이라 어긋나지 않도록 노선 트랜잭션에 함께 넣는다({@link #applyRebuilt}).
  */
 @Slf4j
 @Component
@@ -30,15 +29,12 @@ public class RouteHistoryRecorder {
 
     private final ConditionHistoryRepository conditionHistoryRepository;
     private final RecommendationLogRepository recommendationLogRepository;
-    private final RouteRepository routeRepository;
     private final TransactionTemplate transactionTemplate;
 
     public RouteHistoryRecorder(ConditionHistoryRepository conditionHistoryRepository,
-        RecommendationLogRepository recommendationLogRepository, RouteRepository routeRepository,
-        PlatformTransactionManager transactionManager) {
+        RecommendationLogRepository recommendationLogRepository, PlatformTransactionManager transactionManager) {
         this.conditionHistoryRepository = conditionHistoryRepository;
         this.recommendationLogRepository = recommendationLogRepository;
-        this.routeRepository = routeRepository;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.transactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
@@ -61,36 +57,18 @@ public class RouteHistoryRecorder {
     }
 
     /**
-     * 탑승 전에 컨디션을 다시 골라 노선을 다시 만든 뒤 컨디션 이력과 추천 로그를 새 값으로 바꾼다. 없으면 새로 남긴다.
-     * 노선을 잠그고 다시 읽어, 그 사이 다른 요청이 다른 컨디션으로 다시 만들었으면 늦게 온 이 기록은 남기지 않는다.
-     * 추천 로그는 그 사이 시작하기로 남긴 담은 카드 기록을 지우지 않도록 카드 선택 단계일 때만 바꾼다.
+     * 탑승 전에 컨디션을 다시 골라 노선을 다시 만들 때 컨디션 이력과 추천 로그를 새 값으로 바꾼다. 없으면 새로 남긴다.
+     * 다른 기록과 달리 따로 재시도하지 않고 노선 재생성 트랜잭션에 함께 들어가, 실패하면 노선 재생성도 함께 취소된다.
      */
-    public void recordRebuilt(Route route, RouteRecommendation recommendation, List<Long> interestCategoryIds) {
-        retry("condition_history rebuild routeId=" + route.getId(), () -> {
-            if (!isLatestRebuild(route, false)) {
-                return;
-            }
-            conditionHistoryRepository.findByRouteId(route.getId())
-                .ifPresentOrElse(history -> history.changeCondition(route.getCondition()),
-                    () -> conditionHistoryRepository.save(ConditionHistory.of(route)));
-        });
-        retry("recommendation_log rebuild routeId=" + route.getId(), () -> {
-            if (!isLatestRebuild(route, true)) {
-                return;
-            }
-            RecommendationLog rebuilt = buildLog(route.getId(), route.getUserId(), route.getServiceDate(),
-                route.getCondition(), route.getTargetMinutes(), interestCategoryIds, recommendation);
-            recommendationLogRepository.findByRouteId(route.getId())
-                .ifPresentOrElse(entry -> entry.replaceRecommendation(rebuilt),
-                    () -> recommendationLogRepository.save(rebuilt));
-        });
-    }
-
-    private boolean isLatestRebuild(Route rebuilt, boolean requireCardSelection) {
-        return routeRepository.findForUpdate(rebuilt.getId(), rebuilt.getUserId())
-            .filter(current -> current.getCondition() == rebuilt.getCondition())
-            .filter(current -> !requireCardSelection || current.getStatus() == RouteStatus.CREATED)
-            .isPresent();
+    public void applyRebuilt(Route route, RouteRecommendation recommendation, List<Long> interestCategoryIds) {
+        conditionHistoryRepository.findByRouteId(route.getId())
+            .ifPresentOrElse(history -> history.changeCondition(route.getCondition()),
+                () -> conditionHistoryRepository.save(ConditionHistory.of(route)));
+        RecommendationLog rebuilt = buildLog(route.getId(), route.getUserId(), route.getServiceDate(),
+            route.getCondition(), route.getTargetMinutes(), interestCategoryIds, recommendation);
+        recommendationLogRepository.findByRouteId(route.getId())
+            .ifPresentOrElse(entry -> entry.replaceRecommendation(rebuilt),
+                () -> recommendationLogRepository.save(rebuilt));
     }
 
     /**

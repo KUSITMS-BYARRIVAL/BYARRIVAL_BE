@@ -29,6 +29,7 @@ public class RouteCommandService {
     private final RouteRepository routeRepository;
     private final RouteCardRepository routeCardRepository;
     private final RouteCartPolicy routeCartPolicy;
+    private final RouteHistoryRecorder routeHistoryRecorder;
     private final RideProgressReader rideProgressReader;
     private final Clock clock;
 
@@ -52,13 +53,14 @@ public class RouteCommandService {
 
     /**
      * 탑승 전(카드 선택 단계) 노선을 새 컨디션 기준 추천으로 다시 만든다. 담은 카드는 이전 풀과 함께 버린다.
+     * 컨디션 이력과 추천 로그도 같은 트랜잭션에서 바꿔, 하나라도 실패하면 노선은 이전 그대로 남는다.
      * 잠금을 얻은 뒤 다시 확인해 그새 만료됐거나 이미 시작했거나 같은 컨디션이면 그대로 둔다.
      *
      * @return 다시 만들었으면 true
      */
     @Transactional
     public boolean rebuild(Long userId, Long routeId, RouteCondition condition, int targetMinutes,
-        RouteRecommendation recommendation, LocalDateTime now) {
+        List<Long> interestCategoryIds, RouteRecommendation recommendation, LocalDateTime now) {
         Route route = routeRepository.findForUpdate(routeId, userId)
             .orElseThrow(() -> new BusinessException(RouteErrorCode.ROUTE_NOT_FOUND));
         // 잠금을 기다리는 동안 04:00이 지났으면 오류 대신 기존 노선을 그대로 돌려준다
@@ -72,6 +74,7 @@ public class RouteCommandService {
         route = routeRepository.findById(route.getId()).orElseThrow();
         route.rebuild(condition, targetMinutes, recommendation.fallbackStep());
         saveCards(route.getId(), recommendation);
+        routeHistoryRecorder.applyRebuilt(route, recommendation, interestCategoryIds);
         return true;
     }
 

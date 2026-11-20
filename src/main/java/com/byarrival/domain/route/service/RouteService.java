@@ -119,11 +119,8 @@ public class RouteService {
         RouteRecommendation recommendation = routeRecommender.recommend(
             findCandidates(route.getServiceDate(), setting), targetMinutes, condition);
         if (!recommendation.isEmpty() && routeCommandService.rebuild(userId, route.getId(), condition, targetMinutes,
-            recommendation, now)) {
+            setting.interestCategoryIds(), recommendation, now)) {
             routeCursorStore.delete(route.getId());
-            Route rebuilt = getRoute(userId, route.getId());
-            routeHistoryRecorder.recordRebuilt(rebuilt, recommendation, setting.interestCategoryIds());
-            return TodayRouteResponse.from(toResponse(rebuilt, now));
         }
         return TodayRouteResponse.from(toResponse(getRoute(userId, route.getId()), now));
     }
