@@ -103,15 +103,19 @@ public class ArticleSummaryService {
         int attempts = properties.maxRetries() + 1;
         for (int attempt = 1; attempt <= attempts; attempt++) {
             ArticleSummaryOutput output;
+            TokenUsage usage;
             try {
                 ClaudeResult<ArticleSummaryOutput> result = previous == null
                     ? generator.generate(input.title(), input.content(), difficulty)
                     : generator.regenerate(input.title(), input.content(), difficulty, previous, problems);
-                tally.add(result.usage(), attempt > 1);
+                usage = result.usage();
+                tally.add(usage, attempt > 1);
                 output = result.output();
             } catch (BusinessException e) {
                 // 응답을 받지 못했거나 잘린 호출. 토큰 수를 알 수 없어 호출 수만 센다
                 tally.addFailedCall(attempt > 1);
+                log.info("[AI 요약 시도 실패] articleId={} attempt={}/{} 호출 실패 code={} reason={}",
+                    input.articleId(), attempt, attempts, e.getErrorCode(), oneLine(e.getMessage()));
                 lastError = e;
                 previous = null;
                 problems = null;
@@ -124,6 +128,10 @@ public class ArticleSummaryService {
                 }
                 return summary;
             } catch (BusinessException e) {
+                // 재요청 비용을 줄이려면 어떤 규칙이 얼마나 자주 어겨지는지 알아야 한다. 사유는 " | "로 이어 한 줄로 남긴다
+                log.info("[AI 요약 시도 실패] articleId={} attempt={}/{} 검증 실패 inputTokens={} outputTokens={} problems={}",
+                    input.articleId(), attempt, attempts, usage.inputTokens(), usage.outputTokens(),
+                    oneLine(e.getMessage()));
                 lastError = e;
                 previous = output;
                 problems = e.getMessage();
@@ -132,6 +140,11 @@ public class ArticleSummaryService {
         log.warn("[AI 요약 실패] articleId={} attempts={} code={} reason={}", input.articleId(), attempts,
             lastError.getErrorCode(), lastError.getMessage().replace('\n', ' '));
         return null;
+    }
+
+    // \r이 남으면 터미널에서 줄 앞부분을 덮어쓰므로 \r\n, \r, \n을 모두 구분자로 바꾼다
+    private static String oneLine(String message) {
+        return message == null ? "" : message.replaceAll("\\R", " | ");
     }
 
     public record SummaryTarget(Long articleId, ArticleDifficulty difficulty) {
