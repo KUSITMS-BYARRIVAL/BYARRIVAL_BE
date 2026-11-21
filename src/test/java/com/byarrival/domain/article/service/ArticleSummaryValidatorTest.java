@@ -135,6 +135,15 @@ class ArticleSummaryValidatorTest {
     }
 
     @Test
+    void 제목의_대시나_전각_문장_부호만_다르면_같은_제목으로_본다() {
+        ValidatedSummary summary = validator.validate(
+            output("한은 기준금리 연 3.0%로 동결", ArticleDifficulty.EASY, "첫째 문장입니다.", "둘째 문장입니다.", "셋째 문장입니다."),
+            "한은—기준금리 연 3.0％로 동결", CONTENT, ArticleDifficulty.EASY);
+
+        assertThat(summary.sentences()).hasSize(3);
+    }
+
+    @Test
     void 제목이_다르면_AI가_쓴_제목을_함께_알려준다() {
         assertThatThrownBy(() -> validator.validate(
             output("한은 기준금리 동결", ArticleDifficulty.EASY, "첫째 문장입니다.", "둘째 문장입니다.", "셋째 문장입니다."),

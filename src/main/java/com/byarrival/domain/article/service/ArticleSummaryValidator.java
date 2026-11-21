@@ -4,11 +4,13 @@ import com.byarrival.domain.ai.service.AiTextMatcher;
 import com.byarrival.domain.article.dto.ArticleSummaryOutput;
 import com.byarrival.domain.article.entity.ArticleDifficulty;
 import com.byarrival.domain.article.exception.ArticleSummaryInvalidException;
+import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.regex.Pattern;
 import org.springframework.stereotype.Component;
 
 /**
@@ -29,6 +31,7 @@ public class ArticleSummaryValidator {
     private static final String POLITE_ENDING = "니다";
     // 근거 구절이 너무 짧으면 본문 아무 데나 들어맞는다
     private static final int MIN_EVIDENCE_LENGTH = 8;
+    private static final Pattern TITLE_IGNORABLE = Pattern.compile("[\\p{IsPunctuation}\\p{IsWhite_Space}]");
 
     /**
      * @return 앞뒤 공백을 뗀 한 줄 요약, 3문장, 핵심 키워드
@@ -70,9 +73,15 @@ public class ArticleSummaryValidator {
         return new ValidatedSummary(oneLine, List.copyOf(sentences), keywords);
     }
 
-    // 제목은 확인용으로만 받는다. AI가 공백이나 따옴표·말줄임표 같은 문장 부호를 바꿔 옮겨도 같은 제목으로 본다
+    // 제목은 확인용으로만 받는다. AI가 공백이나 따옴표·말줄임표·대시 같은 문장 부호를 바꿔 옮겨도 같은 제목으로 본다.
+    // 근거 검증용 정규화(AiTextMatcher)는 숫자 부호·소수점을 지키느라 일부 문장 부호만 지우므로 제목은 따로 정규화한다
     private static boolean sameTitle(String title, String written) {
-        return written != null && AiTextMatcher.normalize(title).equals(AiTextMatcher.normalize(written));
+        return written != null && normalizeTitle(title).equals(normalizeTitle(written));
+    }
+
+    // 전각 문자를 반각으로 맞추고, 유니코드 문장 부호와 공백을 모두 지운다
+    private static String normalizeTitle(String text) {
+        return TITLE_IGNORABLE.matcher(Normalizer.normalize(text, Normalizer.Form.NFKC)).replaceAll("");
     }
 
     private String checkSentence(String text, int maxLength, String name, String title, Problems problems) {
