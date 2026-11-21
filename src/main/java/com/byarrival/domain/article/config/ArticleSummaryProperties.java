@@ -8,7 +8,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *
  * @param model       요약에 쓰는 Claude 모델 ID
  * @param maxTokens   응답 토큰 상한(생각 토큰 포함). 넘으면 JSON이 잘려 실패한다
- * @param effort      생각 깊이. low, medium, high, xhigh, max
+ * @param effort      첫 시도의 생각 깊이. low, medium, high, xhigh, max
+ * @param regenerateEffort 근거·숫자처럼 본문을 다시 봐야 하는 규칙을 어겨 본문과 함께 다시 쓰게 할 때의 생각 깊이
+ * @param repairEffort 형식만 어긴 답을 본문 없이 고칠 때의 생각 깊이. 글자 수·어미만 고치면 되므로 깊게 생각하지 않아도 된다
  * @param concurrency 동시에 요약하는 기사 수
  * @param maxRetries  검증에 실패했을 때 어긴 규칙을 알려 주고 다시 요청하는 횟수. 최초 호출 이후 최대 3회(AI-05)
  */
@@ -17,6 +19,8 @@ public record ArticleSummaryProperties(
     String model,
     long maxTokens,
     String effort,
+    String regenerateEffort,
+    String repairEffort,
     int concurrency,
     int maxRetries
 ) {
@@ -31,6 +35,12 @@ public record ArticleSummaryProperties(
         if (effort == null || effort.isBlank()) {
             throw new IllegalArgumentException("ai.summary.effort는 비어 있을 수 없습니다.");
         }
+        if (regenerateEffort == null || regenerateEffort.isBlank()) {
+            throw new IllegalArgumentException("ai.summary.regenerate-effort는 비어 있을 수 없습니다.");
+        }
+        if (repairEffort == null || repairEffort.isBlank()) {
+            throw new IllegalArgumentException("ai.summary.repair-effort는 비어 있을 수 없습니다.");
+        }
         if (concurrency <= 0) {
             throw new IllegalArgumentException("ai.summary.concurrency는 0보다 커야 합니다.");
         }
@@ -41,5 +51,13 @@ public record ArticleSummaryProperties(
 
     public OutputConfig.Effort outputEffort() {
         return OutputConfig.Effort.of(effort.toLowerCase());
+    }
+
+    public OutputConfig.Effort outputRegenerateEffort() {
+        return OutputConfig.Effort.of(regenerateEffort.toLowerCase());
+    }
+
+    public OutputConfig.Effort outputRepairEffort() {
+        return OutputConfig.Effort.of(repairEffort.toLowerCase());
     }
 }

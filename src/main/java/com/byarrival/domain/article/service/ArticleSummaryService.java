@@ -1,11 +1,13 @@
 package com.byarrival.domain.article.service;
 
 import com.byarrival.common.exception.BusinessException;
+import com.byarrival.domain.ai.exception.AiRateLimitedException;
 import com.byarrival.domain.ai.service.ClaudeClient.ClaudeResult;
 import com.byarrival.domain.ai.service.ClaudeClient.TokenUsage;
 import com.byarrival.domain.article.config.ArticleSummaryProperties;
 import com.byarrival.domain.article.dto.ArticleSummaryOutput;
 import com.byarrival.domain.article.entity.ArticleDifficulty;
+import com.byarrival.domain.article.exception.ArticleSummaryInvalidException;
 import com.byarrival.domain.article.service.ArticleSummaryStore.SummaryInput;
 import com.byarrival.domain.article.service.ArticleSummaryValidator.ValidatedSummary;
 import java.util.ArrayList;
@@ -26,6 +28,9 @@ import org.springframework.stereotype.Service;
 @Slf4j
 @Service
 public class ArticleSummaryService {
+
+    // SDK 재시도 후에도 429인 호출을 시도 횟수에 넣지 않고 다시 요청하는 최대 횟수. 한도 초과가 계속돼 배치가 끝나지 않는 것을 막는다
+    static final int MAX_RATE_LIMITED_RETRIES = 3;
 
     private final ArticleSummaryGenerator generator;
     private final ArticleSummaryValidator validator;
@@ -92,49 +97,76 @@ public class ArticleSummaryService {
 
     /**
      * 최초 호출 후 검증에 실패하면 어긴 규칙을 알려 주고 최대 maxRetries회 다시 요청한다(AI-05).
+     * 형식만 어겼으면 본문 없이 이전 답만 고치게 하고(수선), 근거·숫자처럼 본문이 필요한 규칙을 어겼으면 본문과 함께 다시 쓰게 한다.
      * 호출 자체가 실패하면 피드백 없이 처음부터 다시 요청한다. 429·5xx는 SDK가 먼저 재시도한다.
+     * SDK 재시도 후에도 429면 토큰을 쓰지 않았으므로 시도 횟수에 넣지 않고, 따로 정한 횟수까지 다시 요청한다.
      *
      * @return 검증을 통과한 요약. 끝내 실패하면 null
      */
     private ValidatedSummary generateValid(SummaryInput input, ArticleDifficulty difficulty, UsageTally tally) {
         ArticleSummaryOutput previous = null;
         String problems = null;
+        boolean repair = false;
         BusinessException lastError = null;
         int attempts = properties.maxRetries() + 1;
+        int rateLimited = 0;
+        // 시도 번호(attempt)는 429를 세지 않으므로, 재요청 집계는 실제 호출 순번으로 한다
+        int calls = 0;
         for (int attempt = 1; attempt <= attempts; attempt++) {
+            String mode = previous == null ? "full" : repair ? "repair" : "regenerate";
+            boolean retry = calls++ > 0;
             ArticleSummaryOutput output;
             TokenUsage usage;
             try {
-                ClaudeResult<ArticleSummaryOutput> result = previous == null
-                    ? generator.generate(input.title(), input.content(), difficulty)
-                    : generator.regenerate(input.title(), input.content(), difficulty, previous, problems);
+                ClaudeResult<ArticleSummaryOutput> result = switch (mode) {
+                    case "full" -> generator.generate(input.title(), input.content(), difficulty);
+                    case "repair" -> generator.repair(input.title(), difficulty, previous, problems);
+                    default -> generator.regenerate(input.title(), input.content(), difficulty, previous, problems);
+                };
                 usage = result.usage();
-                tally.add(usage, attempt > 1);
+                tally.add(usage, retry);
                 output = result.output();
+            } catch (AiRateLimitedException e) {
+                tally.addFailedCall(retry);
+                lastError = e;
+                if (rateLimited < MAX_RATE_LIMITED_RETRIES) {
+                    rateLimited++;
+                    log.info("[AI 요약 요청 한도 초과] articleId={} attempt={}/{} mode={} 시도 횟수에 넣지 않고 다시 요청 {}/{}",
+                        input.articleId(), attempt, attempts, mode, rateLimited, MAX_RATE_LIMITED_RETRIES);
+                    attempt--;
+                    continue;
+                }
+                log.info("[AI 요약 시도 실패] articleId={} attempt={}/{} mode={} 호출 실패 code={} reason={}",
+                    input.articleId(), attempt, attempts, mode, e.getErrorCode(), oneLine(e.getMessage()));
+                continue;
             } catch (BusinessException e) {
                 // 응답을 받지 못했거나 잘린 호출. 토큰 수를 알 수 없어 호출 수만 센다
-                tally.addFailedCall(attempt > 1);
-                log.info("[AI 요약 시도 실패] articleId={} attempt={}/{} 호출 실패 code={} reason={}",
-                    input.articleId(), attempt, attempts, e.getErrorCode(), oneLine(e.getMessage()));
+                tally.addFailedCall(retry);
+                log.info("[AI 요약 시도 실패] articleId={} attempt={}/{} mode={} 호출 실패 code={} reason={}",
+                    input.articleId(), attempt, attempts, mode, e.getErrorCode(), oneLine(e.getMessage()));
                 lastError = e;
-                previous = null;
-                problems = null;
+                // 수선 호출이 잘렸으면 이전 답은 그대로 두고 다시 수선한다. 처음부터 다시 쓰는 것보다 싸다
+                if (!"repair".equals(mode)) {
+                    previous = null;
+                    problems = null;
+                }
                 continue;
             }
             try {
                 ValidatedSummary summary = validator.validate(output, input.title(), input.content(), difficulty);
                 if (attempt > 1) {
-                    log.info("[AI 요약] articleId={} {}번째 시도에 검증 통과", input.articleId(), attempt);
+                    log.info("[AI 요약] articleId={} {}번째 시도에 검증 통과 mode={}", input.articleId(), attempt, mode);
                 }
                 return summary;
-            } catch (BusinessException e) {
+            } catch (ArticleSummaryInvalidException e) {
                 // 재요청 비용을 줄이려면 어떤 규칙이 얼마나 자주 어겨지는지 알아야 한다. 사유는 " | "로 이어 한 줄로 남긴다
-                log.info("[AI 요약 시도 실패] articleId={} attempt={}/{} 검증 실패 inputTokens={} outputTokens={} problems={}",
-                    input.articleId(), attempt, attempts, usage.inputTokens(), usage.outputTokens(),
+                log.info("[AI 요약 시도 실패] articleId={} attempt={}/{} mode={} 검증 실패 inputTokens={} outputTokens={} problems={}",
+                    input.articleId(), attempt, attempts, mode, usage.inputTokens(), usage.outputTokens(),
                     oneLine(e.getMessage()));
                 lastError = e;
                 previous = output;
                 problems = e.getMessage();
+                repair = !e.isNeedsArticle();
             }
         }
         log.warn("[AI 요약 실패] articleId={} attempts={} code={} reason={}", input.articleId(), attempts,
