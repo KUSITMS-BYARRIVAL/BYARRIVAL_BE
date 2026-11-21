@@ -110,8 +110,11 @@ public class ArticleSummaryService {
         BusinessException lastError = null;
         int attempts = properties.maxRetries() + 1;
         int rateLimited = 0;
+        // 시도 번호(attempt)는 429를 세지 않으므로, 재요청 집계는 실제 호출 순번으로 한다
+        int calls = 0;
         for (int attempt = 1; attempt <= attempts; attempt++) {
             String mode = previous == null ? "full" : repair ? "repair" : "regenerate";
+            boolean retry = calls++ > 0;
             ArticleSummaryOutput output;
             TokenUsage usage;
             try {
@@ -121,10 +124,10 @@ public class ArticleSummaryService {
                     default -> generator.regenerate(input.title(), input.content(), difficulty, previous, problems);
                 };
                 usage = result.usage();
-                tally.add(usage, attempt > 1);
+                tally.add(usage, retry);
                 output = result.output();
             } catch (AiRateLimitedException e) {
-                tally.addFailedCall(attempt > 1);
+                tally.addFailedCall(retry);
                 lastError = e;
                 if (rateLimited < MAX_RATE_LIMITED_RETRIES) {
                     rateLimited++;
@@ -138,7 +141,7 @@ public class ArticleSummaryService {
                 continue;
             } catch (BusinessException e) {
                 // 응답을 받지 못했거나 잘린 호출. 토큰 수를 알 수 없어 호출 수만 센다
-                tally.addFailedCall(attempt > 1);
+                tally.addFailedCall(retry);
                 log.info("[AI 요약 시도 실패] articleId={} attempt={}/{} mode={} 호출 실패 code={} reason={}",
                     input.articleId(), attempt, attempts, mode, e.getErrorCode(), oneLine(e.getMessage()));
                 lastError = e;

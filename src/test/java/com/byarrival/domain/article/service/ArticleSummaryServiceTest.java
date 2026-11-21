@@ -208,6 +208,20 @@ class ArticleSummaryServiceTest {
     }
 
     @Test
+    void 요청_한도_초과_뒤_다시_보낸_호출도_재요청으로_센다() {
+        Article article = cleanedArticle("1", "첫째 기사");
+        given(generator.generate("첫째 기사", BODY, ArticleDifficulty.EASY))
+            .willThrow(new AiRateLimitedException("RateLimitException status=429"))
+            .willReturn(result(output("첫째 기사", ArticleDifficulty.EASY)));
+
+        SummaryResult result = articleSummaryService.summarize(
+            List.of(new SummaryTarget(article.getId(), ArticleDifficulty.EASY)));
+
+        assertThat(result.succeeded()).isEqualTo(1);
+        assertThat(result.usage()).isEqualTo(new UsageTotal(2, 1, 1000, 200));
+    }
+
+    @Test
     void 요청_한도_초과가_계속되면_정한_횟수만큼만_더_요청하고_실패로_남긴다() {
         Article article = cleanedArticle("1", "첫째 기사");
         given(generator.generate(anyString(), anyString(), any()))
@@ -217,6 +231,8 @@ class ArticleSummaryServiceTest {
             List.of(new SummaryTarget(article.getId(), ArticleDifficulty.EASY)));
 
         assertThat(result.failedArticleIds()).containsExactly(article.getId());
+        // 호출 7번 중 첫 호출을 뺀 6번이 재요청이다
+        assertThat(result.usage()).isEqualTo(new UsageTotal(7, 6, 0, 0));
         // 시도 4번 + 시도로 세지 않은 한도 초과 3번
         verify(generator, times(4 + ArticleSummaryService.MAX_RATE_LIMITED_RETRIES))
             .generate(anyString(), anyString(), any());
