@@ -134,6 +134,9 @@ ai:
     max-tokens: 4000
     # low는 30자 제한을 자주 넘겨(2026-11-10 실제 기사 5건 모두 실패) medium을 쓴다
     effort: medium
+    # 글자 수·어미·제목·키워드만 어긴 답은 본문 없이 이전 답과 어긴 규칙만 보내 이 깊이로 고치게 한다.
+    # 2026-11-20 배치에서 재요청 1회가 출력 약 2,300토큰(대부분 생각 토큰)을 써 형식 위반만 고치기엔 비쌌다
+    repair-effort: low
     concurrency: 8
     max-retries: 3
   difficulty:

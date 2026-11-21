@@ -7,6 +7,7 @@ import com.byarrival.common.exception.BusinessException;
 import com.byarrival.domain.ai.exception.AiErrorCode;
 import com.byarrival.domain.article.dto.ArticleSummaryOutput;
 import com.byarrival.domain.article.entity.ArticleDifficulty;
+import com.byarrival.domain.article.exception.ArticleSummaryInvalidException;
 import com.byarrival.domain.article.service.ArticleSummaryValidator.ValidatedSummary;
 import java.util.Arrays;
 import java.util.List;
@@ -122,6 +123,49 @@ class ArticleSummaryValidatorTest {
     void 제목이_입력값과_다르면_실패한다() {
         assertInvalid(output("한은 기준금리 동결", ArticleDifficulty.EASY, "첫째.", "둘째.", "셋째."),
             TITLE, ArticleDifficulty.EASY);
+    }
+
+    @Test
+    void 제목의_공백과_문장_부호만_다르면_같은_제목으로_본다() {
+        ValidatedSummary summary = validator.validate(
+            output("한은  기준금리 연 3.0%로 동결…", ArticleDifficulty.EASY, "첫째 문장입니다.", "둘째 문장입니다.", "셋째 문장입니다."),
+            "한은, 기준금리 연 3.0%로 동결", CONTENT, ArticleDifficulty.EASY);
+
+        assertThat(summary.sentences()).hasSize(3);
+    }
+
+    @Test
+    void 제목이_다르면_AI가_쓴_제목을_함께_알려준다() {
+        assertThatThrownBy(() -> validator.validate(
+            output("한은 기준금리 동결", ArticleDifficulty.EASY, "첫째 문장입니다.", "둘째 문장입니다.", "셋째 문장입니다."),
+            TITLE, CONTENT, ArticleDifficulty.EASY))
+            .hasMessageContaining("title을 입력받은 제목과 똑같이 쓰세요: \"한은 기준금리 동결\"");
+    }
+
+    @Test
+    void 글자_수_어미_제목_키워드만_어기면_본문_없이_고칠_수_있다고_알려준다() {
+        ArticleSummaryOutput output = new ArticleSummaryOutput("다른 제목", ArticleDifficulty.EASY, "한 줄 요약",
+            List.of("가".repeat(31) + "니다.", "둘째 문장입니다.", "셋째 문장입니다."), EVIDENCE, List.of("기준금리", "#물가"));
+
+        assertThatThrownBy(() -> validator.validate(output, TITLE, CONTENT, ArticleDifficulty.EASY))
+            .isInstanceOfSatisfying(ArticleSummaryInvalidException.class,
+                e -> assertThat(e.isNeedsArticle()).isFalse());
+    }
+
+    @Test
+    void 근거_구절이나_숫자를_어기면_본문이_필요하다고_알려준다() {
+        ArticleSummaryOutput wrongEvidence = new ArticleSummaryOutput(TITLE, ArticleDifficulty.EASY, ONE_LINE,
+            List.of("가".repeat(31) + "니다.", "둘째 문장입니다.", "셋째 문장입니다."),
+            List.of("한국은행이 기준금리를 동결했다", "본문에 없는 지어낸 구절이다", "시장에서는 연내 인하를 점친다"), KEYWORDS);
+        ArticleSummaryOutput wrongNumber = new ArticleSummaryOutput(TITLE, ArticleDifficulty.EASY, ONE_LINE,
+            List.of("기준금리를 연 2.5%로 동결했습니다.", "둘째 문장입니다.", "셋째 문장입니다."), EVIDENCE, KEYWORDS);
+        ArticleSummaryOutput twoSentences = output(TITLE, ArticleDifficulty.EASY, "첫째 문장입니다.", "둘째 문장입니다.");
+
+        for (ArticleSummaryOutput output : List.of(wrongEvidence, wrongNumber, twoSentences)) {
+            assertThatThrownBy(() -> validator.validate(output, TITLE, CONTENT, ArticleDifficulty.EASY))
+                .isInstanceOfSatisfying(ArticleSummaryInvalidException.class,
+                    e -> assertThat(e.isNeedsArticle()).isTrue());
+        }
     }
 
     @Test
