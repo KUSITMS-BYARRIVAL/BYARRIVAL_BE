@@ -44,7 +44,7 @@ public class ArticleSummaryGenerator {
         ArticleSummaryOutput previous, String problems) {
         String message = userMessage(title, content, difficulty) + "\n\n" + feedback(previous, problems);
         ClaudeRequest request = new ClaudeRequest(properties.model(), properties.maxTokens(),
-            properties.outputEffort(), systemPrompt, message);
+            properties.outputRegenerateEffort(), systemPrompt, message);
         return claudeClient.generate(request, ArticleSummaryOutput.class);
     }
 
