@@ -8,21 +8,26 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.withSettings;
 
 import com.anthropic.client.AnthropicClient;
+import com.anthropic.core.JsonValue;
 import com.anthropic.core.ObjectMappers;
 import com.anthropic.core.RequestOptions;
+import com.anthropic.core.http.Headers;
 import com.anthropic.errors.AnthropicIoException;
+import com.anthropic.errors.RateLimitException;
 import com.anthropic.models.messages.Message;
 import com.anthropic.models.messages.MessageCreateParams;
 import com.anthropic.models.messages.OutputConfig;
 import com.anthropic.services.blocking.MessageService;
 import com.byarrival.common.exception.BusinessException;
 import com.byarrival.domain.ai.exception.AiErrorCode;
+import com.byarrival.domain.ai.exception.AiRateLimitedException;
 import com.byarrival.domain.ai.exception.AiResponseInvalidException;
 import com.byarrival.domain.ai.service.ClaudeClient.ClaudeRequest;
 import com.byarrival.domain.ai.service.ClaudeClient.ClaudeResult;
 import com.byarrival.domain.ai.service.ClaudeClient.TokenUsage;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -125,6 +130,21 @@ class ClaudeClientTest {
             .willThrow(new AnthropicIoException("connection reset"));
 
         assertError(AiErrorCode.AI_CALL_FAILED);
+    }
+
+    @Test
+    void SDK_재시도_후에도_요청_한도를_넘으면_한도_초과로_구분한다() {
+        given(messageService.create(any(MessageCreateParams.class), any(RequestOptions.class)))
+            .willThrow(RateLimitException.builder()
+                .headers(Headers.builder().build())
+                .body(JsonValue.from(Map.of()))
+                .build());
+
+        assertThatThrownBy(() -> claudeClient.generate(REQUEST, Sample.class))
+            .isInstanceOf(AiRateLimitedException.class)
+            .hasMessage("RateLimitException status=429")
+            .extracting(e -> ((BusinessException) e).getErrorCode())
+            .isEqualTo(AiErrorCode.AI_CALL_FAILED);
     }
 
     private void assertError(AiErrorCode errorCode) {

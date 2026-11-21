@@ -4,6 +4,7 @@ import com.anthropic.client.AnthropicClient;
 import com.anthropic.errors.AnthropicInvalidDataException;
 import com.anthropic.errors.AnthropicIoException;
 import com.anthropic.errors.AnthropicServiceException;
+import com.anthropic.errors.RateLimitException;
 import com.anthropic.models.messages.MessageCreateParams;
 import com.anthropic.models.messages.OutputConfig;
 import com.anthropic.models.messages.StopReason;
@@ -13,6 +14,7 @@ import com.anthropic.models.messages.StructuredOutputConfig;
 import com.anthropic.models.messages.Usage;
 import com.byarrival.common.exception.BusinessException;
 import com.byarrival.domain.ai.exception.AiErrorCode;
+import com.byarrival.domain.ai.exception.AiRateLimitedException;
 import com.byarrival.domain.ai.exception.AiResponseInvalidException;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.List;
@@ -84,6 +86,8 @@ public class ClaudeClient {
         // 예외 메시지에는 요청 내용이 섞일 수 있어 종류와 상태 코드만 남긴다
         try {
             return anthropicClient.messages().create(params);
+        } catch (RateLimitException e) {
+            throw new AiRateLimitedException(e.getClass().getSimpleName() + " status=" + e.statusCode());
         } catch (AnthropicServiceException e) {
             throw new BusinessException(AiErrorCode.AI_CALL_FAILED,
                 e.getClass().getSimpleName() + " status=" + e.statusCode());
