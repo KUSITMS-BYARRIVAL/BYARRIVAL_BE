@@ -89,7 +89,7 @@ public class ArticleSummaryValidator {
             problems.needArticle(name + "이 비어 있습니다.");
             return null;
         }
-        String stripped = text.strip();
+        String stripped = withPeriod(text.strip());
         int length = length(stripped);
         if (length > maxLength) {
             problems.add(name + "이 " + length + "자입니다. 공백 포함 " + maxLength + "자 이내로 줄이세요: \""
@@ -98,7 +98,8 @@ public class ArticleSummaryValidator {
         if (!endsPolitely(stripped)) {
             problems.add(name + "을 \"~했습니다/~입니다\"처럼 \"니다\"로 끝내세요: \"" + stripped + "\"");
         }
-        if (stripped.equals(title.strip())) {
+        // 서버가 붙인 마침표 때문에 제목을 그대로 옮긴 문장을 놓치지 않도록 마침표를 붙이기 전 문장과도 비교한다
+        if (stripped.equals(title.strip()) || text.strip().equals(title.strip())) {
             problems.add(name + "이 제목을 그대로 반복합니다. 다른 말로 쓰세요.");
         }
         return stripped;
@@ -146,6 +147,12 @@ public class ArticleSummaryValidator {
         Set<String> missing = new TreeSet<>(AiTextMatcher.numbersOf(text));
         missing.removeAll(sourceNumbers);
         return missing;
+    }
+
+    // "니다"로 끝나고 마침표만 빠진 문장은 서버가 마침표를 붙인다. 다시 요청하지 않아도 되는 차이라서다(2026-11-23).
+    // 마침표도 글자 수에 들어가므로 붙인 뒤에 글자 수를 잰다
+    private static String withPeriod(String sentence) {
+        return sentence.endsWith(POLITE_ENDING) ? sentence + "." : sentence;
     }
 
     // 마침표는 있어도 없어도 된다

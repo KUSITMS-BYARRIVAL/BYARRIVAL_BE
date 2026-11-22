@@ -34,8 +34,26 @@ class ArticleSummaryValidatorTest {
             TITLE, CONTENT, ArticleDifficulty.EASY);
 
         assertThat(summary.oneLine()).isEqualTo("나".repeat(37) + "니다.");
-        assertThat(summary.sentences()).containsExactly("가".repeat(27) + "니다.", "둘째 문장입니다.", "셋째 문장입니다");
+        assertThat(summary.sentences()).containsExactly("가".repeat(27) + "니다.", "둘째 문장입니다.", "셋째 문장입니다.");
         assertThat(summary.keywords()).containsExactly("기준금리", "나".repeat(10), "물가 상승");
+    }
+
+    @Test
+    void 니다로_끝나고_마침표만_빠진_문장은_마침표를_붙인다() {
+        ValidatedSummary summary = validator.validate(new ArticleSummaryOutput(TITLE, ArticleDifficulty.EASY,
+                "한국은행이 기준금리를 동결했습니다", List.of("첫째 문장입니다", "둘째 문장입니다.", "셋째 문장입니다"), EVIDENCE,
+                KEYWORDS),
+            TITLE, CONTENT, ArticleDifficulty.EASY);
+
+        assertThat(summary.oneLine()).isEqualTo("한국은행이 기준금리를 동결했습니다.");
+        assertThat(summary.sentences()).containsExactly("첫째 문장입니다.", "둘째 문장입니다.", "셋째 문장입니다.");
+    }
+
+    @Test
+    void 붙인_마침표까지_글자_수에_넣는다() {
+        // 마침표 없이 30자인 문장은 마침표를 붙이면 31자가 된다
+        assertInvalid(new ArticleSummaryOutput(TITLE, ArticleDifficulty.EASY, ONE_LINE,
+            List.of("가".repeat(28) + "니다", "둘째 문장입니다.", "셋째 문장입니다."), EVIDENCE, KEYWORDS));
     }
 
     @Test

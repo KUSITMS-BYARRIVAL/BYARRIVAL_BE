@@ -48,9 +48,6 @@ public class QuizValidator {
         }
         String title = source.title();
         List<String> problems = new ArrayList<>();
-        if (!title.equals(output.title())) {
-            problems.add("title을 입력받은 제목과 똑같이 쓰세요.");
-        }
         String evidence = strip(output.evidence());
         if (evidence == null) {
             problems.add("evidence가 비어 있습니다.");

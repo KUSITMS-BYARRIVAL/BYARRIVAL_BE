@@ -31,6 +31,9 @@ public class ArticleSummaryService {
 
     // SDK 재시도 후에도 429인 호출을 시도 횟수에 넣지 않고 다시 요청하는 최대 횟수. 한도 초과가 계속돼 배치가 끝나지 않는 것을 막는다
     static final int MAX_RATE_LIMITED_RETRIES = 3;
+    // 수선이 연달아 이만큼 실패하면 더 수선하지 않고 본문과 함께 다시 쓰게 한다.
+    // 11-22·11-23 배치에서 수선이 같은 답을 되풀이하거나 1~2자를 끝내 못 줄여 실패한 기사가 4건이었다
+    static final int MAX_REPAIRS_IN_ROW = 2;
 
     private final ArticleSummaryGenerator generator;
     private final ArticleSummaryValidator validator;
@@ -87,6 +90,9 @@ public class ArticleSummaryService {
             if (summary == null) {
                 return new Outcome(input.articleId(), OutcomeStatus.FAILED);
             }
+            // s2·s3가 제목·s1·서로와 겹치는지 기준값을 정하기 전까지 거부하지 않고 측정만 한다
+            log.info("[AI 요약 겹침] articleId={} {}", input.articleId(),
+                SummaryOverlap.describe(SummaryOverlap.scores(input.title(), summary.sentences())));
             boolean saved = store.save(input.articleId(), difficulty, summary);
             return new Outcome(input.articleId(), saved ? OutcomeStatus.SUCCEEDED : OutcomeStatus.SKIPPED);
         } catch (RuntimeException e) {
@@ -98,6 +104,7 @@ public class ArticleSummaryService {
     /**
      * 최초 호출 후 검증에 실패하면 어긴 규칙을 알려 주고 최대 maxRetries회 다시 요청한다(AI-05).
      * 형식만 어겼으면 본문 없이 이전 답만 고치게 하고(수선), 근거·숫자처럼 본문이 필요한 규칙을 어겼으면 본문과 함께 다시 쓰게 한다.
+     * 수선이 이전과 같은 답을 내거나 연달아 실패하면 같은 수선을 되풀이하지 않고 본문과 함께 다시 쓰게 한다.
      * 호출 자체가 실패하면 피드백 없이 처음부터 다시 요청한다. 429·5xx는 SDK가 먼저 재시도한다.
      * SDK 재시도 후에도 429면 토큰을 쓰지 않았으므로 시도 횟수에 넣지 않고, 따로 정한 횟수까지 다시 요청한다.
      *
@@ -110,6 +117,7 @@ public class ArticleSummaryService {
         BusinessException lastError = null;
         int attempts = properties.maxRetries() + 1;
         int rateLimited = 0;
+        int failedRepairsInRow = 0;
         // 시도 번호(attempt)는 429를 세지 않으므로, 재요청 집계는 실제 호출 순번으로 한다
         int calls = 0;
         for (int attempt = 1; attempt <= attempts; attempt++) {
@@ -164,9 +172,19 @@ public class ArticleSummaryService {
                     input.articleId(), attempt, attempts, mode, usage.inputTokens(), usage.outputTokens(),
                     oneLine(e.getMessage()));
                 lastError = e;
+                boolean repaired = "repair".equals(mode);
+                failedRepairsInRow = repaired ? failedRepairsInRow + 1 : 0;
+                boolean stuck = repaired && (output.equals(previous) || failedRepairsInRow >= MAX_REPAIRS_IN_ROW);
+                if (stuck && !e.isNeedsArticle()) {
+                    log.info("[AI 요약] articleId={} 수선이 같은 답을 내거나 {}번 연달아 실패해 본문과 함께 다시 씁니다",
+                        input.articleId(), failedRepairsInRow);
+                }
                 previous = output;
                 problems = e.getMessage();
-                repair = !e.isNeedsArticle();
+                repair = !e.isNeedsArticle() && !stuck;
+                if (!repair) {
+                    failedRepairsInRow = 0;
+                }
             }
         }
         log.warn("[AI 요약 실패] articleId={} attempts={} code={} reason={}", input.articleId(), attempts,

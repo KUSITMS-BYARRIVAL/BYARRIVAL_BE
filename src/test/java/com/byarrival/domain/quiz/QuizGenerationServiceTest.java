@@ -157,7 +157,7 @@ class QuizGenerationServiceTest {
     void 검수에서_정답이_하나로_정해지지_않으면_검수_의견을_알려_주고_다시_만든다() {
         Long article = newArticle(true, "VISIBLE", "검수 기사");
         QuizOutput ambiguous = valid("검수 기사");
-        QuizOutput fixed = new QuizOutput("검수 기사", EVIDENCE, "검수 기사로 확인된 사실은?", "가나다라",
+        QuizOutput fixed = new QuizOutput(EVIDENCE, "검수 기사로 확인된 사실은?", "가나다라",
             List.of("마바사아", "자차카타"), "정답의 근거예요.");
         given(generator.generate(source(article))).willReturn(result(ambiguous));
         given(generator.regenerate(source(article), any(), anyString())).willReturn(result(fixed));
@@ -219,7 +219,7 @@ class QuizGenerationServiceTest {
     @Test
     void 검수에서_해설만_정답과_맞지_않아도_다시_만든다() {
         Long article = newArticle(true, "VISIBLE", "해설 기사");
-        QuizOutput fixed = new QuizOutput("해설 기사", EVIDENCE, "해설 기사로 확인된 사실은?", "가나다라",
+        QuizOutput fixed = new QuizOutput(EVIDENCE, "해설 기사로 확인된 사실은?", "가나다라",
             List.of("마바사아", "자차카타"), "가나다라가 근거예요.");
         given(generator.generate(source(article))).willReturn(result(valid("해설 기사")));
         given(generator.regenerate(source(article), any(), anyString())).willReturn(result(fixed));
@@ -249,12 +249,12 @@ class QuizGenerationServiceTest {
     }
 
     private static QuizOutput valid(String title) {
-        return new QuizOutput(title, EVIDENCE, title + "의 핵심은?", "가나다라", List.of("마바사아", "자차카타"),
+        return new QuizOutput(EVIDENCE, title + "의 핵심은?", "가나다라", List.of("마바사아", "자차카타"),
             "정답의 근거예요.");
     }
 
     private static QuizOutput invalid(String title) {
-        return new QuizOutput(title, EVIDENCE, "물음표 없는 문제", "가나다라", List.of("나"), "요약에 나와요.");
+        return new QuizOutput(EVIDENCE, "물음표 없는 문제", "가나다라", List.of("나"), "요약에 나와요.");
     }
 
     private Long newArticle(boolean recommendable, String visibility, String title) {
