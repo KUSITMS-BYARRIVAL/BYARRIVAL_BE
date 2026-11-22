@@ -19,6 +19,7 @@ Grafana: 서버 localhost:3000에만 공개 (SSH 터널로 접속)
 3. 통과하면 `nginx/upstream.inc`를 새 쪽으로 바꾸고 Nginx를 reload한 뒤 이전 쪽을 내립니다.
    - 헬스 체크가 실패하면 새 쪽만 내리고 기존 쪽은 그대로 둡니다.
    - Nginx 검사·reload가 실패하면 `upstream.inc`를 이전 내용으로 되돌리고 새 쪽을 내립니다.
+4. 컨테이너가 쓰지 않고 만든 지 3일이 지난 이미지를 지웁니다(`docker image prune -af --filter "until=72h"`). 배포 이미지는 커밋 sha 태그가 붙어 있어 태그 없는 이미지만 지우면 계속 쌓입니다. 내려간 이전 쪽 컨테이너가 쓰는 직전 이미지는 남으므로 되돌릴 수 있습니다. 정리에 실패해도 배포는 성공으로 끝납니다.
 
 PostgreSQL·Redis는 이미 떠 있으면 배포 때 재생성하지 않습니다(`--no-recreate`). 설정을 바꿨을 때는 아래 "DB·Redis 설정 변경" 절차로 적용합니다.
 
