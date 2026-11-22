@@ -90,6 +90,9 @@ public class ArticleSummaryService {
             if (summary == null) {
                 return new Outcome(input.articleId(), OutcomeStatus.FAILED);
             }
+            // s2·s3가 제목·s1·서로와 겹치는지 기준값을 정하기 전까지 거부하지 않고 측정만 한다
+            log.info("[AI 요약 겹침] articleId={} {}", input.articleId(),
+                SummaryOverlap.describe(SummaryOverlap.scores(input.title(), summary.sentences())));
             boolean saved = store.save(input.articleId(), difficulty, summary);
             return new Outcome(input.articleId(), saved ? OutcomeStatus.SUCCEEDED : OutcomeStatus.SKIPPED);
         } catch (RuntimeException e) {
