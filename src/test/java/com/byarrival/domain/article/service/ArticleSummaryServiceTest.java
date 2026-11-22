@@ -174,37 +174,75 @@ class ArticleSummaryServiceTest {
     @Test
     void 다시_요청해도_3회까지_통과하지_못하면_실패로_남긴다() {
         Article article = cleanedArticle("1", "첫째 기사");
-        ArticleSummaryOutput tooLong = new ArticleSummaryOutput("첫째 기사", ArticleDifficulty.EASY, "한 줄 요약입니다.",
-            List.of("가".repeat(31) + "니다.", "둘째 문장입니다.", "셋째 문장입니다."), EVIDENCE, List.of("기준금리", "한국은행", "물가"));
+        ArticleSummaryOutput tooLong = tooLong("가");
         given(generator.generate("첫째 기사", BODY, ArticleDifficulty.EASY)).willReturn(result(tooLong));
         given(generator.repair(anyString(), any(), any(), anyString())).willReturn(result(tooLong));
+        given(generator.regenerate(anyString(), anyString(), any(), any(), anyString())).willReturn(result(tooLong));
 
         SummaryResult result = articleSummaryService.summarize(
             List.of(new SummaryTarget(article.getId(), ArticleDifficulty.EASY)));
 
         assertThat(result.failedArticleIds()).containsExactly(article.getId());
-        verify(generator, times(3)).repair(anyString(), any(), any(), anyString());
+        // 처음 → 수선(같은 답) → 다시 쓰기 → 수선
+        verify(generator, times(2)).repair(anyString(), any(), any(), anyString());
+        verify(generator, times(1)).regenerate(anyString(), anyString(), any(), any(), anyString());
+    }
+
+    @Test
+    void 수선이_이전과_같은_답을_내면_수선을_되풀이하지_않고_본문과_함께_다시_쓰게_한다() {
+        Article article = cleanedArticle("1", "첫째 기사");
+        ArticleSummaryOutput tooLong = tooLong("가");
+        given(generator.generate("첫째 기사", BODY, ArticleDifficulty.EASY)).willReturn(result(tooLong));
+        given(generator.repair(anyString(), any(), any(), anyString())).willReturn(result(tooLong));
+        given(generator.regenerate(eq("첫째 기사"), eq(BODY), eq(ArticleDifficulty.EASY), eq(tooLong), anyString()))
+            .willReturn(result(output("첫째 기사", ArticleDifficulty.EASY)));
+
+        SummaryResult result = articleSummaryService.summarize(
+            List.of(new SummaryTarget(article.getId(), ArticleDifficulty.EASY)));
+
+        assertThat(result.succeeded()).isEqualTo(1);
+        verify(generator, times(1)).repair(anyString(), any(), any(), anyString());
+        verify(generator, times(1)).regenerate(anyString(), anyString(), any(), any(), anyString());
+    }
+
+    @Test
+    void 수선이_다른_답으로도_연달아_실패하면_본문과_함께_다시_쓰게_한다() {
+        Article article = cleanedArticle("1", "첫째 기사");
+        given(generator.generate("첫째 기사", BODY, ArticleDifficulty.EASY)).willReturn(result(tooLong("가")));
+        given(generator.repair(anyString(), any(), any(), anyString()))
+            .willReturn(result(tooLong("나")), result(tooLong("다")));
+        given(generator.regenerate(anyString(), anyString(), any(), any(), anyString()))
+            .willReturn(result(output("첫째 기사", ArticleDifficulty.EASY)));
+
+        SummaryResult result = articleSummaryService.summarize(
+            List.of(new SummaryTarget(article.getId(), ArticleDifficulty.EASY)));
+
+        assertThat(result.succeeded()).isEqualTo(1);
+        verify(generator, times(ArticleSummaryService.MAX_REPAIRS_IN_ROW)).repair(anyString(), any(), any(), anyString());
+        verify(generator, times(1)).regenerate(anyString(), anyString(), any(), any(), anyString());
     }
 
     @Test
     void 요청_한도_초과는_시도_횟수에_넣지_않고_다시_요청한다() {
         Article article = cleanedArticle("1", "첫째 기사");
         AiRateLimitedException rateLimited = new AiRateLimitedException("RateLimitException status=429");
-        ArticleSummaryOutput tooLong = new ArticleSummaryOutput("첫째 기사", ArticleDifficulty.EASY, "한 줄 요약입니다.",
-            List.of("가".repeat(31) + "니다.", "둘째 문장입니다.", "셋째 문장입니다."), EVIDENCE, List.of("기준금리", "한국은행", "물가"));
-        // 429 두 번 뒤 형식 위반, 수선이 한도 초과 한 번 뒤 다시 형식 위반을 두 번 내고 마지막에 통과한다.
+        ArticleSummaryOutput tooLong = tooLong("가");
+        // 429 두 번 뒤 형식 위반, 수선이 한도 초과 한 번 뒤 같은 답을 내고, 본문과 함께 다시 쓴 답이 통과한다.
         // 429를 시도로 셌다면 4번 안에 끝나지 못해 실패한다
         given(generator.generate("첫째 기사", BODY, ArticleDifficulty.EASY))
             .willThrow(rateLimited, rateLimited).willReturn(result(tooLong));
         given(generator.repair(anyString(), any(), any(), anyString()))
-            .willThrow(rateLimited).willReturn(result(tooLong), result(tooLong), result(output("첫째 기사", ArticleDifficulty.EASY)));
+            .willThrow(rateLimited).willReturn(result(tooLong));
+        given(generator.regenerate(anyString(), anyString(), any(), any(), anyString()))
+            .willReturn(result(output("첫째 기사", ArticleDifficulty.EASY)));
 
         SummaryResult result = articleSummaryService.summarize(
             List.of(new SummaryTarget(article.getId(), ArticleDifficulty.EASY)));
 
         assertThat(result.succeeded()).isEqualTo(1);
         verify(generator, times(3)).generate("첫째 기사", BODY, ArticleDifficulty.EASY);
-        verify(generator, times(4)).repair(anyString(), any(), any(), anyString());
+        verify(generator, times(2)).repair(anyString(), any(), any(), anyString());
+        verify(generator, times(1)).regenerate(anyString(), anyString(), any(), any(), anyString());
     }
 
     @Test
@@ -291,6 +329,12 @@ class ArticleSummaryServiceTest {
 
     private static ClaudeResult<ArticleSummaryOutput> result(ArticleSummaryOutput output) {
         return new ClaudeResult<>(output, new TokenUsage(1000, 200));
+    }
+
+    // 첫 문장이 34자라 형식만 어긴 요약. 글자를 바꾸면 내용이 다른 답이 된다
+    private static ArticleSummaryOutput tooLong(String letter) {
+        return new ArticleSummaryOutput("첫째 기사", ArticleDifficulty.EASY, "한 줄 요약입니다.",
+            List.of(letter.repeat(31) + "니다.", "둘째 문장입니다.", "셋째 문장입니다."), EVIDENCE, List.of("기준금리", "한국은행", "물가"));
     }
 
     private static ArticleSummaryOutput output(String title, ArticleDifficulty difficulty) {
