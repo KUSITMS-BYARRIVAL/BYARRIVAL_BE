@@ -158,5 +158,10 @@ if [[ -n "$active" ]]; then
   log "app-$active 종료"
 fi
 
-docker image prune -f > /dev/null
+# 배포 이미지는 커밋 sha 태그가 붙어 있어 태그 없는 이미지만 지우는 prune으로는 지워지지 않고 쌓인다.
+# 컨테이너가 쓰지 않고 만든 지 3일이 지난 이미지를 지운다. 쉬고 있는 쪽 컨테이너가 쓰는 직전 이미지는 남아 되돌릴 수 있다.
+# 정리에 실패해도 배포는 이미 끝났으므로 실패로 처리하지 않는다
+if ! docker image prune -af --filter "until=72h" > /dev/null; then
+  log "오래된 이미지 정리에 실패했습니다. 배포는 완료됐습니다."
+fi
 log "배포 완료"
