@@ -167,6 +167,14 @@ public class UserService {
     }
 
     /**
+     * 활동 중인 회원. 탈퇴했거나 없는 회원이면 비어 있다.
+     */
+    @Transactional(readOnly = true)
+    public Optional<User> findActiveById(Long userId) {
+        return userRepository.findByIdAndStatus(userId, UserStatus.ACTIVE);
+    }
+
+    /**
      * 고른 순서대로 돌려준다.
      */
     @Transactional(readOnly = true)

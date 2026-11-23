@@ -4,6 +4,7 @@ import com.byarrival.domain.route.entity.Route;
 import jakarta.persistence.LockModeType;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -22,6 +23,13 @@ public interface RouteRepository extends JpaRepository<Route, Long> {
         + "com.byarrival.domain.route.entity.RouteStatus.COMPLETED AND r.serviceDate <= :today "
         + "ORDER BY r.serviceDate DESC")
     List<LocalDate> findCompletedServiceDates(@Param("userId") Long userId, @Param("today") LocalDate today);
+
+    // 여러 회원의 스트릭을 한 번에 계산할 때 쓴다. 회원별 최근 완주일부터 온다
+    @Query("SELECT r.userId AS userId, r.serviceDate AS serviceDate FROM Route r WHERE r.userId IN :userIds "
+        + "AND r.status = com.byarrival.domain.route.entity.RouteStatus.COMPLETED AND r.serviceDate <= :today "
+        + "ORDER BY r.userId, r.serviceDate DESC")
+    List<UserCompletedDate> findCompletedServiceDatesOf(@Param("userIds") Collection<Long> userIds,
+        @Param("today") LocalDate today);
 
     // 서비스일별 노선 이용 기록. 서비스일당 노선은 하나다
     @Query(value = "SELECT r.service_date AS serviceDate, COUNT(rc.read_at) AS readCount, "
@@ -53,4 +61,11 @@ public interface RouteRepository extends JpaRepository<Route, Long> {
         + ") idle WHERE last_activity_at BETWEEN :from AND :to ORDER BY id", nativeQuery = true)
     List<IdleRoute> findIdleRoutes(@Param("serviceDate") LocalDate serviceDate, @Param("now") LocalDateTime now,
         @Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
+
+    interface UserCompletedDate {
+
+        Long getUserId();
+
+        LocalDate getServiceDate();
+    }
 }

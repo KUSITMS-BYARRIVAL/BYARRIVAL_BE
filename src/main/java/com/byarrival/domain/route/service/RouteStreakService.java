@@ -1,10 +1,15 @@
 package com.byarrival.domain.route.service;
 
+import com.byarrival.domain.route.repository.RouteRepository.UserCompletedDate;
 import com.byarrival.domain.route.repository.RouteRepository;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -23,7 +28,41 @@ public class RouteStreakService {
 
     @Transactional(readOnly = true)
     public int streakDays(Long userId, LocalDate today) {
-        Set<LocalDate> completed = new HashSet<>(weekdaysOf(routeRepository.findCompletedServiceDates(userId, today)));
+        return currentOf(weekdaysOf(routeRepository.findCompletedServiceDates(userId, today)), today);
+    }
+
+    /**
+     * 최장 연속 완주 일수. 연속 이용(streakDays)과 같은 평일 기준으로, 오늘까지 가장 길게 이어진 구간이다.
+     */
+    @Transactional(readOnly = true)
+    public int longestStreakDays(Long userId, LocalDate today) {
+        return longestOf(weekdaysOf(routeRepository.findCompletedServiceDates(userId, today)));
+    }
+
+    /**
+     * 여러 회원의 현재·최장 연속 일수를 쿼리 한 번으로 구한다. 완주 기록이 없는 회원은 0일이다.
+     */
+    @Transactional(readOnly = true)
+    public Map<Long, StreakDays> findStreaks(Collection<Long> userIds, LocalDate today) {
+        if (userIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, List<LocalDate>> completedByUser = new HashMap<>();
+        for (UserCompletedDate row : routeRepository.findCompletedServiceDatesOf(userIds, today)) {
+            if (isWeekday(row.getServiceDate())) {
+                completedByUser.computeIfAbsent(row.getUserId(), id -> new ArrayList<>()).add(row.getServiceDate());
+            }
+        }
+        Map<Long, StreakDays> streaks = new HashMap<>();
+        for (Long userId : userIds) {
+            List<LocalDate> completed = completedByUser.getOrDefault(userId, List.of());
+            streaks.put(userId, new StreakDays(currentOf(completed, today), longestOf(completed)));
+        }
+        return streaks;
+    }
+
+    private static int currentOf(List<LocalDate> weekdays, LocalDate today) {
+        Set<LocalDate> completed = new HashSet<>(weekdays);
         LocalDate day = isWeekday(today) && completed.contains(today) ? today : previousWeekday(today);
         int streak = 0;
         while (completed.contains(day)) {
@@ -33,13 +72,8 @@ public class RouteStreakService {
         return streak;
     }
 
-    /**
-     * 최장 연속 완주 일수. 연속 이용(streakDays)과 같은 평일 기준으로, 오늘까지 가장 길게 이어진 구간이다.
-     */
-    @Transactional(readOnly = true)
-    public int longestStreakDays(Long userId, LocalDate today) {
-        // 최신순으로 오므로 직전 평일로 거슬러 올라가며 센다
-        List<LocalDate> completed = weekdaysOf(routeRepository.findCompletedServiceDates(userId, today));
+    // 최신순으로 오므로 직전 평일로 거슬러 올라가며 센다
+    private static int longestOf(List<LocalDate> completed) {
         int longest = 0;
         int run = 0;
         LocalDate previous = null;
@@ -49,6 +83,9 @@ public class RouteStreakService {
             previous = day;
         }
         return longest;
+    }
+
+    public record StreakDays(int current, int longest) {
     }
 
     private static List<LocalDate> weekdaysOf(List<LocalDate> dates) {
