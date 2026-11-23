@@ -102,7 +102,7 @@ GHCR 로그인은 워크플로의 `GITHUB_TOKEN`을 쓰므로 따로 등록하�
 
 ### `.env` 키 목록
 
-값을 추가하거나 바꿀 때 참고합니다. 앱이 읽는 값(`DB_*`, `REDIS_*`, `KAKAO_*`, `APPLE_*`, `JWT_SECRET`, `JAVA_OPTS`, `DISCORD_*`, `FCM_*`, `ANTHROPIC_API_KEY`, `S3_*`)은 수정 후 다음 배포부터 적용됩니다. `POSTGRES_*`는 아래 "DB·Redis 설정 변경"을 따릅니다.
+값을 추가하거나 바꿀 때 참고합니다. 앱이 읽는 값(`DB_*`, `REDIS_*`, `KAKAO_*`, `APPLE_*`, `JWT_SECRET`, `JAVA_OPTS`, `DISCORD_*`, `FCM_*`, `ANTHROPIC_API_KEY`, `S3_*`, `ADMIN_*`)은 수정 후 다음 배포부터 적용됩니다. `POSTGRES_*`는 아래 "DB·Redis 설정 변경"을 따릅니다.
 
 | 키 | 값 |
 |---|---|
@@ -126,6 +126,7 @@ GHCR 로그인은 워크플로의 `GITHUB_TOKEN`을 쓰므로 따로 등록하�
 | `DISCORD_BATCH_WEBHOOK_URL` | 배치·운영 채널 디스코드 웹훅 URL. 비우면 알림 끔 |
 | `ANTHROPIC_API_KEY` | AI 요약에 쓰는 Claude API 키(운영 전용 키, `sk-ant-`로 시작). 없으면 앱은 뜨지만 요약이 모두 실패함. 키의 만료일을 팀 캘린더에 적어 둠 |
 | `S3_ACCESS_KEY`, `S3_SECRET_KEY` | 프로필 이미지를 S3 `byarrival-media` 버킷에 올리고 지우는 IAM 사용자의 액세스 키. 권한은 이 버킷의 `PutObject`·`GetObject`·`DeleteObject`만 줍니다. 없으면 프로필 이미지 업로드가 503으로 끝납니다. 운영 파일은 버킷의 `prod/` 폴더에 저장되고 CloudFront 주소로 읽습니다 |
+| `ADMIN_ALLOWED_ORIGINS` | 어드민 웹 주소(쉼표로 구분, 예: `https://admin.example.com`). 쿠키를 함께 보내므로 정확한 주소만 넣습니다. 없으면 브라우저의 다른 주소에서 어드민 API를 호출할 수 없습니다 |
 | `GRAFANA_ADMIN_PASSWORD` | Grafana `admin` 비밀번호. 없으면 Grafana를 띄우지 않음. Grafana를 처음 띄울 때만 적용되므로 이후 변경은 Grafana 화면에서 함 |
 
 ## 서버를 새로 만들 때만

@@ -12,6 +12,11 @@ storage:
   s3:
     key-prefix: prod
 
+admin:
+  auth:
+    # 운영은 .env에 넣은 어드민 웹 주소만 허용한다
+    allowed-origins: ${ADMIN_ALLOWED_ORIGINS:}
+
 server:
   # Nginx(HTTPS) 뒤에서 X-Forwarded-Proto 를 반영해 Swagger 등이 https 주소를 쓰게 한다
   forward-headers-strategy: framework
