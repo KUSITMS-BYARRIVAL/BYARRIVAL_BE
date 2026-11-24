@@ -48,14 +48,17 @@ const scenario = (stages, fn) => ({
 
 const NAMES = ['home', 'popular', 'route_today', 'smalltalks', 'scraps', 'stat_summary', 'stat_calendar',
   'route_create', 'cart_add', 'boarding', 'departure', 'stop', 'read', 'arrival'];
+// smoke는 예열 없이 짧게 돌아 첫 요청 지연이 섞이므로 시간은 판정하지 않는다(요청 제한 시간 60초)
+const LIMIT_MS = PROFILE === 'smoke' ? 60000 : P95_MS;
 const thresholds = {
-  http_req_duration: [`p(95)<${P95_MS}`, `p(99)<${P95_MS * 2}`],
+  http_req_duration: [`p(95)<${LIMIT_MS}`, `p(99)<${LIMIT_MS * 2}`],
   http_req_failed: ['rate<0.01'],
+  http_reqs: ['count>0'],
   checks: ['rate>0.99'],
-  dropped_iterations: ['count<1'],
+  ...(PROFILE === 'smoke' ? {} : { dropped_iterations: ['count<1'] }),
 };
 // 요약에 API별 p95를 남기기 위해 모든 API에 기준을 둔다
-NAMES.forEach((name) => { thresholds[`http_req_duration{name:${name}}`] = [`p(95)<${P95_MS}`]; });
+NAMES.forEach((name) => { thresholds[`http_req_duration{name:${name}}`] = [`p(95)<${LIMIT_MS}`]; });
 
 export const options = {
   scenarios: { browse: scenario(profile.browse, 'browse'), commute: scenario(profile.commute, 'commute') },
@@ -127,6 +130,7 @@ export function commute() {
 }
 
 export function handleSummary(data) {
+  if (!data.metrics.http_reqs) return { stdout: '끝난 요청이 한 건도 없습니다. 앱과 DB 로그를 확인하세요.\n' };
   const ms = (v) => (v === undefined ? '-' : v.toFixed(1));
   const rows = NAMES.map((name) => {
     const v = (data.metrics[`http_req_duration{name:${name}}`] || { values: {} }).values;
@@ -145,7 +149,7 @@ export function handleSummary(data) {
     `- 요청 ${data.metrics.http_reqs.values.count}건, 초당 ${data.metrics.http_reqs.values.rate.toFixed(1)}건, `
       + `실패 ${(data.metrics.http_req_failed.values.rate * 100).toFixed(2)}%, `
       + `못 보낸 반복 ${data.metrics.dropped_iterations ? data.metrics.dropped_iterations.values.count : 0}회`,
-    `- 기준 p95 ${P95_MS}ms: ${failed.length === 0 ? '통과' : `실패 (${failed.join(', ')})`}`, '', ...steps,
+    `- 기준 ${PROFILE === 'smoke' ? '요청 실패(시간은 판정하지 않음)' : `p95 ${P95_MS}ms`}: ${failed.length === 0 ? '통과' : `실패 (${failed.join(', ')})`}`, '', ...steps,
     '| API | p50 ms | p95 ms | p99 ms | 최대 ms |', '|---|---|---|---|---|',
     `| 전체 | ${ms(all.med)} | ${ms(all['p(95)'])} | ${ms(all['p(99)'])} | ${ms(all.max)} |`, ...rows, '',
   ].join('\n');

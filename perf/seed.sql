@@ -56,6 +56,8 @@ JOIN (
 ) a ON a.service_date = r.service_date AND a.rn <= 16;
 
 COMMIT;
-ANALYZE;
+-- 넣은 직후의 autovacuum·체크포인트가 측정과 겹치지 않게 미리 끝낸다
+VACUUM (ANALYZE);
+CHECKPOINT;
 SELECT min(id) AS first_user_id, count(*) AS users FROM users WHERE provider_user_id LIKE 'perf-%' \gset
 \echo FIRST_USER_ID=:first_user_id

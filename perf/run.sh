@@ -15,6 +15,7 @@ cleanup() { [[ "${KEEP:-}" == 1 ]] || "${COMPOSE[@]}" --profile k6 down -v --rem
 trap cleanup EXIT
 
 mkdir -p results
+rm -f "results/$PROFILE.md"   # 실패했을 때 이전 결과를 이번 것으로 보지 않게 한다
 chmod 777 results   # k6 컨테이너가 다른 사용자로 결과를 쓴다
 "${COMPOSE[@]}" down -v --remove-orphans > /dev/null 2>&1 || true
 "${COMPOSE[@]}" up -d --build postgres redis app
