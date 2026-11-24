@@ -15,8 +15,9 @@ public final class AiTextMatcher {
     // 앞에 붙은 빼기 부호는 글자나 숫자 바로 뒤가 아닐 때만 음수 부호로 본다("-0.5%"는 -0.5, "2026-11-17"·"3-1"은 나열)
     private static final Pattern NUMBER = Pattern.compile("(?:(?<![\\p{L}\\p{N}])[-−])?\\d+(?:[.,]\\d+)*");
     private static final Pattern THOUSANDS_COMMA = Pattern.compile("[-−]?\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?");
-    // 인용 구절을 비교할 때 무시하는 공백과 문장 부호
-    private static final Pattern IGNORABLE = Pattern.compile("[\\s\\p{Punct}·‘’“”…「」『』《》〈〉−]");
+    // 인용 구절을 비교할 때 무시하는 공백과 문장 부호. \p{Punct}는 ASCII 부호만 가리키므로 AI가 바꿔 옮기기 쉬운
+    // 유니코드 물결표(∼ ～ 〜)와 대시(– —)를 따로 넣는다. "2~3년"을 "2∼3년"으로 옮긴 인용이 떨어지던 문제(2026-11-24)
+    private static final Pattern IGNORABLE = Pattern.compile("[\\s\\p{Punct}·‘’“”…「」『』《》〈〉−∼～〜–—]");
 
     private AiTextMatcher() {
     }

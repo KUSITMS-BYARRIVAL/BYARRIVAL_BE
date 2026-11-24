@@ -53,6 +53,13 @@ class AiTextMatcherTest {
     }
 
     @Test
+    void 물결표와_대시를_유니코드_변형으로_옮긴_인용도_인정한다() {
+        assertThat(AiTextMatcher.containsQuote("공사는 2~3년이 걸릴 전망이다.", "공사는 2∼3년이 걸릴 전망이다")).isTrue();
+        assertThat(AiTextMatcher.containsQuote("공사는 2〜3년이 걸릴 전망이다.", "공사는 2～3년이 걸릴 전망이다")).isTrue();
+        assertThat(AiTextMatcher.containsQuote("서울-부산 노선을 늘린다.", "서울–부산 노선을 늘린다")).isTrue();
+    }
+
+    @Test
     void 숫자의_부호나_자릿수를_잘라_낸_인용은_인정하지_않는다() {
         assertThat(AiTextMatcher.containsQuote("기준금리는 -0.5%로 유지됐습니다.", "0.5%로 유지됐습니다.")).isFalse();
         assertThat(AiTextMatcher.containsQuote("수출이 130% 늘었다.", "30% 늘었다")).isFalse();
