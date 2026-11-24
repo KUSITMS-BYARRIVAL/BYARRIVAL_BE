@@ -30,6 +30,17 @@ class PrometheusEndpointTest {
     }
 
     @Test
+    void 응답_시간_p95를_계산할_구간을_남긴다() throws Exception {
+        mockMvc.perform(get("/actuator/health"));
+
+        mockMvc.perform(get("/actuator/prometheus"))
+            .andExpect(status().isOk())
+            .andExpect(content().string(containsString("http_server_requests_seconds_bucket")))
+            .andExpect(content().string(containsString("le=\"0.5\"")))
+            .andExpect(content().string(containsString("le=\"1.0\"")));
+    }
+
+    @Test
     void 그_밖의_actuator_엔드포인트는_열지_않는다() throws Exception {
         mockMvc.perform(get("/actuator/env"))
             .andExpect(status().is4xxClientError());
