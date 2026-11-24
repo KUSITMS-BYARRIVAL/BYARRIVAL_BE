@@ -9,7 +9,6 @@ on:
 
 permissions:
   contents: read
-  actions: read
 
 concurrency:
   group: uptime
@@ -17,7 +16,7 @@ concurrency:
 
 jobs:
   check:
-    if: github.repository == 'KUSITMS-BYARRIVAL/BYARRIVAL_BE'
+    if: github.repository == 'KUSITMS-BYARRIVAL/BYARRIVAL_BE' && github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -37,28 +36,51 @@ jobs:
           echo "up=$up" >> "$GITHUB_OUTPUT"
           echo "code=$code" >> "$GITHUB_OUTPUT"
 
-      # 다운이 이어지는 동안 5분마다 알리지 않도록 직전 실행과 상태가 바뀔 때만 보낸다
+      # 마지막으로 디스코드 전송에 성공한 상태(up/down). 실행 결과와 따로 보관해 전송에 실패하면 다음 실행에서 다시 보낸다
+      - name: Restore notified state
+        if: always() && steps.check.outputs.up != ''
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: uptime-state
+          key: uptime-state-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: uptime-state-
+
+      # 다운이 이어지는 동안 5분마다 알리지 않도록 마지막으로 알린 상태와 다를 때만 보낸다
       - name: Notify Discord on change
+        id: notify
         if: always() && steps.check.outputs.up != ''
         env:
-          GH_TOKEN: ${{ github.token }}
           WEBHOOK: ${{ secrets.DISCORD_OPS_WEBHOOK_URL }}
           UP: ${{ steps.check.outputs.up }}
           CODE: ${{ steps.check.outputs.code }}
         run: |
           if [ -z "$WEBHOOK" ]; then echo "::warning::DISCORD_OPS_WEBHOOK_URL이 없어 알리지 않습니다."; exit 0; fi
-          previous=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow uptime.yml --branch dev --status completed --limit 10 --json conclusion --jq '[.[].conclusion | select(. == "success" or . == "failure")][0] // "success"') || previous=unknown
+          # 알린 적이 없으면 정상이었던 것으로 본다
+          notified=up
+          if [ "$(cat uptime-state 2>/dev/null)" = down ]; then notified=down; fi
           now=$(TZ=Asia/Seoul date '+%m-%d %H:%M')
-          if [ "$UP" = false ] && [ "$previous" != failure ]; then
+          if [ "$UP" = false ] && [ "$notified" = up ]; then
+            state=down
             text="🚨 **서버 다운** ${now} KST · 밖에서 3번 확인했지만 응답이 없습니다 (HTTP ${CODE})"
-          elif [ "$UP" = true ] && [ "$previous" = failure ]; then
+          elif [ "$UP" = true ] && [ "$notified" = down ]; then
+            state=up
             text="✅ **서버 복구** ${now} KST"
           else
             exit 0
           fi
-          jq -n --arg content "$text" '{content: $content, allowed_mentions: {parse: []}}' \
-            | curl -fsS --max-time 10 -H 'Content-Type: application/json' -d @- "$WEBHOOK"
+          payload=$(jq -n --arg content "$text" '{content: $content, allowed_mentions: {parse: []}}')
+          curl -fsS --max-time 10 -H 'Content-Type: application/json' -d "$payload" "$WEBHOOK"
+          echo "$state" > uptime-state
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Save notified state
+        if: always() && steps.notify.outputs.changed == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: uptime-state
+          key: uptime-state-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Fail when down
-        if: steps.check.outputs.up != 'true'
+        if: always() && steps.check.outputs.up != 'true'
         run: exit 1
