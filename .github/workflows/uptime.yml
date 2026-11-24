@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: uptime
@@ -46,11 +47,13 @@ jobs:
           key: uptime-state-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: uptime-state-
 
-      # 다운이 이어지는 동안 5분마다 알리지 않도록 마지막으로 알린 상태와 다를 때만 보낸다
+      # 다운이 이어지는 동안 5분마다 알리지 않도록 마지막으로 알린 상태와 다를 때만 보낸다.
+      # 캐시 저장은 실패해도 경고로 끝나 예전 상태가 남을 수 있다. 직전 실행의 결과도 함께 봐서 새 다운을 놓치지 않는다
       - name: Notify Discord on change
         id: notify
         if: always() && steps.check.outputs.up != ''
         env:
+          GH_TOKEN: ${{ github.token }}
           WEBHOOK: ${{ secrets.DISCORD_OPS_WEBHOOK_URL }}
           UP: ${{ steps.check.outputs.up }}
           CODE: ${{ steps.check.outputs.code }}
@@ -59,6 +62,15 @@ jobs:
           # 알린 적이 없으면 정상이었던 것으로 본다
           notified=up
           if [ "$(cat uptime-state 2>/dev/null)" = down ]; then notified=down; fi
+          # 다운이거나 전송에 실패하면 실행이 실패로 끝난다
+          previous=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow uptime.yml --branch dev --status completed --limit 10 --json conclusion --jq '[.[].conclusion | select(. == "success" or . == "failure")][0] // "unknown"') || previous=unknown
+          # 직전 실행이 성공인데 down이 남아 있으면 복구를 알린 뒤 저장만 실패한 것이다. 보내기 전에 바로잡아 전송에 실패해도 다음 실행에서 다시 보낸다.
+          # 직전 결과를 모르면 다운은 겹치더라도 알린다
+          if [ "$notified" = down ] && { [ "$previous" = success ] || { [ "$previous" = unknown ] && [ "$UP" = false ]; }; }; then
+            notified=up
+            echo up > uptime-state
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
           now=$(TZ=Asia/Seoul date '+%m-%d %H:%M')
           if [ "$UP" = false ] && [ "$notified" = up ]; then
             state=down
