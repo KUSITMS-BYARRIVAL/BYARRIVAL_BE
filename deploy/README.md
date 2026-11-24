@@ -9,6 +9,8 @@ Nginx(:80→:443) ─┬─ app-blue  (127.0.0.1:8081)
                  └─ app-green (127.0.0.1:8082)
 PostgreSQL, Redis: 외부 포트 없음 (compose 네트워크 안에서만 접근)
 Prometheus: 외부 포트 없음, app-blue·app-green의 /actuator/prometheus를 15초마다 수집
+Alertmanager: Prometheus 알림을 디스코드 배치·운영 채널로 전송
+node·postgres·blackbox exporter: 서버 자원, DB, 서비스 응답·인증서·Redis 확인 (모두 외부 포트 없음)
 Grafana: 서버 localhost:3000에만 공개 (SSH 터널로 접속)
 ```
 
@@ -25,7 +27,7 @@ PostgreSQL·Redis는 이미 떠 있으면 배포 때 재생성하지 않습니�
 
 HTTP(80) 요청은 HTTPS(443)로 리다이렉트합니다. 80에서는 인증서 발급·갱신 확인 경로(`/.well-known/acme-challenge/`)만 직접 응답합니다.
 
-`/actuator`는 Nginx에서 막혀 있어 외부에서 접근할 수 없습니다.
+`/actuator`는 Nginx에서 막혀 있어 외부에서 접근할 수 없습니다. 밖에서는 `/healthz`로 전체 상태(앱·DB·Redis)만 볼 수 있고, IP마다 초당 1회(순간 10회)로 제한합니다(넘으면 429).
 
 ## 모니터링
 
@@ -44,7 +46,7 @@ HTTP(80) 요청은 HTTPS(443)로 리다이렉트합니다. 80에서는 인증서
 
 ### Prometheus·Grafana
 
-배포할 때 `deploy.sh`가 Prometheus와 Grafana를 함께 띄웁니다. 둘 다 메모리 256MB로 제한하고, Prometheus는 15일(최대 1GB)만 보관합니다. 모니터링이 실패해도 앱 배포는 계속합니다. Grafana는 `.env`에 `GRAFANA_ADMIN_PASSWORD`가 있을 때만 띄웁니다. 비밀번호 없이 뜨면 기본 계정(admin/admin)이 생기므로, compose에서도 `monitoring` profile로 분리하고 비밀번호가 비어 있으면 시작하지 않게 막았습니다. 직접 띄울 때는 `docker compose -f docker-compose.prod.yml up -d grafana`처럼 서비스 이름을 지정합니다.
+배포할 때 `deploy.sh`가 Prometheus와 Grafana를 함께 띄웁니다. 둘 다 메모리 256MB(Alertmanager는 96MB, exporter는 64MB)로 제한하고, Prometheus는 15일(최대 1GB)만 보관합니다. 모니터링이 실패해도 앱 배포는 계속합니다. Grafana는 `.env`에 `GRAFANA_ADMIN_PASSWORD`가 있을 때만 띄웁니다. 비밀번호 없이 뜨면 기본 계정(admin/admin)이 생기므로, compose에서도 `monitoring` profile로 분리하고 비밀번호가 비어 있으면 시작하지 않게 막았습니다. 직접 띄울 때는 `docker compose -f docker-compose.prod.yml up -d grafana`처럼 서비스 이름을 지정합니다.
 
 Grafana 접속:
 
@@ -52,7 +54,7 @@ Grafana 접속:
 ssh -L 3000:127.0.0.1:3000 ubuntu@<서버 IP>
 ```
 
-터널을 연 채로 브라우저에서 `http://localhost:3000`에 `admin` / `GRAFANA_ADMIN_PASSWORD`로 로그인합니다. Prometheus 데이터 소스는 자동으로 등록됩니다. JVM·HTTP 대시보드는 Dashboards → New → Import에서 ID `4701`(JVM Micrometer)과 `19004`(Spring Boot 3.x Statistics)를 가져와 쓰면 됩니다.
+터널을 연 채로 브라우저에서 `http://localhost:3000`에 `admin` / `GRAFANA_ADMIN_PASSWORD`로 로그인합니다. Prometheus 데이터 소스는 자동으로 등록됩니다. `BYARRIVAL 운영` 대시보드(p95, 5xx, API별 p95, DB, 서버 자원, 백업)도 자동으로 등록됩니다. 고칠 때는 `deploy/grafana/dashboards/byarrival.json`을 바꿉니다.
 
 앱이 따로 남기는 메트릭:
 
@@ -65,6 +67,114 @@ ssh -L 3000:127.0.0.1:3000 ubuntu@<서버 IP>
 | `byarrival_feed_deactivated_total` | 연속 실패로 자동 비활성화한 Feed 수 |
 
 blue/green 중 쉬고 있는 쪽은 꺼져 있으므로 Prometheus Targets에서 한쪽이 DOWN으로 보이는 것이 정상입니다.
+
+### 알림 규칙
+
+규칙은 `prometheus/rules/byarrival.yml`에 있고, Alertmanager가 디스코드 배치·운영 채널(`DISCORD_BATCH_WEBHOOK_URL`)로 보냅니다. 복구되면 복구 알림도 보냅니다. 긴급은 1시간, 경고는 6시간마다 다시 알립니다.
+
+| 항목 | 경고 | 긴급 |
+|---|---|---|
+| 전체 API p95 (5분에 30건 이상일 때) | 500ms 초과 5분 | 1초 초과 5분 |
+| API별 p95 (5분에 20건 이상일 때) | 1초 초과 10분 | - |
+| 5xx 비율 (5분에 30건 이상일 때) | - | 5% 초과 5분 |
+| 서비스(`/healthz`)·Redis·PostgreSQL 응답 없음 | - | 1분 |
+| 인증서 만료 | 2일 전 | 1일 전 |
+| 일일 배치 성공 기록 | 26시간 없음 | - |
+| DB 백업 / S3 업로드 | 기록 없음 / 26시간 없음 | 26시간 없음 / - |
+| DB 커넥션 대기, DB 접속 80%, 교착, 10분 넘은 트랜잭션 | 발생 시 | - |
+| JVM 힙 90%, 서버 메모리 10% 미만, CPU 90% | 10분 | - |
+| 디스크 여유 | 15% 미만 | 7% 미만 |
+| 감시 컨테이너 수집 실패 | 5분 | - |
+
+알림 규칙을 고친 뒤에는 저장소 루트에서 테스트합니다.
+
+```bash
+docker run --rm -v "$PWD/deploy/prometheus:/etc/prometheus:ro" --entrypoint promtool prom/prometheus:v3.5.0 test rules /etc/prometheus/tests/byarrival_test.yml
+```
+
+### 서버 밖 다운 감시
+
+서버가 통째로 죽으면 서버 안의 Prometheus는 알릴 수 없습니다. `.github/workflows/uptime.yml`이 약 5분마다 밖에서 `https://<서버>/healthz`를 확인하고(인증서도 검증), 3번 실패하면 디스코드로 다운을, 다시 살아나면 복구를 알립니다.
+
+- GitHub Secrets에 `DISCORD_UPTIME_WEBHOOK_URL`을 등록해야 알립니다. 없으면 실패만 Actions에 남습니다.
+- GitHub 예약 실행은 몇 분에서 수십 분 늦을 수 있습니다. 저장소에 60일 동안 활동이 없으면 꺼집니다.
+
+## DB 관리
+
+### 백업
+
+배포할 때 `deploy.sh`가 cron을 등록해 매일 03:00(KST)에 `db/backup.sh`를 실행합니다.
+
+- 서버 `~/byarrival/backups`에 7일 보관합니다(권한 600). 백업에는 개인정보가 들어 있으므로 다른 곳에 복사해 두지 않습니다.
+- `.env`에 `BACKUP_S3_*`가 있으면 전용 S3 버킷에도 올립니다. 없으면 서버에만 둡니다.
+- 실패하면 디스코드로 알리고, 26시간 동안 성공이 없으면 Prometheus도 알립니다.
+- 탈퇴 회원 파기(MY-10) 뒤에도 백업에는 최대 7일 남습니다.
+
+처음 배포한 뒤 한 번 직접 실행해 확인합니다.
+
+```bash
+cd ~/byarrival && ./db/backup.sh
+```
+
+S3 버킷은 직접 한 번 준비합니다.
+
+1. 비공개 버킷을 새로 만들고(모든 퍼블릭 액세스 차단) 프로필 이미지 버킷과 섞지 않습니다.
+2. 수명 주기 규칙으로 7일 지난 객체를 지웁니다. 버전 관리를 켰다면 이전 버전도 지웁니다.
+3. IAM 사용자에는 이 버킷의 `s3:PutObject`만 줍니다. 서버 키가 새더라도 백업을 읽거나 지울 수 없습니다.
+
+### 복구
+
+`db/restore.sh`는 항상 **새 DB**에 복구하고 운영 DB는 건드리지 않습니다. 한 달에 한 번 복구해 건수를 확인하고 지웁니다.
+
+```bash
+./db/restore.sh backups/byarrival-<날짜>.dump
+docker exec byarrival-postgres sh -c 'dropdb -U "$POSTGRES_USER" byarrival_restore'
+```
+
+실제 장애로 운영 DB를 바꿀 때는 팀에 알린 뒤 다음 순서로 합니다. 앱이 멈춰 있는 동안 서비스가 중단됩니다.
+
+1. `./db/backup.sh`로 지금 상태를 먼저 남깁니다.
+2. `./db/restore.sh <백업 파일> byarrival_restore`로 복구하고 건수를 확인합니다.
+3. 앱을 내립니다: `docker compose -f docker-compose.prod.yml stop app-blue app-green`
+4. `postgres` DB에 접속해 이름을 바꿉니다. 기존 DB는 확인이 끝날 때까지 지우지 않습니다.
+
+   ```sql
+   ALTER DATABASE byarrival RENAME TO byarrival_old;
+   ALTER DATABASE byarrival_restore RENAME TO byarrival;
+   ```
+
+5. 지금 연결된 쪽(`cat nginx/upstream.inc`)의 앱을 다시 띄웁니다: `docker compose -f docker-compose.prod.yml start app-<쪽>`
+
+### 느린 쿼리·상태 점검
+
+```bash
+./db/report.sh
+```
+
+접속 상태, 오래 열린 트랜잭션, 큰 테이블, 쓰지 않는 인덱스, 느린 쿼리를 읽기 전용으로 보여 줍니다. 500ms 넘는 쿼리와 잠금 대기는 `docker logs byarrival-postgres`에 남고, 바인드 값은 개인정보일 수 있어 남기지 않습니다.
+
+이 설정은 DB를 다시 시작해야 켜집니다. 아래 "DB·Redis 설정 변경"대로 적용한 뒤 한 번 실행합니다.
+
+```bash
+docker exec byarrival-postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements"'
+```
+
+### 실행 계획 설정 (`random_page_cost`)
+
+SSD에 맞춰 1.1로 둡니다(PostgreSQL 기본값은 HDD 기준 4.0). 기본값에서는 인기 기사 집계가 인덱스 대신 `route_card` 전체를 읽었습니다. compose에 있는 값이라 아래 "DB·Redis 설정 변경"대로 DB를 다시 만들 때 적용됩니다.
+
+재시작 없이 먼저 켜려면 DB에서 실행합니다.
+
+```sql
+ALTER SYSTEM SET random_page_cost = 1.1;
+SELECT pg_reload_conf();
+```
+
+되돌릴 때는 compose의 값을 4.0으로 바꿔 DB를 다시 만듭니다. 위 SQL로만 켠 상태라면 `ALTER SYSTEM RESET random_page_cost;`와 `SELECT pg_reload_conf();`를 실행합니다. 운영 디스크는 SSD입니다(2026-11-24 확인). 서버를 옮길 때는 디스크 종류를 다시 확인합니다.
+
+## 부하 테스트
+
+`perf/README.md`를 봅니다. 로컬 전용이며 운영 서버에는 실행하지 않습니다.
 
 ## 팀원 서버 접속
 
@@ -96,7 +206,7 @@ blue/green 중 쉬고 있는 쪽은 꺼져 있으므로 Prometheus Targets에서
 | 배포 폴더 | `~/byarrival` (compose, 스크립트, Nginx 설정은 배포 때 Actions가 복사) |
 | 환경 변수 | `~/byarrival/.env` (서버에만 있음, 권한 600) |
 | 배포 키 | GitHub Actions 전용 키가 `authorized_keys`에 등록됨 |
-| GitHub Secrets | `SERVER_HOST`, `SERVER_USER`, `SERVER_SSH_KEY` |
+| GitHub Secrets | `SERVER_HOST`, `SERVER_USER`, `SERVER_SSH_KEY`, `DISCORD_UPTIME_WEBHOOK_URL`(다운 감시) |
 
 GHCR 로그인은 워크플로의 `GITHUB_TOKEN`을 쓰므로 따로 등록하지 않습니다.
 
@@ -123,10 +233,11 @@ GHCR 로그인은 워크플로의 `GITHUB_TOKEN`을 쓰므로 따로 등록하�
 | `JWT_SECRET` | JWT 서명 키. 32바이트 이상 무작위 문자열(예: `openssl rand -base64 48`). 없으면 앱이 시작되지 않고, 바꾸면 발급된 액세스 토큰이 모두 무효가 됨 |
 | `JAVA_OPTS` | `-Xms256m -Xmx768m` (전환 중 앱 두 개가 같이 뜨므로 4GB 서버 기준으로 제한) |
 | `DISCORD_ERROR_WEBHOOK_URL` | 서버 에러 채널 디스코드 웹훅 URL. 비우면 알림 끔 |
-| `DISCORD_BATCH_WEBHOOK_URL` | 배치·운영 채널 디스코드 웹훅 URL. 비우면 알림 끔 |
+| `DISCORD_BATCH_WEBHOOK_URL` | 배치·운영 채널 디스코드 웹훅 URL. Prometheus 알림과 백업 실패도 이 채널로 감. 비우면 알림 끔 |
 | `ANTHROPIC_API_KEY` | AI 요약에 쓰는 Claude API 키(운영 전용 키, `sk-ant-`로 시작). 없으면 앱은 뜨지만 요약이 모두 실패함. 키의 만료일을 팀 캘린더에 적어 둠 |
 | `S3_ACCESS_KEY`, `S3_SECRET_KEY` | 프로필 이미지를 S3 `byarrival-media` 버킷에 올리고 지우는 IAM 사용자의 액세스 키. 권한은 이 버킷의 `PutObject`·`GetObject`·`DeleteObject`만 줍니다. 없으면 프로필 이미지 업로드가 503으로 끝납니다. 운영 파일은 버킷의 `prod/` 폴더에 저장되고 CloudFront 주소로 읽습니다 |
 | `ADMIN_ALLOWED_ORIGINS` | 어드민 웹 주소(쉼표로 구분, 예: `https://admin.example.com`). 쿠키를 함께 보내므로 정확한 주소만 넣습니다. 없으면 브라우저의 다른 주소에서 어드민 API를 호출할 수 없습니다 |
+| `BACKUP_S3_BUCKET`, `BACKUP_S3_ACCESS_KEY`, `BACKUP_S3_SECRET_KEY` | DB 백업을 올릴 전용 S3 버킷과 IAM 키. 하나라도 없으면 서버에만 보관. 리전이 `ap-northeast-2`가 아니면 `BACKUP_S3_REGION`도 넣음 |
 | `GRAFANA_ADMIN_PASSWORD` | Grafana `admin` 비밀번호. 없으면 Grafana를 띄우지 않음. Grafana를 처음 띄울 때만 적용되므로 이후 변경은 Grafana 화면에서 함 |
 
 ## 서버를 새로 만들 때만
