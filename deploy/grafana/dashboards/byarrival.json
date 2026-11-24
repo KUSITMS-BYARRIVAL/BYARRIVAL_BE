@@ -40,20 +40,34 @@
                 "0": {
                   "text": "다운",
                   "color": "red"
+                },
+                "-1": {
+                  "text": "수집 안 됨",
+                  "color": "orange"
                 }
               }
             }
-          ]
+          ],
+          "noValue": "수집 안 됨"
         },
         "overrides": []
       },
       "targets": [
         {
           "refId": "A",
-          "expr": "probe_success{job=\"service\"}",
-          "legendFormat": ""
+          "expr": "probe_success{job=\"service\"} or on() vector(-1)",
+          "legendFormat": "",
+          "instant": true,
+          "range": false
         }
-      ]
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "last"
+          ]
+        }
+      }
     },
     {
       "id": 2,
@@ -88,7 +102,8 @@
                 "value": 1
               }
             ]
-          }
+          },
+          "noValue": "요청 없음"
         },
         "overrides": []
       },
@@ -96,9 +111,18 @@
         {
           "refId": "A",
           "expr": "byarrival:http_p95_seconds",
-          "legendFormat": ""
+          "legendFormat": "",
+          "instant": true,
+          "range": false
         }
-      ]
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "last"
+          ]
+        }
+      }
     },
     {
       "id": 3,
@@ -129,7 +153,8 @@
                 "value": 0.05
               }
             ]
-          }
+          },
+          "noValue": "요청 없음"
         },
         "overrides": []
       },
@@ -137,9 +162,18 @@
         {
           "refId": "A",
           "expr": "byarrival:http_5xx_ratio",
-          "legendFormat": ""
+          "legendFormat": "",
+          "instant": true,
+          "range": false
         }
-      ]
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "last"
+          ]
+        }
+      }
     },
     {
       "id": 4,
@@ -157,17 +191,55 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "s"
+          "unit": "s",
+          "noValue": "수집 안 됨",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "-1": {
+                  "text": "수집 안 됨",
+                  "color": "orange"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 86400
+              },
+              {
+                "color": "green",
+                "value": 172800
+              }
+            ]
+          }
         },
         "overrides": []
       },
       "targets": [
         {
           "refId": "A",
-          "expr": "probe_ssl_earliest_cert_expiry{job=\"service\"} - time()",
-          "legendFormat": ""
+          "expr": "probe_ssl_earliest_cert_expiry{job=\"service\"} - time() or on() vector(-1)",
+          "legendFormat": "",
+          "instant": true,
+          "range": false
         }
-      ]
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "last"
+          ]
+        }
+      }
     },
     {
       "id": 5,
@@ -198,17 +270,38 @@
                 "value": 93600
               }
             ]
-          }
+          },
+          "noValue": "수집 안 됨",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "-1": {
+                  "text": "기록 없음",
+                  "color": "orange"
+                }
+              }
+            }
+          ]
         },
         "overrides": []
       },
       "targets": [
         {
           "refId": "A",
-          "expr": "time() - byarrival_backup_last_success_timestamp_seconds",
-          "legendFormat": ""
+          "expr": "time() - byarrival_backup_last_success_timestamp_seconds or on() vector(-1)",
+          "legendFormat": "",
+          "instant": true,
+          "range": false
         }
-      ]
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "last"
+          ]
+        }
+      }
     },
     {
       "id": 6,
