@@ -2,6 +2,8 @@ package com.byarrival.domain.smalltalk.service;
 
 import com.byarrival.common.exception.BusinessException;
 import com.byarrival.common.monitoring.BatchAlertNotifier;
+import com.byarrival.domain.ai.config.AnthropicProperties;
+import com.byarrival.domain.ai.exception.AiResponseInvalidException;
 import com.byarrival.domain.ai.service.ClaudeClient.ClaudeResult;
 import com.byarrival.domain.article.entity.Article;
 import com.byarrival.domain.article.service.ArticleQueryService;
@@ -21,6 +23,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
 import lombok.extern.slf4j.Slf4j;
 import org.hibernate.exception.ConstraintViolationException;
@@ -47,13 +50,15 @@ public class SmalltalkGenerationService {
     private final SmalltalkStore store;
     private final ExecutorService executor;
     private final SmalltalkProperties properties;
+    private final AnthropicProperties anthropicProperties;
     private final BatchAlertNotifier batchAlertNotifier;
     private final Clock clock;
 
     public SmalltalkGenerationService(ArticleQueryService articleQueryService,
         CategoryMappingService categoryMappingService, SmalltalkGenerator generator, SmalltalkValidator validator,
         SmalltalkStore store, @Qualifier("smalltalkGenerationExecutor") ExecutorService executor,
-        SmalltalkProperties properties, BatchAlertNotifier batchAlertNotifier, Clock clock) {
+        SmalltalkProperties properties, AnthropicProperties anthropicProperties, BatchAlertNotifier batchAlertNotifier,
+        Clock clock) {
         this.articleQueryService = articleQueryService;
         this.categoryMappingService = categoryMappingService;
         this.generator = generator;
@@ -61,6 +66,7 @@ public class SmalltalkGenerationService {
         this.store = store;
         this.executor = executor;
         this.properties = properties;
+        this.anthropicProperties = anthropicProperties;
         this.batchAlertNotifier = batchAlertNotifier;
         this.clock = clock;
     }
@@ -76,20 +82,24 @@ public class SmalltalkGenerationService {
             byCategory.computeIfAbsent(article.getCategoryId(), id -> new ArrayList<>()).add(article);
         }
 
+        Tally tally = new Tally();
         Map<Long, CompletableFuture<Integer>> futures = new LinkedHashMap<>();
         byCategory.forEach((categoryId, articles) -> futures.put(categoryId, CompletableFuture.supplyAsync(
-            () -> fillCategory(serviceDate, articles, done, categoryNames.getOrDefault(categoryId, "")), executor)));
+            () -> fillCategory(serviceDate, articles, done, categoryNames.getOrDefault(categoryId, ""), tally),
+            executor)));
         // 추천 후보 기사가 없는 활성 카테고리도 0건으로 남겨 부족 알림에 드러나게 한다
         Map<Long, Integer> counts = new LinkedHashMap<>();
         categoryNames.keySet().forEach(categoryId -> counts.put(categoryId, 0));
         futures.forEach((categoryId, future) -> counts.put(categoryId, future.join()));
-        log.info("[AI 스몰토크] serviceDate={} 카테고리별 확보 {}", serviceDate, counts);
-        notifyCompleted(serviceDate, counts);
+        log.info("[AI 스몰토크] serviceDate={} 카테고리별 확보 {}, 알맞지 않음 {}건, 호출 {}회", serviceDate, counts,
+            tally.unsuitable.get(), tally.calls.get());
+        notifyCompleted(serviceDate, counts, tally);
         return counts;
     }
 
     // 인기 순서대로 내려가며 카테고리당 최대 perCategory건을 채운다
-    private int fillCategory(LocalDate serviceDate, List<Article> articles, Set<Long> done, String categoryName) {
+    private int fillCategory(LocalDate serviceDate, List<Article> articles, Set<Long> done, String categoryName,
+        Tally tally) {
         int count = (int) articles.stream().filter(article -> done.contains(article.getId())).count();
         for (Article article : articles) {
             if (count >= properties.perCategory()) {
@@ -99,7 +109,7 @@ public class SmalltalkGenerationService {
                 continue;
             }
             try {
-                String hook = generateValid(sourceOf(article, categoryName));
+                String hook = generateValid(sourceOf(article, categoryName), tally);
                 if (hook != null) {
                     store.save(article.getId(), serviceDate, hook, LocalDateTime.now(clock));
                     count++;
@@ -124,7 +134,7 @@ public class SmalltalkGenerationService {
      *
      * @return 검증을 통과한 hook. 끝내 실패했거나 대화 소재로 알맞지 않은 기사면 null
      */
-    private String generateValid(SmalltalkSource source) {
+    private String generateValid(SmalltalkSource source, Tally tally) {
         SmalltalkOutput previous = null;
         String problems = null;
         int attempts = properties.maxRetries() + 1;
@@ -134,8 +144,11 @@ public class SmalltalkGenerationService {
                 ClaudeResult<SmalltalkOutput> result = previous == null
                     ? generator.generate(source)
                     : generator.regenerate(source, previous, problems);
+                tally.add(result.usage().inputTokens(), result.usage().outputTokens());
                 output = result.output();
             } catch (BusinessException e) {
+                tally.addFailed(e);
+                logAttemptFailure(source, attempt, attempts, "호출 실패", e.getMessage());
                 previous = null;
                 problems = null;
                 continue;
@@ -143,15 +156,25 @@ public class SmalltalkGenerationService {
             try {
                 return validator.validate(output, source);
             } catch (UnsuitableArticleException e) {
-                log.info("[AI 스몰토크] articleId={} 대화 소재로 알맞지 않아 다음 기사로", source.articleId());
+                // 거절 기준이 너무 엄격한지 나중에 볼 수 있게 제목을 함께 남긴다(2026-11-24)
+                tally.unsuitable.incrementAndGet();
+                log.info("[AI 스몰토크] articleId={} category={} 대화 소재로 알맞지 않아 다음 기사로 title={}",
+                    source.articleId(), source.categoryName(), source.title());
                 return null;
             } catch (BusinessException e) {
+                logAttemptFailure(source, attempt, attempts, "검증 실패", e.getMessage());
                 previous = output;
                 problems = e.getMessage();
             }
         }
         log.warn("[AI 스몰토크 실패] articleId={} attempts={}", source.articleId(), attempts);
         return null;
+    }
+
+    private static void logAttemptFailure(SmalltalkSource source, int attempt, int attempts, String stage,
+        String reason) {
+        log.info("[AI 스몰토크 시도 실패] articleId={} attempt={}/{} stage={} reason={}", source.articleId(), attempt,
+            attempts, stage, reason == null ? "" : reason.replace('\n', ' '));
     }
 
     private static boolean isSmalltalkArticleUniqueViolation(DataIntegrityViolationException e) {
@@ -172,13 +195,41 @@ public class SmalltalkGenerationService {
     }
 
     // 알림이 실패해도 결과에는 영향을 주지 않는다
-    private void notifyCompleted(LocalDate serviceDate, Map<Long, Integer> counts) {
+    private void notifyCompleted(LocalDate serviceDate, Map<Long, Integer> counts, Tally tally) {
         try {
             long shortage = counts.values().stream().filter(count -> count < properties.perCategory()).count();
             batchAlertNotifier.send((shortage == 0 ? "💬 **AI 스몰토크 완료**" : "⚠️ **AI 스몰토크 완료 (부족한 카테고리 있음)**")
-                + " 서비스일 " + serviceDate + "\n카테고리별 확보 " + counts);
+                + " 서비스일 " + serviceDate + "\n카테고리별 확보 " + counts
+                + "\n알맞지 않음 " + tally.unsuitable.get() + "건 · 호출 " + tally.calls.get() + "회"
+                + String.format(" · 토큰 입력 %,d / 출력 %,d", tally.inputTokens.get(), tally.outputTokens.get())
+                + "\n예상 비용 $" + String.format("%.4f",
+                anthropicProperties.estimateCost(tally.inputTokens.get(), tally.outputTokens.get())));
         } catch (RuntimeException e) {
             log.warn("[AI 스몰토크] 완료 알림 실패 - {}", e.getMessage());
+        }
+    }
+
+    // 여러 카테고리를 동시에 채우므로 원자 값으로 센다
+    private static final class Tally {
+
+        private final AtomicLong calls = new AtomicLong();
+        private final AtomicLong inputTokens = new AtomicLong();
+        private final AtomicLong outputTokens = new AtomicLong();
+        private final AtomicLong unsuitable = new AtomicLong();
+
+        void add(long input, long output) {
+            calls.incrementAndGet();
+            inputTokens.addAndGet(input);
+            outputTokens.addAndGet(output);
+        }
+
+        // 응답을 받았지만 쓸 수 없던 호출은 쓴 토큰을 넣고, 응답을 받지 못한 호출은 호출 수만 센다
+        void addFailed(BusinessException e) {
+            if (e instanceof AiResponseInvalidException invalid) {
+                add(invalid.getUsage().inputTokens(), invalid.getUsage().outputTokens());
+            } else {
+                add(0, 0);
+            }
         }
     }
 }
