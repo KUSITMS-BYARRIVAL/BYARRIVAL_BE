@@ -27,6 +27,25 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       TZ: Asia/Seoul
       PGTZ: Asia/Seoul
+    # 느린 쿼리 확인과 실행 계획 설정. 이미 떠 있는 DB에는 README의 "DB·Redis 설정 변경" 절차로 적용한다.
+    # 바인드 값에는 개인정보가 있을 수 있어 로그에 남기지 않는다(log_parameter_max_length=0)
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - log_min_duration_statement=500
+      - -c
+      - log_lock_waits=on
+      - -c
+      - log_parameter_max_length=0
+      - -c
+      - log_parameter_max_length_on_error=0
+      # SSD 기준 값. 기본값 4.0에서는 인기 기사 집계가 인덱스 대신 route_card 전체를 읽는다
+      # (2026-11-24 로컬 load 테스트: 4.0은 2번 모두 전체 p95 20초 이상, 1.1은 4번 중 3번 54~63ms, 1번 990ms로 기준 초과).
+      # 운영 디스크는 SSD다(2026-11-24 가비아 콘솔 확인). HDD 서버로 옮기면 4.0으로 되돌린다
+      - -c
+      - random_page_cost=1.1
     # 외부에는 열지 않고 서버 localhost에만 연다. 개발자는 SSH 터널로 접속한다
     ports:
       - "127.0.0.1:5432:5432"
@@ -102,6 +121,7 @@ services:
       - --storage.tsdb.retention.size=1GB
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules:/etc/prometheus/rules:ro
       - prometheus-data:/prometheus
     mem_limit: 256m
     restart: unless-stopped
@@ -134,13 +154,81 @@ services:
     volumes:
       - grafana-data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/etc/grafana/dashboards:ro
     depends_on:
       - prometheus
     mem_limit: 256m
     restart: on-failure:3
     logging: *default-logging
 
+  # Prometheus 알림을 디스코드 배치·운영 채널로 보낸다.
+  # 웹훅이 없으면 설정을 읽지 못하므로 시작하지 않는다(deploy.sh가 웹훅이 있을 때만 띄운다).
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    container_name: byarrival-alertmanager
+    profiles: ["monitoring"]
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        if [ -z "$$ALERT_WEBHOOK_URL" ]; then
+          echo "DISCORD_BATCH_WEBHOOK_URL이 없어 Alertmanager를 시작하지 않습니다." >&2
+          exit 1
+        fi
+        umask 077
+        printf '%s' "$$ALERT_WEBHOOK_URL" > /tmp/discord-webhook-url
+        exec /bin/alertmanager --config.file=/etc/alertmanager/alertmanager.yml --storage.path=/alertmanager --cluster.listen-address=
+    environment:
+      ALERT_WEBHOOK_URL: ${DISCORD_BATCH_WEBHOOK_URL:-}
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ./alertmanager/discord.tmpl:/etc/alertmanager/discord.tmpl:ro
+      - alertmanager-data:/alertmanager
+    mem_limit: 96m
+    restart: on-failure:3
+    logging: *default-logging
+
+  # Nginx를 거친 서비스 응답, 인증서 만료일, Redis 응답을 확인한다
+  blackbox-exporter:
+    image: prom/blackbox-exporter:v0.27.0
+    container_name: byarrival-blackbox-exporter
+    command: ["--config.file=/etc/blackbox/blackbox.yml"]
+    volumes:
+      - ./blackbox/blackbox.yml:/etc/blackbox/blackbox.yml:ro
+    mem_limit: 64m
+    restart: unless-stopped
+    logging: *default-logging
+
+  # 서버 CPU·메모리·디스크와 백업 성공 시각(textfile)을 수집한다
+  node-exporter:
+    image: prom/node-exporter:v1.9.1
+    container_name: byarrival-node-exporter
+    command:
+      - --path.rootfs=/host
+      - --collector.textfile.directory=/textfile
+      - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run|var/lib/docker/.+|snap/.+)($$|/)
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+      - ./metrics:/textfile:ro
+    mem_limit: 64m
+    restart: unless-stopped
+    logging: *default-logging
+
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.17.1
+    container_name: byarrival-postgres-exporter
+    environment:
+      DATA_SOURCE_URI: postgres:5432/${POSTGRES_DB}?sslmode=disable
+      DATA_SOURCE_USER: ${POSTGRES_USER}
+      DATA_SOURCE_PASS: ${POSTGRES_PASSWORD}
+    command: ["--collector.long_running_transactions"]
+    mem_limit: 64m
+    restart: unless-stopped
+    logging: *default-logging
+
 volumes:
   postgres-data:
+  alertmanager-data:
   prometheus-data:
   grafana-data:

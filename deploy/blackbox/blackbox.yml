@@ -1,0 +1,21 @@
+modules:
+  # compose 안에서는 IP 인증서의 이름이 맞지 않아 검증을 끈다. 만료일은 그대로 잴 수 있고,
+  # 인증서 검증은 밖에서 확인하는 uptime 워크플로가 한다
+  https_health:
+    prober: http
+    timeout: 8s
+    http:
+      valid_status_codes: [200]
+      fail_if_not_ssl: true
+      preferred_ip_protocol: ip4
+      tls_config:
+        insecure_skip_verify: true
+
+  redis_ping:
+    prober: tcp
+    timeout: 5s
+    tcp:
+      preferred_ip_protocol: ip4
+      query_response:
+        - send: "PING"
+        - expect: "PONG"

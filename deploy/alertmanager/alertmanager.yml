@@ -1,0 +1,32 @@
+# 알림을 디스코드로 보낸다. 웹훅 URL은 컨테이너가 시작할 때 .env 값으로 만든 파일에서 읽는다
+templates:
+  - /etc/alertmanager/discord.tmpl
+
+route:
+  receiver: discord
+  group_by: [alertname]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 6h
+  routes:
+    - matchers: [severity="critical"]
+      receiver: discord
+      group_wait: 10s
+      repeat_interval: 1h
+
+inhibit_rules:
+  # 서비스가 죽으면 뒤따르는 경고는 보내지 않는다
+  - source_matchers: [alertname="ServiceDown"]
+    target_matchers: [severity="warning"]
+  # 같은 항목의 긴급 알림이 있으면 경고는 보내지 않는다
+  - source_matchers: [severity="critical"]
+    target_matchers: [severity="warning"]
+    equal: [topic]
+
+receivers:
+  - name: discord
+    discord_configs:
+      - webhook_url_file: /tmp/discord-webhook-url
+        send_resolved: true
+        title: '{{ template "byarrival.title" . }}'
+        message: '{{ template "byarrival.message" . }}'
