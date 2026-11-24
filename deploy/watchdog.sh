@@ -11,13 +11,7 @@ STATE_DIR="backups/.state"
 STATE_FILE="$STATE_DIR/watchdog"
 mkdir -p "$STATE_DIR"
 
-# .env에는 특수문자가 있을 수 있어 실행(source)하지 않고 값만 읽는다
-env_value() {
-  local value
-  value="$(sed -n "s/^$1=//p" .env 2>/dev/null | tail -n 1 | tr -d '\r')"
-  value="${value%\"}"; value="${value#\"}"
-  printf '%s' "$value"
-}
+. ./env.sh
 
 webhook="$(env_value DISCORD_BATCH_WEBHOOK_URL)"
 [[ -n "$webhook" ]] || exit 0

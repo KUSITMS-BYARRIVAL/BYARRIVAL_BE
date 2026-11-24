@@ -3,7 +3,8 @@
 #
 # 1. pg_dump(-Fc)로 backups/에 저장하고, 읽을 수 있는 파일인지 확인한다.
 # 2. .env에 BACKUP_S3_* 값이 있으면 S3에도 올린다.
-# 3. 성공하면 7일 지난 서버 백업을 지우고 성공 시각을 메트릭으로 남긴다. 실패하면 디스코드로 알린다.
+# 3. 성공 시각을 메트릭으로 남기고 결과를 디스코드로 알린다.
+# 4. 성공·실패와 상관없이 7일 지난 서버 백업을 지운다.
 # 백업에는 개인정보가 있으므로 소유자만 읽게 하고 짧게 보관한다. S3의 7일 삭제는 버킷 수명 주기 규칙이 한다.
 set -euo pipefail
 umask 077
@@ -17,16 +18,13 @@ METRIC_FILE="metrics/backup.prom"
 STATE_DIR="backups/.state"
 
 mkdir -p backups metrics "$STATE_DIR"
+# node-exporter는 다른 사용자로 돌기 때문에 metrics 안을 볼 수 있어야 한다. backups는 소유자만 본다
+chmod 755 metrics
+chmod 700 backups
 
 log() { echo "[backup] $(TZ=Asia/Seoul date '+%F %T') $*"; }
 
-# .env에는 특수문자가 있을 수 있어 실행(source)하지 않고 값만 읽는다
-env_value() {
-  local value
-  value="$(sed -n "s/^$1=//p" .env 2>/dev/null | tail -n 1 | tr -d '\r')"
-  value="${value%\"}"; value="${value#\"}"
-  printf '%s' "$value"
-}
+. ./env.sh
 
 write_metrics() {
   local tmp="$METRIC_FILE.tmp" name
@@ -52,11 +50,20 @@ notify() {
     -d "{\"content\": \"$1\", \"allowed_mentions\": {\"parse\": []}}" "$webhook" > /dev/null || log "디스코드 알림 실패"
 }
 
+# 보관 상한(탈퇴 회원 파기, MY-10)을 지키려고 백업이 실패해도 지운다. 실패가 7일 이어지면 서버 백업이 모두 사라지므로
+# 실패 알림과 BackupStale(26시간) 알림을 받으면 바로 고친다.
+# 매일 같은 시각에 돌므로 기준을 12시간 앞당겨, 7일 된 파일이 하루 더 남지 않게 한다
+delete_expired() {
+  find backups -maxdepth 1 -name 'byarrival-*.dump' -mmin "+$((RETENTION_DAYS * 24 * 60 - 720))" -delete
+  find backups -maxdepth 1 -name 'byarrival-*.part' -mmin +1440 -delete
+}
+
 part=""
 step="준비"
 on_exit() {
   local status=$?
   [[ -z "$part" ]] || rm -f "$part"
+  delete_expired || { log "만료 백업 삭제 실패"; notify "🚨 **만료된 DB 백업 삭제 실패** 서버의 backups를 확인하세요."; }
   if (( status != 0 )); then
     log "실패: $step"
     notify "🚨 **DB 백업 실패** ($step) 서버의 backups/backup.log를 확인하세요."
@@ -86,10 +93,6 @@ log "저장: $file ($size bytes)"
 set_state byarrival_backup_last_success_timestamp_seconds "$(date +%s)"
 set_state byarrival_backup_size_bytes "$size"
 write_metrics
-
-# 새 백업이 성공한 뒤에만 지운다. 방금 만든 것은 항상 남는다
-find backups -maxdepth 1 -name 'byarrival-*.dump' -mmin "+$((RETENTION_DAYS * 24 * 60))" -delete
-find backups -maxdepth 1 -name 'byarrival-*.part' -mmin +1440 -delete
 
 bucket="$(env_value BACKUP_S3_BUCKET)"
 access_key="$(env_value BACKUP_S3_ACCESS_KEY)"

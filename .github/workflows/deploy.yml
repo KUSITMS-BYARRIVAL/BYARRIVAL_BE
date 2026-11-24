@@ -49,7 +49,7 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
-          source: deploy/docker-compose.prod.yml,deploy/deploy.sh,deploy/init-cert.sh,deploy/watchdog.sh,deploy/nginx/default.conf,deploy/prometheus/prometheus.yml,deploy/prometheus/rules/byarrival.yml,deploy/alertmanager/alertmanager.yml,deploy/alertmanager/discord.tmpl,deploy/blackbox/blackbox.yml,deploy/grafana/provisioning/datasources/prometheus.yml,deploy/grafana/provisioning/dashboards/byarrival.yml,deploy/grafana/dashboards/byarrival.json,deploy/db/backup.sh,deploy/db/restore.sh,deploy/db/report.sh,deploy/db/report.sql
+          source: deploy/docker-compose.prod.yml,deploy/deploy.sh,deploy/init-cert.sh,deploy/watchdog.sh,deploy/env.sh,deploy/nginx/default.conf,deploy/prometheus/prometheus.yml,deploy/prometheus/rules/byarrival.yml,deploy/alertmanager/alertmanager.yml,deploy/alertmanager/discord.tmpl,deploy/blackbox/blackbox.yml,deploy/grafana/provisioning/datasources/prometheus.yml,deploy/grafana/provisioning/dashboards/byarrival.yml,deploy/grafana/dashboards/byarrival.json,deploy/db/backup.sh,deploy/db/restore.sh,deploy/db/report.sh,deploy/db/report.sql
           target: ~/byarrival
           strip_components: 1
 

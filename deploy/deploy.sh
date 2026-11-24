@@ -48,6 +48,7 @@ log "현재: ${active:-없음(첫 배포)} → 배포 대상: $target ($APP_IMAG
 # metrics·backups는 컨테이너가 먼저 만들면 root 소유가 되어 backup.sh가 쓰지 못하므로 여기서 만든다
 mkdir -p metrics backups
 chmod 700 backups
+chmod 755 metrics
 for service in node-exporter postgres-exporter blackbox-exporter prometheus; do
   if ! "${COMPOSE[@]}" up -d --no-deps --force-recreate "$service"; then
     log "$service 를 띄우지 못했습니다. 앱 배포는 계속합니다."
