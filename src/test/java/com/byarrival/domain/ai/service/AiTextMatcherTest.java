@@ -43,7 +43,7 @@ class AiTextMatcherTest {
     void 비교할_때_숫자의_소수점과_음수_부호는_남긴다() {
         assertThat(AiTextMatcher.normalize("기준금리는 연 3.0%다")).isNotEqualTo(AiTextMatcher.normalize("기준금리는 연 30%다"));
         assertThat(AiTextMatcher.normalize("성장률은 -0.5%다")).isEqualTo("성장률은-0.5다");
-        assertThat(AiTextMatcher.normalize("1,000명, 2026-11-17")).isEqualTo("1,000명20261117");
+        assertThat(AiTextMatcher.normalize("1,000명, 2026-11-17")).isEqualTo("1,000명2026~11~17");
     }
 
     @Test
@@ -57,6 +57,38 @@ class AiTextMatcherTest {
         assertThat(AiTextMatcher.containsQuote("공사는 2~3년이 걸릴 전망이다.", "공사는 2∼3년이 걸릴 전망이다")).isTrue();
         assertThat(AiTextMatcher.containsQuote("공사는 2〜3년이 걸릴 전망이다.", "공사는 2～3년이 걸릴 전망이다")).isTrue();
         assertThat(AiTextMatcher.containsQuote("서울-부산 노선을 늘린다.", "서울–부산 노선을 늘린다")).isTrue();
+    }
+
+    @Test
+    void 범위_구분자를_빼서_다른_숫자가_된_인용은_인정하지_않는다() {
+        for (String separator : new String[] {"~", "∼", "～", "〜", "-", "–", "—"}) {
+            assertThat(AiTextMatcher.containsQuote("공사는 2" + separator + "3년이 걸릴 전망이다.", "공사는 23년이 걸릴 전망이다"))
+                .as(separator).isFalse();
+            assertThat(AiTextMatcher.containsQuote("금리는 2%" + separator + "3%로 오른다.", "금리는 23%로 오른다"))
+                .as(separator).isFalse();
+        }
+    }
+
+    @Test
+    void 범위_구분자는_모양과_띄어쓰기가_달라도_같은_인용으로_본다() {
+        for (String separator : new String[] {"∼", "～", "〜", "-", "–", "—", " ~ ", " – "}) {
+            assertThat(AiTextMatcher.containsQuote("공사는 2~3년이 걸릴 전망이다.", "공사는 2" + separator + "3년이 걸릴 전망이다"))
+                .as(separator).isTrue();
+            assertThat(AiTextMatcher.containsQuote("금리는 2%~3%로 오른다.", "금리는 2%" + separator + "3%로 오른다"))
+                .as(separator).isTrue();
+        }
+    }
+
+    @Test
+    void 엔_대시도_음수_부호로_본다() {
+        assertThat(AiTextMatcher.numbersOf("성장률은 –0.5%였다")).containsExactly("-0.5");
+        assertThat(AiTextMatcher.containsQuote("성장률은 –0.5%로 유지됐다.", "0.5%로 유지됐다")).isFalse();
+        assertThat(AiTextMatcher.containsQuote("성장률은 –0.5%로 유지됐다.", "성장률은 -0.5%로 유지됐다")).isTrue();
+    }
+
+    @Test
+    void 숫자_사이의_엔_대시는_음수_부호가_아니다() {
+        assertThat(AiTextMatcher.numbersOf("공사는 2–3년, 금리는 4%–5%다")).containsExactlyInAnyOrder("2", "3", "4", "5");
     }
 
     @Test
