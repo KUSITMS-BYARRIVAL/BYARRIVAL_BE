@@ -1,0 +1,61 @@
+# 부하 테스트 전용 환경. 개발 DB와 섞이지 않게 별도 프로젝트로 띄우고 끝나면 지운다(perf/run.sh).
+# 앱은 운영과 같은 이미지·JVM 옵션을 쓰고, CPU를 제한해 로컬에서도 같은 조건으로 잰다.
+name: byarrival-perf
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: byarrival
+      POSTGRES_USER: byarrival
+      POSTGRES_PASSWORD: perf
+      TZ: Asia/Seoul
+      PGTZ: Asia/Seoul
+    # 실행 계획이 같도록 운영(deploy/docker-compose.prod.yml)과 같은 값을 쓴다
+    command: [postgres, -c, shared_preload_libraries=pg_stat_statements, -c, random_page_cost=1.1]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U byarrival -d byarrival"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    cpus: 1
+    mem_limit: 768m
+
+  redis:
+    image: redis:7.4
+    mem_limit: 128m
+
+  app:
+    build: ..
+    image: byarrival-perf-app
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      JAVA_OPTS: -Xms256m -Xmx768m
+      DB_URL: jdbc:postgresql://postgres:5432/byarrival
+      DB_USERNAME: byarrival
+      DB_PASSWORD: perf
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: ${PERF_JWT_SECRET:?run.sh로 실행하세요}
+      # 외부로 나가는 것은 모두 끈다. AI 키·웹훅·FCM은 비어 있어 호출하지 않는다
+      NOTIFICATION_AUTO_ENABLED: "false"
+      FCM_ENABLED: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    cpus: 2
+    mem_limit: 1200m
+
+  k6:
+    image: grafana/k6:1.0.0
+    profiles: ["k6"]
+    environment:
+      BASE_URL: http://app:8080
+      JWT_SECRET: ${PERF_JWT_SECRET}
+      PROFILE: ${PROFILE:-load}
+      USERS: ${USERS:-5000}
+      RATE: ${RATE:-}
+      P95_MS: ${P95_MS:-500}
+    volumes:
+      - ./k6:/scripts:ro
+      - ./results:/results
