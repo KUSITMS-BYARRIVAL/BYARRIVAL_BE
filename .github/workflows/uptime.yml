@@ -1,0 +1,64 @@
+name: Uptime
+
+# 서버 밖에서 서비스가 응답하는지 확인한다. 서버가 통째로 죽으면 서버 안의 Prometheus는 알리지 못한다.
+# 예약 실행은 GitHub 사정에 따라 늦어질 수 있고, 저장소에 60일 동안 활동이 없으면 꺼진다.
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: uptime
+  cancel-in-progress: false
+
+jobs:
+  check:
+    if: github.repository == 'KUSITMS-BYARRIVAL/BYARRIVAL_BE'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # 인증서도 그대로 검증한다. 잠깐 끊긴 것을 장애로 알리지 않도록 세 번 실패해야 다운으로 본다
+      - name: Check service
+        id: check
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          up=false
+          for attempt in 1 2 3; do
+            code=$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 5 --max-time 10 "https://${SERVER_HOST}/healthz" 2>/dev/null) || code=000
+            echo "attempt ${attempt}: ${code}"
+            if [ "$code" = "200" ]; then up=true; break; fi
+            [ "$attempt" = 3 ] || sleep 20
+          done
+          echo "up=$up" >> "$GITHUB_OUTPUT"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
+      # 다운이 이어지는 동안 5분마다 알리지 않도록 직전 실행과 상태가 바뀔 때만 보낸다
+      - name: Notify Discord on change
+        if: always() && steps.check.outputs.up != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WEBHOOK: ${{ secrets.DISCORD_UPTIME_WEBHOOK_URL }}
+          UP: ${{ steps.check.outputs.up }}
+          CODE: ${{ steps.check.outputs.code }}
+        run: |
+          if [ -z "$WEBHOOK" ]; then echo "::warning::DISCORD_UPTIME_WEBHOOK_URL이 없어 알리지 않습니다."; exit 0; fi
+          previous=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow uptime.yml --branch dev --status completed --limit 10 --json conclusion --jq '[.[].conclusion | select(. == "success" or . == "failure")][0] // "success"') || previous=unknown
+          now=$(TZ=Asia/Seoul date '+%m-%d %H:%M')
+          if [ "$UP" = false ] && [ "$previous" != failure ]; then
+            text="🚨 **서버 다운** ${now} KST · 밖에서 3번 확인했지만 응답이 없습니다 (HTTP ${CODE})"
+          elif [ "$UP" = true ] && [ "$previous" = failure ]; then
+            text="✅ **서버 복구** ${now} KST"
+          else
+            exit 0
+          fi
+          jq -n --arg content "$text" '{content: $content}' \
+            | curl -fsS --max-time 10 -H 'Content-Type: application/json' -d @- "$WEBHOOK"
+
+      - name: Fail when down
+        if: steps.check.outputs.up != 'true'
+        run: exit 1
