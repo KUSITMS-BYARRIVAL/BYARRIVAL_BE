@@ -164,6 +164,7 @@ public class QuizGenerationService {
                 output = result.output();
             } catch (BusinessException e) {
                 tally.addFailed(e);
+                logAttemptFailure(source, attempt, attempts, "출제 호출 실패", e.getMessage());
                 lastError = e;
                 previous = null;
                 problems = null;
@@ -173,6 +174,7 @@ public class QuizGenerationService {
             try {
                 quiz = shuffler.shuffle(validator.validate(output, source));
             } catch (BusinessException e) {
+                logAttemptFailure(source, attempt, attempts, "형식 검증 실패", e.getMessage());
                 lastError = e;
                 previous = output;
                 problems = e.getMessage();
@@ -186,6 +188,7 @@ public class QuizGenerationService {
             } catch (BusinessException e) {
                 // 검수를 못 하면 맞는 퀴즈인지 알 수 없으므로 저장하지 않고 처음부터 다시 만든다
                 tally.addFailed(e);
+                logAttemptFailure(source, attempt, attempts, "검수 호출 실패", e.getMessage());
                 lastError = e;
                 previous = null;
                 problems = null;
@@ -195,6 +198,7 @@ public class QuizGenerationService {
             if (checkProblems == null) {
                 return quiz;
             }
+            logAttemptFailure(source, attempt, attempts, "검수 불통과", checkProblems);
             lastError = new BusinessException(QuizErrorCode.QUIZ_RESPONSE_INVALID, checkProblems);
             previous = output;
             problems = checkProblems;
@@ -202,6 +206,12 @@ public class QuizGenerationService {
         log.warn("[AI 퀴즈 실패] articleId={} attempts={} reason={}", source.articleId(), attempts,
             lastError.getMessage().replace('\n', ' '));
         return null;
+    }
+
+    // 어떤 이유로 다시 만드는지 배치 로그로 나눠 보려고 시도마다 남긴다(2026-11-24)
+    private static void logAttemptFailure(QuizSource source, int attempt, int attempts, String stage, String reason) {
+        log.info("[AI 퀴즈 시도 실패] articleId={} attempt={}/{} stage={} reason={}", source.articleId(), attempt,
+            attempts, stage, reason == null ? "" : reason.replace('\n', ' '));
     }
 
     /**

@@ -12,11 +12,16 @@ import java.util.regex.Pattern;
 public final class AiTextMatcher {
 
     // 소수점·자릿수 쉼표는 숫자 사이에 있을 때만 숫자로 본다("28.5..."의 끝 마침표, "28명,"의 쉼표는 빼고 28.5, 28).
-    // 앞에 붙은 빼기 부호는 글자나 숫자 바로 뒤가 아닐 때만 음수 부호로 본다("-0.5%"는 -0.5, "2026-11-17"·"3-1"은 나열)
-    private static final Pattern NUMBER = Pattern.compile("(?:(?<![\\p{L}\\p{N}])[-−])?\\d+(?:[.,]\\d+)*");
+    // 앞에 붙은 빼기 부호(- − –)는 글자·숫자·% 바로 뒤가 아닐 때만 음수 부호로 본다("-0.5%"는 -0.5,
+    // "2026-11-17"·"3-1"·"2%–3%"는 나열이나 범위)
+    private static final Pattern NUMBER = Pattern.compile("(?:(?<![\\p{L}\\p{N}%])[-−–])?\\d+(?:[.,]\\d+)*");
     private static final Pattern THOUSANDS_COMMA = Pattern.compile("[-−]?\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?");
-    // 인용 구절을 비교할 때 무시하는 공백과 문장 부호
-    private static final Pattern IGNORABLE = Pattern.compile("[\\s\\p{Punct}·‘’“”…「」『』《》〈〉−]");
+    // 인용 구절을 비교할 때 무시하는 공백과 문장 부호. \p{Punct}는 ASCII 부호만 가리키므로 대시(– —)를 따로 넣는다
+    private static final Pattern IGNORABLE = Pattern.compile("[\\s\\p{Punct}·‘’“”…「」『』《》〈〉−–—]");
+    // 범위를 나타내는 물결표와, 숫자 사이에서만 범위로 보는 대시. AI가 모양을 바꿔 옮겨도("2~3년"을 "2∼3년") 같은 구절로
+    // 보고, 지워서 "23년"과 같아지지 않게 '~' 하나로 바꿔 남긴다(2026-11-24)
+    private static final String WAVES = "~∼～〜";
+    private static final String DASHES = "-−–—";
 
     private AiTextMatcher() {
     }
@@ -32,7 +37,7 @@ public final class AiTextMatcher {
         }
         Matcher matcher = NUMBER.matcher(text);
         while (matcher.find()) {
-            String raw = matcher.group().replace('−', '-');
+            String raw = matcher.group().replace('−', '-').replace('–', '-');
             if (raw.contains(",") && !THOUSANDS_COMMA.matcher(raw).matches()) {
                 // "1,2"처럼 자릿수 쉼표가 아닌 쉼표는 나열이므로 숫자를 따로 센다. 부호는 첫 숫자에만 붙는다
                 for (String part : raw.split(",")) {
@@ -47,7 +52,8 @@ public final class AiTextMatcher {
 
     /**
      * 공백과 문장 부호를 빼서 인용 구절이 원문에 있는지 비교할 수 있게 한다. 숫자의 값을 바꾸는 문자는 남긴다.
-     * 숫자 사이의 소수점·쉼표("3.0"이 "30"이 되지 않게)와 음수 부호("-0.5"가 "0.5"가 되지 않게)는 지우지 않는다.
+     * 숫자 사이의 소수점·쉼표("3.0"이 "30"이 되지 않게)와 음수 부호("-0.5"가 "0.5"가 되지 않게),
+     * 범위 구분자("2~3"이 "23"이 되지 않게)는 지우지 않는다. 음수 부호는 '-', 범위 구분자는 '~'로 모양을 맞춘다.
      */
     public static String normalize(String text) {
         return normalizeWithOrigin(text).text();
@@ -91,7 +97,10 @@ public final class AiTextMatcher {
             char c = text.charAt(i);
             if (isDigitSeparator(text, i) || isMinusSign(text, i)) {
                 origin[normalized.length()] = i;
-                normalized.append(c == '−' ? '-' : c);
+                normalized.append(DASHES.indexOf(c) >= 0 ? '-' : c);
+            } else if (isRangeSeparator(text, i)) {
+                origin[normalized.length()] = i;
+                normalized.append('~');
             } else if (!IGNORABLE.matcher(String.valueOf(c)).matches()) {
                 origin[normalized.length()] = i;
                 normalized.append(c);
@@ -140,10 +149,32 @@ public final class AiTextMatcher {
 
     private static boolean isMinusSign(String text, int i) {
         char c = text.charAt(i);
-        if ((c != '-' && c != '−') || i + 1 >= text.length() || !Character.isDigit(text.charAt(i + 1))) {
+        if ((c != '-' && c != '−' && c != '–') || i + 1 >= text.length() || !Character.isDigit(text.charAt(i + 1))) {
             return false;
         }
-        return i == 0 || !Character.isLetterOrDigit(text.charAt(i - 1));
+        return i == 0 || !(Character.isLetterOrDigit(text.charAt(i - 1)) || text.charAt(i - 1) == '%');
+    }
+
+    // 물결표는 늘 범위로 보고, 대시는 앞이 숫자나 %이고 뒤가 숫자일 때만 범위로 본다("서울–부산"의 대시는 무시한다).
+    // 구분자 양옆의 빈칸은 건너뛰고, 줄바꿈 뒤의 글머리 대시는 범위로 보지 않는다
+    private static boolean isRangeSeparator(String text, int i) {
+        char c = text.charAt(i);
+        if (WAVES.indexOf(c) >= 0) {
+            return true;
+        }
+        if (DASHES.indexOf(c) < 0) {
+            return false;
+        }
+        int before = i - 1;
+        while (before >= 0 && text.charAt(before) == ' ') {
+            before--;
+        }
+        int after = i + 1;
+        while (after < text.length() && text.charAt(after) == ' ') {
+            after++;
+        }
+        return before >= 0 && (Character.isDigit(text.charAt(before)) || text.charAt(before) == '%')
+            && after < text.length() && Character.isDigit(text.charAt(after));
     }
 
     private static String canonical(String number) {
