@@ -43,13 +43,13 @@ write_metrics() {
 }
 set_state() { printf '%s' "$2" > "$STATE_DIR/$1"; }
 
-notify_failure() {
+# 알림이 실패해도 백업 결과는 바뀌지 않는다
+notify() {
   local webhook
   webhook="$(env_value DISCORD_BATCH_WEBHOOK_URL)"
   [[ -n "$webhook" ]] || return 0
   curl -fsS --max-time 10 -H 'Content-Type: application/json' \
-    -d "{\"content\": \"🚨 **DB 백업 실패** ($1) 서버의 backups/backup.log를 확인하세요.\"}" \
-    "$webhook" > /dev/null || true
+    -d "{\"content\": \"$1\", \"allowed_mentions\": {\"parse\": []}}" "$webhook" > /dev/null || log "디스코드 알림 실패"
 }
 
 part=""
@@ -59,7 +59,7 @@ on_exit() {
   [[ -z "$part" ]] || rm -f "$part"
   if (( status != 0 )); then
     log "실패: $step"
-    notify_failure "$step"
+    notify "🚨 **DB 백업 실패** ($step) 서버의 backups/backup.log를 확인하세요."
   fi
 }
 trap on_exit EXIT
@@ -104,9 +104,12 @@ if [[ -n "$bucket" && -n "$access_key" && -n "$secret_key" ]]; then
     docker run --rm -i -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION \
     "$AWS_CLI_IMAGE" s3 cp - "s3://$bucket/$(basename "$file")" --sse AES256 --only-show-errors < "$file"
   set_state byarrival_backup_s3_last_success_timestamp_seconds "$(date +%s)"
+  stored="서버 + S3"
   log "S3 업로드 완료"
 else
   set_state byarrival_backup_s3_enabled 0
+  stored="서버만"
   log "BACKUP_S3_* 값이 없어 서버에만 보관합니다."
 fi
 write_metrics
+notify "✅ **DB 백업 완료** $(( (size + 1023) / 1024 ))KB · $stored"

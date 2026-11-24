@@ -68,15 +68,20 @@ else
   log ".env에 GRAFANA_ADMIN_PASSWORD가 없어 Grafana를 띄우지 않습니다."
 fi
 
-# 매일 03:00(서버 시간대 KST) DB 백업을 등록한다. 이미 등록돼 있으면 그대로 둔다
-BACKUP_CRON="0 3 * * * $PWD/db/backup.sh >> $PWD/backups/backup.log 2>&1"
-if crontab -l 2>/dev/null | grep -Fq "$PWD/db/backup.sh"; then
-  :
-elif { crontab -l 2>/dev/null || true; echo "$BACKUP_CRON"; } | crontab -; then
-  log "DB 백업 cron을 등록했습니다."
-else
-  log "DB 백업 cron을 등록하지 못했습니다. README의 DB 백업을 확인해 주세요."
-fi
+# cron 등록(서버 시간대 KST). 이미 등록돼 있으면 그대로 둔다
+register_cron() {
+  local name="$1" script="$2" line="$3"
+  if crontab -l 2>/dev/null | grep -Fq "$script"; then
+    return 0
+  fi
+  if { crontab -l 2>/dev/null || true; echo "$line"; } | crontab -; then
+    log "$name cron을 등록했습니다."
+  else
+    log "$name cron을 등록하지 못했습니다. README를 확인해 주세요."
+  fi
+}
+register_cron "DB 백업" "$PWD/db/backup.sh" "0 3 * * * $PWD/db/backup.sh >> $PWD/backups/backup.log 2>&1"
+register_cron "감시 프로그램 확인" "$PWD/watchdog.sh" "*/5 * * * * $PWD/watchdog.sh > /dev/null 2>&1"
 "${COMPOSE[@]}" up -d certbot
 
 # Nginx는 인증서 파일이 없으면 뜨지 않는다. 처음에는 임시 자체 서명 인증서를 두고,

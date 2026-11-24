@@ -42,11 +42,11 @@ jobs:
         if: always() && steps.check.outputs.up != ''
         env:
           GH_TOKEN: ${{ github.token }}
-          WEBHOOK: ${{ secrets.DISCORD_UPTIME_WEBHOOK_URL }}
+          WEBHOOK: ${{ secrets.DISCORD_OPS_WEBHOOK_URL }}
           UP: ${{ steps.check.outputs.up }}
           CODE: ${{ steps.check.outputs.code }}
         run: |
-          if [ -z "$WEBHOOK" ]; then echo "::warning::DISCORD_UPTIME_WEBHOOK_URL이 없어 알리지 않습니다."; exit 0; fi
+          if [ -z "$WEBHOOK" ]; then echo "::warning::DISCORD_OPS_WEBHOOK_URL이 없어 알리지 않습니다."; exit 0; fi
           previous=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow uptime.yml --branch dev --status completed --limit 10 --json conclusion --jq '[.[].conclusion | select(. == "success" or . == "failure")][0] // "success"') || previous=unknown
           now=$(TZ=Asia/Seoul date '+%m-%d %H:%M')
           if [ "$UP" = false ] && [ "$previous" != failure ]; then
@@ -56,7 +56,7 @@ jobs:
           else
             exit 0
           fi
-          jq -n --arg content "$text" '{content: $content}' \
+          jq -n --arg content "$text" '{content: $content, allowed_mentions: {parse: []}}' \
             | curl -fsS --max-time 10 -H 'Content-Type: application/json' -d @- "$WEBHOOK"
 
       - name: Fail when down

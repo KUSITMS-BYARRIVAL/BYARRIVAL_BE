@@ -92,11 +92,19 @@ blue/green 중 쉬고 있는 쪽은 꺼져 있으므로 Prometheus Targets에서
 docker run --rm -v "$PWD/deploy/prometheus:/etc/prometheus:ro" --entrypoint promtool prom/prometheus:v3.5.0 test rules /etc/prometheus/tests/byarrival_test.yml
 ```
 
+### 감시 프로그램 감시
+
+Prometheus나 Alertmanager가 죽으면 다른 알림이 모두 조용해집니다. `deploy.sh`가 등록한 cron이 5분마다 `watchdog.sh`를 실행해 Prometheus·Alertmanager·Grafana를 확인하고, 두 번 이어서 실패하면 디스코드 배치·운영 채널로 직접 알립니다. 서버가 통째로 죽는 경우는 아래 "서버 밖 다운 감시"가 알립니다.
+
+### 배포·CI 알림
+
+GitHub Actions가 배포 성공·실패와 PR의 CI 실패를 디스코드로 알립니다(GitHub Secrets `DISCORD_OPS_WEBHOOK_URL`). 포크에서 온 PR은 Secret을 쓸 수 없어 알리지 않습니다.
+
 ### 서버 밖 다운 감시
 
 서버가 통째로 죽으면 서버 안의 Prometheus는 알릴 수 없습니다. `.github/workflows/uptime.yml`이 약 5분마다 밖에서 `https://<서버>/healthz`를 확인하고(인증서도 검증), 3번 실패하면 디스코드로 다운을, 다시 살아나면 복구를 알립니다.
 
-- GitHub Secrets에 `DISCORD_UPTIME_WEBHOOK_URL`을 등록해야 알립니다. 없으면 실패만 Actions에 남습니다.
+- GitHub Secrets에 `DISCORD_OPS_WEBHOOK_URL`을 등록해야 알립니다. 없으면 실패만 Actions에 남습니다.
 - GitHub 예약 실행은 몇 분에서 수십 분 늦을 수 있습니다. 저장소에 60일 동안 활동이 없으면 꺼집니다.
 
 ## DB 관리
@@ -107,7 +115,7 @@ docker run --rm -v "$PWD/deploy/prometheus:/etc/prometheus:ro" --entrypoint prom
 
 - 서버 `~/byarrival/backups`에 7일 보관합니다(권한 600). 백업에는 개인정보가 들어 있으므로 다른 곳에 복사해 두지 않습니다.
 - `.env`에 `BACKUP_S3_*`가 있으면 전용 S3 버킷에도 올립니다. 없으면 서버에만 둡니다.
-- 실패하면 디스코드로 알리고, 26시간 동안 성공이 없으면 Prometheus도 알립니다.
+- 성공과 실패를 디스코드로 알리고, 26시간 동안 성공이 없으면 Prometheus도 알립니다.
 - 탈퇴 회원 파기(MY-10) 뒤에도 백업에는 최대 7일 남습니다.
 
 처음 배포한 뒤 한 번 직접 실행해 확인합니다.
@@ -206,7 +214,7 @@ SELECT pg_reload_conf();
 | 배포 폴더 | `~/byarrival` (compose, 스크립트, Nginx 설정은 배포 때 Actions가 복사) |
 | 환경 변수 | `~/byarrival/.env` (서버에만 있음, 권한 600) |
 | 배포 키 | GitHub Actions 전용 키가 `authorized_keys`에 등록됨 |
-| GitHub Secrets | `SERVER_HOST`, `SERVER_USER`, `SERVER_SSH_KEY`, `DISCORD_UPTIME_WEBHOOK_URL`(다운 감시) |
+| GitHub Secrets | `SERVER_HOST`, `SERVER_USER`, `SERVER_SSH_KEY`, `DISCORD_OPS_WEBHOOK_URL`(다운 감시, 배포·CI 알림) |
 
 GHCR 로그인은 워크플로의 `GITHUB_TOKEN`을 쓰므로 따로 등록하지 않습니다.
 
