@@ -155,7 +155,7 @@ groups:
           summary: DB 백업 기록 없음
           description: "백업이 한 번도 성공하지 않았습니다. 서버에서 db/backup.sh를 실행해 보세요."
       - alert: BackupUploadStale
-        expr: (byarrival_backup_s3_enabled == 1) and on() (time() - (byarrival_backup_s3_last_success_timestamp_seconds or vector(0)) > 26 * 3600)
+        expr: (byarrival_backup_s3_enabled == 1) and on() (time() - (byarrival_backup_s3_last_success_timestamp_seconds or on() vector(0)) > 26 * 3600)
         for: 10m
         labels: {severity: warning, topic: backup_s3}
         annotations:

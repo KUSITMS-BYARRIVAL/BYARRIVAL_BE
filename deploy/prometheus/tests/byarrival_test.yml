@@ -106,3 +106,31 @@ tests:
             exp_annotations:
               summary: 백업 S3 업로드 실패
               description: 하루 넘게 S3 업로드가 성공하지 않았습니다.
+
+  - name: 최근 S3 업로드가 성공했으면 울리지 않는다
+    interval: 1m
+    input_series:
+      - series: 'byarrival_backup_s3_enabled{job="node",instance="node-exporter:9100"}'
+        values: '1x1800'
+      - series: 'byarrival_backup_s3_last_success_timestamp_seconds{job="node",instance="node-exporter:9100"}'
+        values: '104400x1800'
+    alert_rule_test:
+      - eval_time: 30h
+        alertname: BackupUploadStale
+        exp_alerts: []
+
+  - name: S3 업로드 성공이 26시간 넘게 지났으면 울린다
+    interval: 1m
+    input_series:
+      - series: 'byarrival_backup_s3_enabled{job="node",instance="node-exporter:9100"}'
+        values: '1x1800'
+      - series: 'byarrival_backup_s3_last_success_timestamp_seconds{job="node",instance="node-exporter:9100"}'
+        values: '0x1800'
+    alert_rule_test:
+      - eval_time: 30h
+        alertname: BackupUploadStale
+        exp_alerts:
+          - exp_labels: {severity: warning, topic: backup_s3, job: node, instance: "node-exporter:9100"}
+            exp_annotations:
+              summary: 백업 S3 업로드 실패
+              description: 하루 넘게 S3 업로드가 성공하지 않았습니다.
