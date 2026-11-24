@@ -4,7 +4,7 @@
 # 1. pg_dump(-Fc)로 backups/에 저장하고, 읽을 수 있는 파일인지 확인한다.
 # 2. .env에 BACKUP_S3_* 값이 있으면 S3에도 올린다.
 # 3. 성공 시각을 메트릭으로 남기고 결과를 디스코드로 알린다.
-# 4. 성공·실패와 상관없이 7일 지난 서버 백업을 지운다.
+# 4. 성공·실패와 상관없이 보관 기간(7일)이 끝나는 서버 백업을 지운다.
 # 백업에는 개인정보가 있으므로 소유자만 읽게 하고 짧게 보관한다. S3의 7일 삭제는 버킷 수명 주기 규칙이 한다.
 set -euo pipefail
 umask 077
@@ -52,10 +52,17 @@ notify() {
 
 # 보관 상한(탈퇴 회원 파기, MY-10)을 지키려고 백업이 실패해도 지운다. 실패가 7일 이어지면 서버 백업이 모두 사라지므로
 # 실패 알림과 BackupStale(26시간) 알림을 받으면 바로 고친다.
-# 매일 같은 시각에 돌므로 기준을 12시간 앞당겨, 7일 된 파일이 하루 더 남지 않게 한다
+# 다음 정리(03:00)까지 두면 7일이 넘는 파일을 지운다. 직접 실행한 백업도 만든 시각과 상관없이 7일을 넘기지 않는다
 delete_expired() {
-  find backups -maxdepth 1 -name 'byarrival-*.dump' -mmin "+$((RETENTION_DAYS * 24 * 60 - 720))" -delete
-  find backups -maxdepth 1 -name 'byarrival-*.part' -mmin +1440 -delete
+  local cutoff failed=0
+  # 다음 03:00에서 7일을 뺀 시각
+  if cutoff="$(TZ=Asia/Seoul date -d "-$((RETENTION_DAYS - 1)) days -3 hours" '+%F 03:00:00')"; then
+    TZ=Asia/Seoul find backups -maxdepth 1 -name 'byarrival-*.dump' ! -newermt "$cutoff" -delete || failed=1
+  else
+    failed=1
+  fi
+  find backups -maxdepth 1 -name 'byarrival-*.part' -mmin +1440 -delete || failed=1
+  return "$failed"
 }
 
 part=""
