@@ -116,7 +116,8 @@ GitHub Actions가 배포 성공·실패와 PR의 CI 실패를 디스코드로 �
 - 서버 `~/byarrival/backups`에 7일 보관합니다(권한 600). 백업에는 개인정보가 들어 있으므로 다른 곳에 복사해 두지 않습니다.
 - `.env`에 `BACKUP_S3_*`가 있으면 전용 S3 버킷에도 올립니다. 없으면 서버에만 둡니다.
 - 성공과 실패를 디스코드로 알리고, 26시간 동안 성공이 없으면 Prometheus도 알립니다.
-- 탈퇴 회원 파기(MY-10) 뒤에도 백업에는 최대 7일 남습니다.
+- 백업이 실패해도 7일 지난 파일은 지웁니다. 실패가 7일 이어지면 서버 백업이 모두 사라지므로 실패 알림을 받으면 바로 고칩니다.
+- 탈퇴 회원 파기(MY-10) 뒤에도 서버 백업에는 최대 7일 남습니다. S3는 수명 주기 규칙이 하루 단위로 돌아 조금 더 남을 수 있습니다.
 
 처음 배포한 뒤 한 번 직접 실행해 확인합니다.
 
@@ -143,15 +144,17 @@ docker exec byarrival-postgres sh -c 'dropdb -U "$POSTGRES_USER" byarrival_resto
 
 1. `./db/backup.sh`로 지금 상태를 먼저 남깁니다.
 2. `./db/restore.sh <백업 파일> byarrival_restore`로 복구하고 건수를 확인합니다.
-3. 앱을 내립니다: `docker compose -f docker-compose.prod.yml stop app-blue app-green`
-4. `postgres` DB에 접속해 이름을 바꿉니다. 기존 DB는 확인이 끝날 때까지 지우지 않습니다.
+3. 앱과 DB를 보는 exporter를 내립니다: `docker compose -f docker-compose.prod.yml stop app-blue app-green postgres-exporter`
+4. `postgres` DB에 접속해(`docker exec -it byarrival-postgres sh -c 'psql -U "$POSTGRES_USER" -d postgres'`) 남은 세션을 확인하고 끊은 뒤 이름을 바꿉니다. 세션이 남아 있으면 이름 변경이 실패합니다. 기존 DB는 확인이 끝날 때까지 지우지 않습니다.
 
    ```sql
+   SELECT pid, usename, application_name, state FROM pg_stat_activity WHERE datname IN ('byarrival', 'byarrival_restore');
+   SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname IN ('byarrival', 'byarrival_restore') AND pid <> pg_backend_pid();
    ALTER DATABASE byarrival RENAME TO byarrival_old;
    ALTER DATABASE byarrival_restore RENAME TO byarrival;
    ```
 
-5. 지금 연결된 쪽(`cat nginx/upstream.inc`)의 앱을 다시 띄웁니다: `docker compose -f docker-compose.prod.yml start app-<쪽>`
+5. 지금 연결된 쪽(`cat nginx/upstream.inc`)의 앱과 exporter를 다시 띄웁니다: `docker compose -f docker-compose.prod.yml start app-<쪽> postgres-exporter`
 
 ### 느린 쿼리·상태 점검
 
