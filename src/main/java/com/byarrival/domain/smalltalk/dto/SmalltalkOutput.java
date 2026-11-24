@@ -9,7 +9,7 @@ public record SmalltalkOutput(
     @JsonPropertyDescription("입력받은 기사 제목을 그대로")
     String title,
 
-    @JsonPropertyDescription("대화 소재로 쓰기 알맞은 기사인지. 정치·종교·젠더·세대 갈등 소재이거나 사실만으로 대화를 열기 어려우면 false")
+    @JsonPropertyDescription("대화 소재로 쓰기 알맞은 기사인지. 정치·종교·젠더·세대 갈등이 중심이거나 사건 사고 피해·부고처럼 가볍게 꺼내기 어려운 일이 중심이면 false, 그 밖에는 true")
     boolean suitable,
 
     @JsonPropertyDescription("대화를 여는 한 문장. 공백 포함 30자 이내. suitable이 false면 빈 문자열")
