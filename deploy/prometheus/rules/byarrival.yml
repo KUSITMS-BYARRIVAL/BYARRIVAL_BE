@@ -1,0 +1,194 @@
+# 알림 규칙. topic이 같은 긴급 알림이 있으면 경고는 보내지 않는다(alertmanager.yml)
+groups:
+  - name: latency
+    rules:
+      # 응답 시간은 사용자 API만 본다(헬스 체크, 메트릭 수집, Swagger 제외)
+      - record: byarrival:http_p95_seconds
+        expr: histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{job="byarrival",uri=~"/api/.*"}[5m])))
+      - record: byarrival:http_p99_seconds
+        expr: histogram_quantile(0.99, sum by (le) (rate(http_server_requests_seconds_bucket{job="byarrival",uri=~"/api/.*"}[5m])))
+      - record: byarrival:http_p95_seconds:by_uri
+        expr: histogram_quantile(0.95, sum by (le, method, uri) (rate(http_server_requests_seconds_bucket{job="byarrival",uri=~"/api/.*"}[5m])))
+      - record: byarrival:http_requests_5m
+        expr: sum(increase(http_server_requests_seconds_count{job="byarrival",uri=~"/api/.*"}[5m]))
+      - record: byarrival:http_requests_5m:by_uri
+        expr: sum by (method, uri) (increase(http_server_requests_seconds_count{job="byarrival",uri=~"/api/.*"}[5m]))
+      - record: byarrival:http_5xx_ratio
+        expr: (sum(increase(http_server_requests_seconds_count{job="byarrival",uri=~"/api/.*",status=~"5.."}[5m])) or vector(0)) / (byarrival:http_requests_5m > 0)
+
+      # 요청이 적으면 한두 건에 p95가 튀므로 5분에 30건 이상일 때만 본다
+      - alert: ApiP95High
+        expr: byarrival:http_p95_seconds > 0.5 and byarrival:http_requests_5m >= 30
+        for: 5m
+        labels: {severity: warning, topic: latency}
+        annotations:
+          summary: API p95 500ms 초과
+          description: "전체 API p95가 {{ $value | humanizeDuration }}입니다."
+      - alert: ApiP95Critical
+        expr: byarrival:http_p95_seconds > 1 and byarrival:http_requests_5m >= 30
+        for: 5m
+        labels: {severity: critical, topic: latency}
+        annotations:
+          summary: API p95 1초 초과
+          description: "전체 API p95가 {{ $value | humanizeDuration }}입니다."
+      - alert: EndpointP95High
+        expr: byarrival:http_p95_seconds:by_uri > 1 and byarrival:http_requests_5m:by_uri >= 20
+        for: 10m
+        labels: {severity: warning, topic: endpoint_latency}
+        annotations:
+          summary: 느린 API
+          description: "`{{ $labels.method }} {{ $labels.uri }}` p95가 {{ $value | humanizeDuration }}입니다."
+      - alert: Api5xxHigh
+        expr: byarrival:http_5xx_ratio > 0.05 and byarrival:http_requests_5m >= 30
+        for: 5m
+        labels: {severity: critical, topic: errors}
+        annotations:
+          summary: 5xx 비율 5% 초과
+          description: "최근 5분 5xx 비율이 {{ $value | humanizePercentage }}입니다."
+
+  - name: availability
+    rules:
+      - alert: ServiceDown
+        expr: probe_success{job="service"} == 0
+        for: 1m
+        labels: {severity: critical, topic: service}
+        annotations:
+          summary: 서비스 응답 없음
+          description: "Nginx를 거친 /healthz가 1분 넘게 실패했습니다. 앱·DB·Redis·Nginx 상태를 확인하세요."
+      - alert: RedisDown
+        expr: probe_success{job="redis"} == 0
+        for: 1m
+        labels: {severity: critical, topic: redis}
+        annotations:
+          summary: Redis 응답 없음
+          description: "Redis가 PING에 1분 넘게 응답하지 않았습니다."
+      - alert: MonitoringTargetDown
+        expr: up{job!="byarrival"} == 0
+        for: 5m
+        labels: {severity: warning, topic: monitoring}
+        annotations:
+          summary: 감시 컨테이너 수집 실패
+          description: "`{{ $labels.job }}` 메트릭을 5분 넘게 수집하지 못했습니다."
+      # IP 인증서는 6일짜리이고 만료 3일 전에 갱신하므로 2일 남으면 갱신이 실패한 것이다
+      - alert: CertificateExpiring
+        expr: probe_ssl_earliest_cert_expiry{job="service"} - time() < 2 * 86400
+        for: 10m
+        labels: {severity: warning, topic: certificate}
+        annotations:
+          summary: 인증서 갱신 실패 의심
+          description: "인증서가 {{ $value | humanizeDuration }} 뒤 만료됩니다. certbot 로그를 확인하세요."
+      - alert: CertificateExpiringCritical
+        expr: probe_ssl_earliest_cert_expiry{job="service"} - time() < 86400
+        for: 10m
+        labels: {severity: critical, topic: certificate}
+        annotations:
+          summary: 인증서 만료 1일 전
+          description: "인증서가 {{ $value | humanizeDuration }} 뒤 만료됩니다."
+      # 23:45 배치가 매일 돈다
+      - alert: DailyBatchStale
+        expr: time() - (max(byarrival_batch_last_success{job="byarrival"}) > 0) > 26 * 3600
+        for: 10m
+        labels: {severity: warning, topic: batch}
+        annotations:
+          summary: 일일 배치 성공 기록 없음
+          description: "마지막 배치 성공이 {{ $value | humanizeDuration }} 전입니다."
+
+  - name: app
+    rules:
+      - alert: HikariPending
+        expr: sum by (instance) (hikaricp_connections_pending{job="byarrival"}) > 0
+        for: 2m
+        labels: {severity: warning, topic: hikari}
+        annotations:
+          summary: DB 커넥션 대기
+          description: "`{{ $labels.instance }}`에서 커넥션을 기다리는 스레드가 {{ $value }}개입니다."
+      - alert: JvmHeapHigh
+        expr: sum by (instance) (jvm_memory_used_bytes{job="byarrival",area="heap"}) / sum by (instance) (jvm_memory_max_bytes{job="byarrival",area="heap"} > 0) > 0.9
+        for: 10m
+        labels: {severity: warning, topic: heap}
+        annotations:
+          summary: JVM 힙 90% 초과
+          description: "`{{ $labels.instance }}` 힙 사용률이 {{ $value | humanizePercentage }}입니다."
+
+  - name: database
+    rules:
+      - alert: PostgresDown
+        expr: pg_up == 0
+        for: 1m
+        labels: {severity: critical, topic: postgres}
+        annotations:
+          summary: PostgreSQL 응답 없음
+          description: "postgres-exporter가 DB에 1분 넘게 접속하지 못했습니다."
+      - alert: PostgresConnectionsHigh
+        expr: sum(pg_stat_activity_count) / max(pg_settings_max_connections) > 0.8
+        for: 5m
+        labels: {severity: warning, topic: postgres_connections}
+        annotations:
+          summary: DB 커넥션 80% 초과
+          description: "DB 커넥션 사용률이 {{ $value | humanizePercentage }}입니다."
+      - alert: PostgresDeadlock
+        expr: sum(increase(pg_stat_database_deadlocks[10m])) > 0
+        labels: {severity: warning, topic: deadlock}
+        annotations:
+          summary: DB 교착 상태 발생
+          description: "최근 10분 동안 교착 상태가 생겼습니다. postgres 로그를 확인하세요."
+      - alert: PostgresLongTransaction
+        expr: max(pg_long_running_transactions_oldest_timestamp_seconds) > 600
+        for: 1m
+        labels: {severity: warning, topic: long_transaction}
+        annotations:
+          summary: 10분 넘은 트랜잭션
+          description: "가장 오래된 트랜잭션이 {{ $value | humanizeDuration }}째 열려 있습니다."
+      # 백업은 매일 03:00에 한다
+      - alert: BackupStale
+        expr: time() - byarrival_backup_last_success_timestamp_seconds > 26 * 3600
+        for: 10m
+        labels: {severity: critical, topic: backup}
+        annotations:
+          summary: DB 백업 실패
+          description: "마지막 백업 성공이 {{ $value | humanizeDuration }} 전입니다."
+      - alert: BackupMissing
+        expr: absent(byarrival_backup_last_success_timestamp_seconds) and on() (up{job="node"} == 1)
+        for: 1h
+        labels: {severity: warning, topic: backup}
+        annotations:
+          summary: DB 백업 기록 없음
+          description: "백업이 한 번도 성공하지 않았습니다. 서버에서 db/backup.sh를 실행해 보세요."
+      - alert: BackupUploadStale
+        expr: (byarrival_backup_s3_enabled == 1) and on() (time() - (byarrival_backup_s3_last_success_timestamp_seconds or on() vector(0)) > 26 * 3600)
+        for: 10m
+        labels: {severity: warning, topic: backup_s3}
+        annotations:
+          summary: 백업 S3 업로드 실패
+          description: "하루 넘게 S3 업로드가 성공하지 않았습니다."
+
+  - name: host
+    rules:
+      - alert: HostMemoryLow
+        expr: node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.1
+        for: 10m
+        labels: {severity: warning, topic: memory}
+        annotations:
+          summary: 서버 메모리 부족
+          description: "남은 메모리가 {{ $value | humanizePercentage }}입니다."
+      - alert: HostDiskLow
+        expr: node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} < 0.15
+        for: 10m
+        labels: {severity: warning, topic: disk}
+        annotations:
+          summary: 디스크 여유 15% 미만
+          description: "남은 디스크가 {{ $value | humanizePercentage }}입니다."
+      - alert: HostDiskCritical
+        expr: node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} < 0.07
+        for: 5m
+        labels: {severity: critical, topic: disk}
+        annotations:
+          summary: 디스크 여유 7% 미만
+          description: "남은 디스크가 {{ $value | humanizePercentage }}입니다."
+      - alert: HostCpuHigh
+        expr: 1 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) > 0.9
+        for: 10m
+        labels: {severity: warning, topic: cpu}
+        annotations:
+          summary: 서버 CPU 90% 초과
+          description: "CPU 사용률이 {{ $value | humanizePercentage }}입니다."

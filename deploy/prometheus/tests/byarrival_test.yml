@@ -1,0 +1,136 @@
+# 알림 규칙 테스트. 실행: deploy/README.md의 "알림 규칙 고치기" 참고
+rule_files:
+  - ../rules/byarrival.yml
+evaluation_interval: 15s
+
+tests:
+  - name: p95가 500ms를 넘고 요청이 충분하면 경고만 울린다
+    interval: 15s
+    input_series:
+      - series: 'http_server_requests_seconds_bucket{job="byarrival",uri="/api/v1/home",method="GET",status="200",le="0.5"}'
+        values: '0+0x80'
+      - series: 'http_server_requests_seconds_bucket{job="byarrival",uri="/api/v1/home",method="GET",status="200",le="0.75"}'
+        values: '0+30x80'
+      - series: 'http_server_requests_seconds_bucket{job="byarrival",uri="/api/v1/home",method="GET",status="200",le="+Inf"}'
+        values: '0+30x80'
+      - series: 'http_server_requests_seconds_count{job="byarrival",uri="/api/v1/home",method="GET",status="200"}'
+        values: '0+30x80'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: ApiP95High
+        exp_alerts:
+          - exp_labels: {severity: warning, topic: latency}
+            exp_annotations:
+              summary: API p95 500ms 초과
+              description: 전체 API p95가 737.5ms입니다.
+      - eval_time: 15m
+        alertname: ApiP95Critical
+        exp_alerts: []
+
+  - name: 요청이 적으면 느려도 울리지 않는다
+    interval: 15s
+    input_series:
+      - series: 'http_server_requests_seconds_bucket{job="byarrival",uri="/api/v1/home",method="GET",status="200",le="5"}'
+        values: '0+1x80'
+      - series: 'http_server_requests_seconds_bucket{job="byarrival",uri="/api/v1/home",method="GET",status="200",le="2"}'
+        values: '0+0x80'
+      - series: 'http_server_requests_seconds_bucket{job="byarrival",uri="/api/v1/home",method="GET",status="200",le="+Inf"}'
+        values: '0+1x80'
+      - series: 'http_server_requests_seconds_count{job="byarrival",uri="/api/v1/home",method="GET",status="200"}'
+        values: '0+1x80'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: ApiP95Critical
+        exp_alerts: []
+
+  - name: 헬스 체크가 1분 넘게 실패하면 울리고 5xx가 5%를 넘으면 울린다
+    interval: 15s
+    input_series:
+      - series: 'probe_success{job="service",instance="https://nginx/healthz"}'
+        values: '1x8 0x60'
+      - series: 'http_server_requests_seconds_count{job="byarrival",uri="/api/v1/home",method="GET",status="200"}'
+        values: '0+9x80'
+      - series: 'http_server_requests_seconds_count{job="byarrival",uri="/api/v1/home",method="GET",status="500"}'
+        values: '0+1x80'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: ServiceDown
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: ServiceDown
+        exp_alerts:
+          - exp_labels: {severity: critical, topic: service, job: service, instance: "https://nginx/healthz"}
+            exp_annotations:
+              summary: 서비스 응답 없음
+              description: Nginx를 거친 /healthz가 1분 넘게 실패했습니다. 앱·DB·Redis·Nginx 상태를 확인하세요.
+      - eval_time: 15m
+        alertname: Api5xxHigh
+        exp_alerts:
+          - exp_labels: {severity: critical, topic: errors}
+            exp_annotations:
+              summary: 5xx 비율 5% 초과
+              description: 최근 5분 5xx 비율이 10%입니다.
+
+  - name: 백업이 26시간 넘게 없으면 울리고 S3는 켰을 때만 본다
+    interval: 1m
+    input_series:
+      - series: 'byarrival_backup_last_success_timestamp_seconds{job="node"}'
+        values: '0x1800'
+      - series: 'byarrival_backup_s3_enabled{job="node"}'
+        values: '0x1800'
+    alert_rule_test:
+      - eval_time: 25h
+        alertname: BackupStale
+        exp_alerts: []
+      - eval_time: 28h
+        alertname: BackupStale
+        exp_alerts:
+          - exp_labels: {severity: critical, topic: backup, job: node}
+            exp_annotations:
+              summary: DB 백업 실패
+              description: 마지막 백업 성공이 1d 4h 0m 0s 전입니다.
+      - eval_time: 28h
+        alertname: BackupUploadStale
+        exp_alerts: []
+
+  - name: S3를 켰는데 한 번도 올라가지 않으면 울린다
+    interval: 1m
+    input_series:
+      - series: 'byarrival_backup_s3_enabled{job="node"}'
+        values: '1x1800'
+    alert_rule_test:
+      - eval_time: 30h
+        alertname: BackupUploadStale
+        exp_alerts:
+          - exp_labels: {severity: warning, topic: backup_s3, job: node}
+            exp_annotations:
+              summary: 백업 S3 업로드 실패
+              description: 하루 넘게 S3 업로드가 성공하지 않았습니다.
+
+  - name: 최근 S3 업로드가 성공했으면 울리지 않는다
+    interval: 1m
+    input_series:
+      - series: 'byarrival_backup_s3_enabled{job="node",instance="node-exporter:9100"}'
+        values: '1x1800'
+      - series: 'byarrival_backup_s3_last_success_timestamp_seconds{job="node",instance="node-exporter:9100"}'
+        values: '104400x1800'
+    alert_rule_test:
+      - eval_time: 30h
+        alertname: BackupUploadStale
+        exp_alerts: []
+
+  - name: S3 업로드 성공이 26시간 넘게 지났으면 울린다
+    interval: 1m
+    input_series:
+      - series: 'byarrival_backup_s3_enabled{job="node",instance="node-exporter:9100"}'
+        values: '1x1800'
+      - series: 'byarrival_backup_s3_last_success_timestamp_seconds{job="node",instance="node-exporter:9100"}'
+        values: '0x1800'
+    alert_rule_test:
+      - eval_time: 30h
+        alertname: BackupUploadStale
+        exp_alerts:
+          - exp_labels: {severity: warning, topic: backup_s3, job: node, instance: "node-exporter:9100"}
+            exp_annotations:
+              summary: 백업 S3 업로드 실패
+              description: 하루 넘게 S3 업로드가 성공하지 않았습니다.

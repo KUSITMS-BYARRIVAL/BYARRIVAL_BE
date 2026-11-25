@@ -2,6 +2,15 @@
 global:
   scrape_interval: 15s
   scrape_timeout: 10s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
 
 scrape_configs:
   - job_name: byarrival
@@ -12,3 +21,36 @@ scrape_configs:
   - job_name: prometheus
     static_configs:
       - targets: ["localhost:9090"]
+
+  - job_name: node
+    static_configs:
+      - targets: ["node-exporter:9100"]
+
+  - job_name: postgres
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+
+  # 사용자가 쓰는 길(Nginx HTTPS → 앱)로 서비스 응답과 인증서 만료일을 확인한다
+  - job_name: service
+    scrape_interval: 30s
+    metrics_path: /probe
+    params:
+      module: [https_health]
+    static_configs:
+      - targets: ["https://nginx/healthz"]
+    relabel_configs: &blackbox
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  - job_name: redis
+    scrape_interval: 30s
+    metrics_path: /probe
+    params:
+      module: [redis_ping]
+    static_configs:
+      - targets: ["redis:6379"]
+    relabel_configs: *blackbox

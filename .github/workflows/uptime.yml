@@ -1,0 +1,98 @@
+name: Uptime
+
+# 서버 밖에서 서비스가 응답하는지 확인한다. 서버가 통째로 죽으면 서버 안의 Prometheus는 알리지 못한다.
+# 예약 실행은 GitHub 사정에 따라 늦어질 수 있고, 저장소에 60일 동안 활동이 없으면 꺼진다.
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: uptime
+  cancel-in-progress: false
+
+jobs:
+  check:
+    if: github.repository == 'KUSITMS-BYARRIVAL/BYARRIVAL_BE' && github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # 인증서도 그대로 검증한다. 잠깐 끊긴 것을 장애로 알리지 않도록 세 번 실패해야 다운으로 본다
+      - name: Check service
+        id: check
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          up=false
+          for attempt in 1 2 3; do
+            code=$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 5 --max-time 10 "https://${SERVER_HOST}/healthz" 2>/dev/null) || code=000
+            echo "attempt ${attempt}: ${code}"
+            if [ "$code" = "200" ]; then up=true; break; fi
+            [ "$attempt" = 3 ] || sleep 20
+          done
+          echo "up=$up" >> "$GITHUB_OUTPUT"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
+      # 마지막으로 디스코드 전송에 성공한 상태(up/down). 실행 결과와 따로 보관해 전송에 실패하면 다음 실행에서 다시 보낸다
+      - name: Restore notified state
+        if: always() && steps.check.outputs.up != ''
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: uptime-state
+          key: uptime-state-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: uptime-state-
+
+      # 다운이 이어지는 동안 5분마다 알리지 않도록 마지막으로 알린 상태와 다를 때만 보낸다.
+      # 캐시 저장은 실패해도 경고로 끝나 예전 상태가 남을 수 있다. 직전 실행의 결과도 함께 봐서 새 다운을 놓치지 않는다
+      - name: Notify Discord on change
+        id: notify
+        if: always() && steps.check.outputs.up != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WEBHOOK: ${{ secrets.DISCORD_OPS_WEBHOOK_URL }}
+          UP: ${{ steps.check.outputs.up }}
+          CODE: ${{ steps.check.outputs.code }}
+        run: |
+          if [ -z "$WEBHOOK" ]; then echo "::warning::DISCORD_OPS_WEBHOOK_URL이 없어 알리지 않습니다."; exit 0; fi
+          # 알린 적이 없으면 정상이었던 것으로 본다
+          notified=up
+          if [ "$(cat uptime-state 2>/dev/null)" = down ]; then notified=down; fi
+          # 다운이거나 전송에 실패하면 실행이 실패로 끝난다
+          previous=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow uptime.yml --branch dev --status completed --limit 10 --json conclusion --jq '[.[].conclusion | select(. == "success" or . == "failure")][0] // "unknown"') || previous=unknown
+          # 직전 실행이 성공인데 down이 남아 있으면 복구를 알린 뒤 저장만 실패한 것이다. 보내기 전에 바로잡아 전송에 실패해도 다음 실행에서 다시 보낸다.
+          # 직전 결과를 모르면 다운은 겹치더라도 알린다
+          if [ "$notified" = down ] && { [ "$previous" = success ] || { [ "$previous" = unknown ] && [ "$UP" = false ]; }; }; then
+            notified=up
+            echo up > uptime-state
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+          now=$(TZ=Asia/Seoul date '+%m-%d %H:%M')
+          if [ "$UP" = false ] && [ "$notified" = up ]; then
+            state=down
+            text="🚨 **서버 다운** ${now} KST · 밖에서 3번 확인했지만 응답이 없습니다 (HTTP ${CODE})"
+          elif [ "$UP" = true ] && [ "$notified" = down ]; then
+            state=up
+            text="✅ **서버 복구** ${now} KST"
+          else
+            exit 0
+          fi
+          payload=$(jq -n --arg content "$text" '{content: $content, allowed_mentions: {parse: []}}')
+          curl -fsS --max-time 10 -H 'Content-Type: application/json' -d "$payload" "$WEBHOOK"
+          echo "$state" > uptime-state
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Save notified state
+        if: always() && steps.notify.outputs.changed == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: uptime-state
+          key: uptime-state-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Fail when down
+        if: always() && steps.check.outputs.up != 'true'
+        run: exit 1

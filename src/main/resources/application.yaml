@@ -28,6 +28,17 @@ management:
   metrics:
     tags:
       application: ${spring.application.name}
+    distribution:
+      # p95 계산용 응답 시간 구간. percentiles-histogram을 켜면 URI마다 구간이 약 70개씩 생겨 256MB Prometheus에 부담이라
+      # 필요한 구간만 둔다. 알림 기준(500ms, 1초)은 구간 경계에 있어야 정확하다
+      slo:
+        "[http.server.requests]": 25ms,50ms,100ms,200ms,300ms,400ms,500ms,750ms,1s,2s,5s,10s
+
+server:
+  tomcat:
+    mbeanregistry:
+      # Tomcat 스레드 사용량 메트릭(tomcat_threads_*)
+      enabled: true
 
 storage:
   s3:
