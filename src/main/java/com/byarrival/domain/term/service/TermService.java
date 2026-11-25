@@ -5,6 +5,7 @@ import com.byarrival.domain.term.dto.request.TermsAgreementRequest.Agreement;
 import com.byarrival.domain.term.dto.response.TermsAgreementResponse;
 import com.byarrival.domain.term.dto.response.TermsResponse;
 import com.byarrival.domain.term.entity.Terms;
+import com.byarrival.domain.term.entity.TermsType;
 import com.byarrival.domain.term.entity.UserTermsAgreement;
 import com.byarrival.domain.term.exception.TermErrorCode;
 import com.byarrival.domain.term.repository.TermsRepository;
@@ -77,6 +78,21 @@ public class TermService {
             .forEach(agreement -> currentState.putIfAbsent(agreement.getTermsId(), agreement.isAgreed()));
         return requiredTermsIds.stream()
             .allMatch(termsId -> Boolean.TRUE.equals(currentState.get(termsId)));
+    }
+
+    /**
+     * 그 종류의 최신 약관에 대한 가장 최근 이력이 동의 상태인지 확인한다.
+     */
+    @Transactional(readOnly = true)
+    public boolean hasAgreedLatest(Long userId, TermsType type) {
+        return termsRepository.findLatestOfEachType().stream()
+            .filter(terms -> terms.getTermsType() == type)
+            .findFirst()
+            .flatMap(terms -> userTermsAgreementRepository
+                .findByUserIdAndTermsIdInOrderByAgreedAtDescIdDesc(userId, List.of(terms.getId())).stream()
+                .findFirst())
+            .map(UserTermsAgreement::isAgreed)
+            .orElse(false);
     }
 
     private void validateTermsIds(List<Agreement> agreements, Map<Long, Terms> latestTerms) {

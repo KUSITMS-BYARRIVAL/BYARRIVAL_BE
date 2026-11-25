@@ -43,6 +43,8 @@ public class AdminSecurityConfig {
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(HttpMethod.POST, LOGIN_PATH).permitAll()
+                // ADM-02: 회원 개인정보는 운영자만 본다. 에디터는 기사·에디터 픽까지만 접근한다
+                .requestMatchers("/api/admin/members/**").hasRole("OPERATOR")
                 .anyRequest().hasAnyRole("OPERATOR", "EDITOR"))
             .addFilterBefore(new AdminAuthenticationFilter(adminAuthService, jwtDecoder, errorHandler),
                 UsernamePasswordAuthenticationFilter.class)
