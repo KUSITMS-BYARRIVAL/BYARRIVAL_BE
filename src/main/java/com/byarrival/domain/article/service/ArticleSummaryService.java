@@ -2,6 +2,7 @@ package com.byarrival.domain.article.service;
 
 import com.byarrival.common.exception.BusinessException;
 import com.byarrival.domain.ai.exception.AiRateLimitedException;
+import com.byarrival.domain.ai.exception.AiResponseInvalidException;
 import com.byarrival.domain.ai.service.ClaudeClient.ClaudeResult;
 import com.byarrival.domain.ai.service.ClaudeClient.TokenUsage;
 import com.byarrival.domain.article.config.ArticleSummaryProperties;
@@ -148,10 +149,12 @@ public class ArticleSummaryService {
                     input.articleId(), attempt, attempts, mode, e.getErrorCode(), oneLine(e.getMessage()));
                 continue;
             } catch (BusinessException e) {
-                // 응답을 받지 못했거나 잘린 호출. 토큰 수를 알 수 없어 호출 수만 센다
-                tally.add(TokenUsage.ZERO, retry);
-                log.info("[AI 요약 시도 실패] articleId={} attempt={}/{} mode={} 호출 실패 code={} reason={}",
-                    input.articleId(), attempt, attempts, mode, e.getErrorCode(), oneLine(e.getMessage()));
+                // 잘렸거나 쓸 수 없는 응답은 비용이 나갔으므로 쓴 토큰을 넣고, 응답을 받지 못한 호출은 호출 수만 센다
+                TokenUsage failedUsage = AiResponseInvalidException.usageOf(e);
+                tally.add(failedUsage, retry);
+                log.info("[AI 요약 시도 실패] articleId={} attempt={}/{} mode={} 호출 실패 code={} outputTokens={} reason={}",
+                    input.articleId(), attempt, attempts, mode, e.getErrorCode(), failedUsage.outputTokens(),
+                    oneLine(e.getMessage()));
                 lastError = e;
                 // 수선 호출이 잘렸으면 이전 답은 그대로 두고 다시 수선한다. 처음부터 다시 쓰는 것보다 싸다
                 if (!"repair".equals(mode)) {

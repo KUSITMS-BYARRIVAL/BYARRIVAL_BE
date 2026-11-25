@@ -2,6 +2,7 @@ package com.byarrival.domain.article.service;
 
 import com.byarrival.common.exception.BusinessException;
 import com.byarrival.domain.ai.exception.AiErrorCode;
+import com.byarrival.domain.ai.exception.AiResponseInvalidException;
 import com.byarrival.domain.ai.service.ClaudeClient;
 import com.byarrival.domain.ai.service.ClaudeClient.ClaudeRequest;
 import com.byarrival.domain.ai.service.ClaudeClient.ClaudeResult;
@@ -59,6 +60,8 @@ public class ArticleStoryGrouper {
                 List<Set<Long>> groups = validate(result.output(), articles);
                 return new GroupResult(groups, calls, usage);
             } catch (BusinessException e) {
+                // 잘렸거나 쓸 수 없는 응답도 비용은 나갔다
+                usage = usage.plus(AiResponseInvalidException.usageOf(e));
                 lastError = e;
                 log.warn("[AI 같은 사건] {}번째 시도 실패 - {}", attempt, e.getMessage());
             }

@@ -13,6 +13,7 @@ import static org.mockito.Mockito.verify;
 import com.byarrival.common.exception.BusinessException;
 import com.byarrival.domain.ai.exception.AiErrorCode;
 import com.byarrival.domain.ai.exception.AiRateLimitedException;
+import com.byarrival.domain.ai.exception.AiResponseInvalidException;
 import com.byarrival.domain.ai.service.ClaudeClient.ClaudeResult;
 import com.byarrival.domain.ai.service.ClaudeClient.TokenUsage;
 import com.byarrival.domain.article.dto.ArticleSummaryOutput;
@@ -291,6 +292,20 @@ class ArticleSummaryServiceTest {
 
         assertThat(result.succeeded()).isEqualTo(1);
         assertThat(result.failedArticleIds()).containsExactly(failing.getId());
+    }
+
+    @Test
+    void 잘린_응답이_쓴_토큰도_비용에_넣는다() {
+        Article article = cleanedArticle("1", "첫째 기사");
+        given(generator.generate("첫째 기사", BODY, ArticleDifficulty.EASY))
+            .willThrow(new AiResponseInvalidException(new TokenUsage(1500, 4000, 0, 2500), "stop_reason=max_tokens"))
+            .willReturn(result(output("첫째 기사", ArticleDifficulty.EASY)));
+
+        SummaryResult result = articleSummaryService.summarize(
+            List.of(new SummaryTarget(article.getId(), ArticleDifficulty.EASY)));
+
+        assertThat(result.succeeded()).isEqualTo(1);
+        assertThat(result.usage()).isEqualTo(new UsageTotal(2, 1, new TokenUsage(2500, 4200, 0, 2500)));
     }
 
     @Test

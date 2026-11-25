@@ -9,6 +9,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import com.byarrival.domain.ai.exception.AiResponseInvalidException;
 import com.byarrival.domain.ai.service.ClaudeClient;
 import com.byarrival.domain.ai.service.ClaudeClient.ClaudeRequest;
 import com.byarrival.domain.ai.service.ClaudeClient.ClaudeResult;
@@ -86,6 +87,18 @@ class ArticleDifficultyScorerTest {
                 assertThat(e.usage()).isEqualTo(new TokenUsage(2000, 400));
             });
         verify(claudeClient, times(4)).generate(any(), eq(ArticleDifficultyOutput.class));
+    }
+
+    @Test
+    void 잘린_응답이_쓴_토큰도_넣는다() {
+        given(claudeClient.generate(any(), eq(ArticleDifficultyOutput.class)))
+            .willThrow(new AiResponseInvalidException(new TokenUsage(500, 4000), "stop_reason=max_tokens"))
+            .willReturn(result(new Score(1L, 8), new Score(2L, 2)));
+
+        ScoreResult result = scorer.score(ARTICLES);
+
+        assertThat(result.calls()).isEqualTo(2);
+        assertThat(result.usage()).isEqualTo(new TokenUsage(1000, 4100));
     }
 
     private static ClaudeResult<ArticleDifficultyOutput> result(Score... scores) {
