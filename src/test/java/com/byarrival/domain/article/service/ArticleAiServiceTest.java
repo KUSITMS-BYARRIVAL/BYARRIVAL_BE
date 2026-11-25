@@ -41,7 +41,8 @@ class ArticleAiServiceTest {
 
     @BeforeEach
     void setUp() {
-        AnthropicProperties anthropic = new AnthropicProperties("key", Duration.ofSeconds(60), 2, 0.10, 0.50);
+        AnthropicProperties anthropic = new AnthropicProperties("key", Duration.ofSeconds(60), 2, 0.10, 0.50,
+            0.125, 0.01);
         service = new ArticleAiService(store, scorer, new ArticleDifficultyAssigner(), summaryService, anthropic,
             notifier, Clock.fixed(Instant.parse("2026-11-10T14:45:00Z"), ZoneId.of("Asia/Seoul")));
         given(store.countSummarizedDifficulty(SERVICE_DATE)).willReturn(List.of());
@@ -107,13 +108,15 @@ class ArticleAiServiceTest {
 
         ArgumentCaptor<String> content = ArgumentCaptor.forClass(String.class);
         verify(notifier).send(content.capture());
-        // 입력 2,000+8,000, 출력 500+3,000 → 0.001 + 0.00175 = 0.00275
+        // 입력 2,000+8,000, 출력 500+3,000, 캐시 쓰기 1,000, 캐시 읽기 20,000
+        // → 0.001 + 0.00175 + 0.000125 + 0.0002 = 0.003075
         assertThat(content.getValue())
             .contains("AI 가공 완료 (실패 있음)")
             .contains("서비스일 2026-11-11")
-            .contains("난이도 판정: 카테고리 1개 · 호출 1회 · 토큰 입력 2,000 / 출력 500")
-            .contains("요약: 대상 2건 · 성공 1 · 실패 1 · 호출 3회 (다시 요청 1회) · 토큰 입력 8,000 / 출력 3,000")
-            .contains("예상 비용 $0.0028")
+            .contains("난이도 판정: 카테고리 1개 · 호출 1회 · 토큰 입력 2,000 (캐시 읽기 0 · 쓰기 0) / 출력 500")
+            .contains("요약: 대상 2건 · 성공 1 · 실패 1 · 호출 3회 (다시 요청 1회)"
+                + " · 토큰 입력 29,000 (캐시 읽기 20,000 · 쓰기 1,000) / 출력 3,000")
+            .contains("예상 비용 $0.0031")
             .contains("요약 실패 articleId: [1]");
     }
 
@@ -133,6 +136,7 @@ class ArticleAiServiceTest {
     }
 
     private static SummaryResult summary(List<Long> failed) {
-        return new SummaryResult(2 - failed.size(), failed, 0, new UsageTotal(3, 1, 8000, 3000));
+        return new SummaryResult(2 - failed.size(), failed, 0, new UsageTotal(3, 1,
+            new TokenUsage(8000, 3000, 1000, 20000)));
     }
 }

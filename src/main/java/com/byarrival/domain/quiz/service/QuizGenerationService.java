@@ -5,6 +5,7 @@ import com.byarrival.common.monitoring.BatchAlertNotifier;
 import com.byarrival.domain.ai.config.AnthropicProperties;
 import com.byarrival.domain.ai.exception.AiResponseInvalidException;
 import com.byarrival.domain.ai.service.ClaudeClient.ClaudeResult;
+import com.byarrival.domain.ai.service.ClaudeClient.TokenUsage;
 import com.byarrival.domain.article.entity.Article;
 import com.byarrival.domain.article.service.ArticleQueryService;
 import com.byarrival.domain.category.service.CategoryMappingService;
@@ -25,6 +26,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 import lombok.extern.slf4j.Slf4j;
 import org.hibernate.exception.ConstraintViolationException;
@@ -88,7 +90,7 @@ public class QuizGenerationService {
             .toList();
         if (sources.isEmpty()) {
             log.info("[AI 퀴즈] serviceDate={} 만들 퀴즈 없음", serviceDate);
-            return new QuizGenerationResult(0, 0, List.of(), 0, 0, 0);
+            return new QuizGenerationResult(0, 0, List.of(), 0, TokenUsage.ZERO);
         }
 
         Tally tally = new Tally();
@@ -107,7 +109,7 @@ public class QuizGenerationService {
             }
         }
         QuizGenerationResult result = new QuizGenerationResult(succeeded, duplicated, List.copyOf(failed),
-            tally.calls.get(), tally.inputTokens.get(), tally.outputTokens.get());
+            tally.calls.get(), tally.tokens.get());
         log.info("[AI 퀴즈] serviceDate={} 대상 {}건, 성공 {}건, 이미 있음 {}건, 실패 {}건, 호출 {}회", serviceDate,
             sources.size(), succeeded, duplicated, failed.size(), result.calls());
         notifyCompleted(serviceDate, sources.size(), result);
@@ -160,7 +162,7 @@ public class QuizGenerationService {
                 ClaudeResult<QuizOutput> result = previous == null
                     ? generator.generate(source)
                     : generator.regenerate(source, previous, problems);
-                tally.add(result.usage().inputTokens(), result.usage().outputTokens());
+                tally.add(result.usage());
                 output = result.output();
             } catch (BusinessException e) {
                 tally.addFailed(e);
@@ -183,7 +185,7 @@ public class QuizGenerationService {
             QuizCheckOutput check;
             try {
                 ClaudeResult<QuizCheckOutput> result = checker.check(source, quiz);
-                tally.add(result.usage().inputTokens(), result.usage().outputTokens());
+                tally.add(result.usage());
                 check = result.output();
             } catch (BusinessException e) {
                 // 검수를 못 하면 맞는 퀴즈인지 알 수 없으므로 저장하지 않고 처음부터 다시 만든다
@@ -254,10 +256,10 @@ public class QuizGenerationService {
                 .append(" · 이미 있음 ").append(result.duplicated())
                 .append(" · 실패 ").append(result.failedArticleIds().size())
                 .append(" · 호출 ").append(result.calls()).append("회")
-                .append(String.format(" · 토큰 입력 %,d / 출력 %,d", result.inputTokens(), result.outputTokens()))
+                .append(" · 토큰 ").append(result.usage().describe())
                 .append('\n')
                 .append("예상 비용 $").append(String.format("%.4f",
-                    anthropicProperties.estimateCost(result.inputTokens(), result.outputTokens())));
+                    anthropicProperties.estimateCost(result.usage())));
             if (!result.failedArticleIds().isEmpty()) {
                 content.append("\n퀴즈 실패 articleId: ")
                     .append(result.failedArticleIds().stream().limit(MAX_FAILED_IDS_IN_ALERT).toList());
@@ -272,7 +274,7 @@ public class QuizGenerationService {
      * @param duplicated 그 사이 다른 실행이 같은 기사의 퀴즈를 저장해 건너뛴 수
      */
     public record QuizGenerationResult(int succeeded, int duplicated, List<Long> failedArticleIds, long calls,
-                                       long inputTokens, long outputTokens) {
+                                       TokenUsage usage) {
     }
 
     private record Outcome(Long articleId, OutcomeStatus status) {
@@ -285,22 +287,16 @@ public class QuizGenerationService {
     private static final class Tally {
 
         private final AtomicLong calls = new AtomicLong();
-        private final AtomicLong inputTokens = new AtomicLong();
-        private final AtomicLong outputTokens = new AtomicLong();
+        private final AtomicReference<TokenUsage> tokens = new AtomicReference<>(TokenUsage.ZERO);
 
-        void add(long input, long output) {
+        void add(TokenUsage usage) {
             calls.incrementAndGet();
-            inputTokens.addAndGet(input);
-            outputTokens.addAndGet(output);
+            tokens.accumulateAndGet(usage, TokenUsage::plus);
         }
 
         // 응답을 받았지만 쓸 수 없던 호출은 쓴 토큰을 넣고, 응답을 받지 못한 호출은 호출 수만 센다
         void addFailed(BusinessException e) {
-            if (e instanceof AiResponseInvalidException invalid) {
-                add(invalid.getUsage().inputTokens(), invalid.getUsage().outputTokens());
-            } else {
-                add(0, 0);
-            }
+            add(AiResponseInvalidException.usageOf(e));
         }
     }
 }

@@ -59,8 +59,7 @@ public class ArticleAiService {
         List<SummaryTarget> targets = new ArrayList<>();
         List<Long> failedCategoryIds = new ArrayList<>();
         long difficultyCalls = 0;
-        long difficultyInput = 0;
-        long difficultyOutput = 0;
+        TokenUsage difficultyUsage = TokenUsage.ZERO;
         for (Map.Entry<Long, List<PendingArticle>> entry : byCategory.entrySet()) {
             Long categoryId = entry.getKey();
             List<ScoreInput> inputs = entry.getValue().stream()
@@ -69,16 +68,14 @@ public class ArticleAiService {
             try {
                 ScoreResult scored = difficultyScorer.score(inputs);
                 difficultyCalls += scored.calls();
-                difficultyInput += scored.usage().inputTokens();
-                difficultyOutput += scored.usage().outputTokens();
+                difficultyUsage = difficultyUsage.plus(scored.usage());
                 long[] counts = existing.getOrDefault(categoryId, new long[2]);
                 difficultyAssigner.assign(scored.scores(), counts[0], counts[1])
                     .forEach((articleId, difficulty) -> targets.add(new SummaryTarget(articleId, difficulty)));
             } catch (DifficultyScoringException e) {
                 // 이 카테고리는 이번 실행에서 요약하지 않는다. 배치를 다시 돌리면 다시 판정한다
                 difficultyCalls += e.calls();
-                difficultyInput += e.usage().inputTokens();
-                difficultyOutput += e.usage().outputTokens();
+                difficultyUsage = difficultyUsage.plus(e.usage());
                 failedCategoryIds.add(categoryId);
                 log.warn("[AI 가공] serviceDate={} categoryId={} 난이도 판정 실패 - {}",
                     serviceDate, categoryId, e.getMessage());
@@ -92,7 +89,7 @@ public class ArticleAiService {
 
         SummaryResult summary = summaryService.summarize(targets);
         AiProcessResult result = new AiProcessResult(pending.size(), byCategory.size(), failedCategoryIds,
-            difficultyCalls, new TokenUsage(difficultyInput, difficultyOutput), summary);
+            difficultyCalls, difficultyUsage, summary);
         notifyCompleted(serviceDate, result, Duration.between(startedAt, clock.instant()));
         return result;
     }
@@ -115,24 +112,22 @@ public class ArticleAiService {
         try {
             SummaryResult summary = result.summary();
             boolean hasFailure = !summary.failedArticleIds().isEmpty() || !result.failedCategoryIds().isEmpty();
-            long inputTokens = result.difficultyUsage().inputTokens() + summary.usage().inputTokens();
-            long outputTokens = result.difficultyUsage().outputTokens() + summary.usage().outputTokens();
+            TokenUsage total = result.difficultyUsage().plus(summary.usage().tokens());
             StringBuilder content = new StringBuilder()
                 .append(hasFailure ? "⚠️ **AI 가공 완료 (실패 있음)**" : "🤖 **AI 가공 완료**")
                 .append(" 서비스일 ").append(serviceDate)
                 .append(" · ").append(duration.toSeconds()).append("초\n")
                 .append("난이도 판정: 카테고리 ").append(result.categoryCount()).append("개")
                 .append(" · 호출 ").append(result.difficultyCalls()).append("회")
-                .append(" · 토큰 ").append(tokens(result.difficultyUsage().inputTokens(),
-                    result.difficultyUsage().outputTokens())).append('\n')
+                .append(" · 토큰 ").append(result.difficultyUsage().describe()).append('\n')
                 .append("요약: 대상 ").append(result.pendingCount()).append("건 · 성공 ").append(summary.succeeded())
                 .append(" · 실패 ").append(summary.failedArticleIds().size())
                 .append(" · 호출 ").append(summary.usage().calls()).append("회 (다시 요청 ")
                 .append(summary.usage().retries()).append("회)")
-                .append(" · 토큰 ").append(tokens(summary.usage().inputTokens(), summary.usage().outputTokens()))
+                .append(" · 토큰 ").append(summary.usage().tokens().describe())
                 .append('\n')
                 .append("예상 비용 $").append(String.format("%.4f",
-                    anthropicProperties.estimateCost(inputTokens, outputTokens)));
+                    anthropicProperties.estimateCost(total)));
             if (!result.failedCategoryIds().isEmpty()) {
                 content.append("\n난이도 판정 실패 categoryId: ").append(result.failedCategoryIds());
             }
@@ -146,10 +141,6 @@ public class ArticleAiService {
         }
     }
 
-    private static String tokens(long input, long output) {
-        return String.format("입력 %,d / 출력 %,d", input, output);
-    }
-
     /**
      * @param pendingCount      가공을 기다리던 기사 수
      * @param categoryCount     난이도를 판정한 카테고리 수
@@ -159,8 +150,8 @@ public class ArticleAiService {
                                   long difficultyCalls, TokenUsage difficultyUsage, SummaryResult summary) {
 
         static AiProcessResult empty() {
-            return new AiProcessResult(0, 0, List.of(), 0, new TokenUsage(0, 0),
-                new SummaryResult(0, List.of(), 0, new ArticleSummaryService.UsageTotal(0, 0, 0, 0)));
+            return new AiProcessResult(0, 0, List.of(), 0, TokenUsage.ZERO,
+                new SummaryResult(0, List.of(), 0, new ArticleSummaryService.UsageTotal(0, 0, TokenUsage.ZERO)));
         }
     }
 }

@@ -5,12 +5,14 @@ import com.anthropic.errors.AnthropicInvalidDataException;
 import com.anthropic.errors.AnthropicIoException;
 import com.anthropic.errors.AnthropicServiceException;
 import com.anthropic.errors.RateLimitException;
+import com.anthropic.models.messages.CacheControlEphemeral;
 import com.anthropic.models.messages.MessageCreateParams;
 import com.anthropic.models.messages.OutputConfig;
 import com.anthropic.models.messages.StopReason;
 import com.anthropic.models.messages.StructuredMessage;
 import com.anthropic.models.messages.StructuredMessageCreateParams;
 import com.anthropic.models.messages.StructuredOutputConfig;
+import com.anthropic.models.messages.TextBlockParam;
 import com.anthropic.models.messages.Usage;
 import com.byarrival.common.exception.BusinessException;
 import com.byarrival.domain.ai.exception.AiErrorCode;
@@ -39,7 +41,7 @@ public class ClaudeClient {
         StructuredMessageCreateParams<T> params = MessageCreateParams.builder()
             .model(request.model())
             .maxTokens(request.maxTokens())
-            .system(request.systemPrompt())
+            .systemOfTextBlockParams(List.of(cachedSystemPrompt(request.systemPrompt())))
             .addUserMessage(request.userMessage())
             .outputConfig(new StructuredOutputConfig.Builder<T>()
                 .format(outputType)
@@ -62,6 +64,15 @@ public class ClaudeClient {
         return new ClaudeResult<>(outputs.getFirst(), usage);
     }
 
+    // 같은 지시문을 배치에서 수백 번 보내므로 캐시해 입력 비용을 줄인다(캐시 읽기는 입력 가격의 10분의 1).
+    // 기본 5분 캐시이고 읽을 때마다 연장된다. 모델별 최소 길이(Haiku 5.5는 512토큰)보다 짧으면 API가 캐시하지 않을 뿐 오류는 없다
+    private static TextBlockParam cachedSystemPrompt(String systemPrompt) {
+        return TextBlockParam.builder()
+            .text(systemPrompt)
+            .cacheControl(CacheControlEphemeral.builder().build())
+            .build();
+    }
+
     // 구조화 출력 JSON은 text()를 부를 때 타입으로 바뀐다. 변환 실패 메시지에는 응답 본문이 들어 있어 종류만 남긴다
     private <T> List<T> extractOutputs(StructuredMessage<T> response, TokenUsage usage) {
         try {
@@ -74,12 +85,17 @@ public class ClaudeClient {
         }
     }
 
-    // 비용 추적용. 생각 토큰은 출력 토큰에 포함된다
-    private TokenUsage recordUsage(String model, Usage usage) {
+    // 비용 추적용. 생각 토큰은 출력 토큰에 포함되고, 캐시 토큰은 입력 토큰에 포함되지 않는다
+    private TokenUsage recordUsage(String model, Usage response) {
+        TokenUsage usage = new TokenUsage(response.inputTokens(), response.outputTokens(),
+            response.cacheCreationInputTokens().orElse(0L), response.cacheReadInputTokens().orElse(0L));
         meterRegistry.counter(TOKEN_METRIC, "model", model, "type", "input").increment(usage.inputTokens());
         meterRegistry.counter(TOKEN_METRIC, "model", model, "type", "output").increment(usage.outputTokens());
-        log.debug("[AI 호출] model={} inputTokens={} outputTokens={}", model, usage.inputTokens(), usage.outputTokens());
-        return new TokenUsage(usage.inputTokens(), usage.outputTokens());
+        meterRegistry.counter(TOKEN_METRIC, "model", model, "type", "cache_write").increment(usage.cacheWriteTokens());
+        meterRegistry.counter(TOKEN_METRIC, "model", model, "type", "cache_read").increment(usage.cacheReadTokens());
+        log.debug("[AI 호출] model={} inputTokens={} cacheWriteTokens={} cacheReadTokens={} outputTokens={}", model,
+            usage.inputTokens(), usage.cacheWriteTokens(), usage.cacheReadTokens(), usage.outputTokens());
+        return usage;
     }
 
     private <T> StructuredMessage<T> call(StructuredMessageCreateParams<T> params) {
@@ -106,9 +122,31 @@ public class ClaudeClient {
     }
 
     /**
-     * @param outputTokens 생각 토큰을 포함한 출력 토큰
+     * @param inputTokens      캐시를 쓰지 않은 입력 토큰. 캐시에 쓰거나 읽은 토큰은 들어 있지 않다
+     * @param outputTokens     생각 토큰을 포함한 출력 토큰
+     * @param cacheWriteTokens 캐시에 새로 쓴 입력 토큰
+     * @param cacheReadTokens  캐시에서 읽은 입력 토큰
      */
-    public record TokenUsage(long inputTokens, long outputTokens) {
+    public record TokenUsage(long inputTokens, long outputTokens, long cacheWriteTokens, long cacheReadTokens) {
+
+        public static final TokenUsage ZERO = new TokenUsage(0, 0);
+
+        public TokenUsage(long inputTokens, long outputTokens) {
+            this(inputTokens, outputTokens, 0, 0);
+        }
+
+        public TokenUsage plus(TokenUsage other) {
+            return new TokenUsage(inputTokens + other.inputTokens, outputTokens + other.outputTokens,
+                cacheWriteTokens + other.cacheWriteTokens, cacheReadTokens + other.cacheReadTokens);
+        }
+
+        /**
+         * 알림용 표기. 입력은 캐시 토큰을 더한 전체 수라 캐시를 쓰기 전 배치와 그대로 비교할 수 있다.
+         */
+        public String describe() {
+            return String.format("입력 %,d (캐시 읽기 %,d · 쓰기 %,d) / 출력 %,d",
+                inputTokens + cacheWriteTokens + cacheReadTokens, cacheReadTokens, cacheWriteTokens, outputTokens);
+        }
     }
 
     /**

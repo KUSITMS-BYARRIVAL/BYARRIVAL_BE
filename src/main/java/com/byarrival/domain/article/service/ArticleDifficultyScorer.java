@@ -2,6 +2,7 @@ package com.byarrival.domain.article.service;
 
 import com.byarrival.common.exception.BusinessException;
 import com.byarrival.domain.ai.exception.AiErrorCode;
+import com.byarrival.domain.ai.exception.AiResponseInvalidException;
 import com.byarrival.domain.ai.service.ClaudeClient;
 import com.byarrival.domain.ai.service.ClaudeClient.ClaudeRequest;
 import com.byarrival.domain.ai.service.ClaudeClient.ClaudeResult;
@@ -52,24 +53,24 @@ public class ArticleDifficultyScorer {
         ClaudeRequest request = new ClaudeRequest(properties.model(), properties.maxTokens(),
             properties.outputEffort(), systemPrompt, userMessage(articles, properties.leadLength()));
         long calls = 0;
-        long inputTokens = 0;
-        long outputTokens = 0;
+        TokenUsage usage = TokenUsage.ZERO;
         BusinessException lastError = null;
         for (int attempt = 1; attempt <= properties.maxRetries() + 1; attempt++) {
             calls++;
             try {
                 ClaudeResult<ArticleDifficultyOutput> result = claudeClient.generate(request,
                     ArticleDifficultyOutput.class);
-                inputTokens += result.usage().inputTokens();
-                outputTokens += result.usage().outputTokens();
+                usage = usage.plus(result.usage());
                 Map<Long, Integer> scores = validate(result.output(), articles);
-                return new ScoreResult(scores, calls, new TokenUsage(inputTokens, outputTokens));
+                return new ScoreResult(scores, calls, usage);
             } catch (BusinessException e) {
+                // 잘렸거나 쓸 수 없는 응답도 비용은 나갔다
+                usage = usage.plus(AiResponseInvalidException.usageOf(e));
                 lastError = e;
                 log.warn("[AI 난이도] {}번째 시도 실패 - {}", attempt, e.getMessage());
             }
         }
-        throw new DifficultyScoringException(lastError, calls, new TokenUsage(inputTokens, outputTokens));
+        throw new DifficultyScoringException(lastError, calls, usage);
     }
 
     static Map<Long, Integer> validate(ArticleDifficultyOutput output, List<ScoreInput> articles) {

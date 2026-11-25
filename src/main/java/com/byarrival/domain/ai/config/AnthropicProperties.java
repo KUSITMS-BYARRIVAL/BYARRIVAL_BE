@@ -1,5 +1,6 @@
 package com.byarrival.domain.ai.config;
 
+import com.byarrival.domain.ai.service.ClaudeClient.TokenUsage;
 import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
@@ -11,6 +12,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param maxRetries 429·5xx·연결 오류일 때 SDK가 다시 시도하는 횟수
  * @param inputPricePerMillionTokens  입력 토큰 100만 개당 가격(USD). 알림의 예상 비용 계산에만 쓴다
  * @param outputPricePerMillionTokens 출력 토큰 100만 개당 가격(USD). 생각 토큰도 출력 가격으로 계산된다
+ * @param cacheWritePricePerMillionTokens 캐시에 쓴 입력 토큰 100만 개당 가격(USD, 5분 캐시)
+ * @param cacheReadPricePerMillionTokens  캐시에서 읽은 입력 토큰 100만 개당 가격(USD)
  */
 @ConfigurationProperties(prefix = "ai.anthropic")
 public record AnthropicProperties(
@@ -18,7 +21,9 @@ public record AnthropicProperties(
     Duration timeout,
     int maxRetries,
     double inputPricePerMillionTokens,
-    double outputPricePerMillionTokens
+    double outputPricePerMillionTokens,
+    double cacheWritePricePerMillionTokens,
+    double cacheReadPricePerMillionTokens
 ) {
 
     public AnthropicProperties {
@@ -30,9 +35,11 @@ public record AnthropicProperties(
         }
     }
 
-    public double estimateCost(long inputTokens, long outputTokens) {
-        return inputTokens / 1_000_000.0 * inputPricePerMillionTokens
-            + outputTokens / 1_000_000.0 * outputPricePerMillionTokens;
+    public double estimateCost(TokenUsage usage) {
+        return (usage.inputTokens() * inputPricePerMillionTokens
+            + usage.outputTokens() * outputPricePerMillionTokens
+            + usage.cacheWriteTokens() * cacheWritePricePerMillionTokens
+            + usage.cacheReadTokens() * cacheReadPricePerMillionTokens) / 1_000_000.0;
     }
 
     public boolean hasApiKey() {
