@@ -44,7 +44,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 @Import(TestcontainersConfig.class)
 class QuizGenerationServiceTest {
 
-    private static final TokenUsage USAGE = new TokenUsage(100, 50);
+    private static final TokenUsage USAGE = new TokenUsage(100, 50, 10, 200);
     private static final String EVIDENCE = "가나다라 첫째 문장입니다.";
 
     @Autowired
@@ -274,7 +274,7 @@ class QuizGenerationServiceTest {
         Long article = newArticle(true, "VISIBLE", "잘린 기사");
         given(generator.generate(source(article))).willReturn(result(valid("잘린 기사")));
         given(checker.check(any(), any()))
-            .willThrow(new AiResponseInvalidException(new TokenUsage(300, 4000), "stop_reason=max_tokens"))
+            .willThrow(new AiResponseInvalidException(new TokenUsage(300, 4000, 40, 500), "stop_reason=max_tokens"))
             .willAnswer(invocation -> {
                 ValidatedQuiz quiz = invocation.getArgument(1);
                 return new ClaudeResult<>(new QuizCheckOutput(List.of(quiz.answerSeq()), true, "정답만 맞아요."), USAGE);
@@ -283,8 +283,8 @@ class QuizGenerationServiceTest {
         QuizGenerationResult result = quizGenerationService.generate(serviceDate);
 
         assertThat(result.succeeded()).isEqualTo(1);
-        // 생성 2회(각 100/50) + 잘린 검수(300/4000) + 성공한 검수(100/50)
+        // 입력/출력/캐시 쓰기/캐시 읽기: 생성 2회(각 100/50/10/200) + 잘린 검수(300/4000/40/500) + 성공한 검수(100/50/10/200)
         assertThat(result.calls()).isEqualTo(4);
-        assertThat(result.usage()).isEqualTo(new TokenUsage(600, 4150));
+        assertThat(result.usage()).isEqualTo(new TokenUsage(600, 4150, 70, 1100));
     }
 }
