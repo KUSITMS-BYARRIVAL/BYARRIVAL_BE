@@ -8,6 +8,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
+import com.byarrival.domain.ai.exception.AiResponseInvalidException;
 import com.byarrival.domain.ai.service.ClaudeClient;
 import com.byarrival.domain.ai.service.ClaudeClient.ClaudeRequest;
 import com.byarrival.domain.ai.service.ClaudeClient.ClaudeResult;
@@ -105,6 +106,18 @@ class ArticleStoryGrouperTest {
                 assertThat(e.calls()).isEqualTo(3);
                 assertThat(e.usage()).isEqualTo(new TokenUsage(45000, 30));
             });
+    }
+
+    @Test
+    void 잘린_응답이_쓴_토큰도_넣는다() {
+        given(claudeClient.generate(any(), eq(ArticleStoryOutput.class)))
+            .willThrow(new AiResponseInvalidException(new TokenUsage(15000, 16000), "stop_reason=max_tokens"))
+            .willReturn(result(new StoryGroup("해킹", List.of(1L, 2L))));
+
+        GroupResult result = grouper.group(ARTICLES);
+
+        assertThat(result.calls()).isEqualTo(2);
+        assertThat(result.usage()).isEqualTo(new TokenUsage(30000, 18500));
     }
 
     private ClaudeResult<ArticleStoryOutput> result(StoryGroup... groups) {

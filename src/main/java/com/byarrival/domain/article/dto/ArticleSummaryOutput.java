@@ -8,7 +8,7 @@ import java.util.List;
  * AI 요약 응답 JSON(AI-06). 구조화 출력 스키마로도 쓴다. 값은 저장 전에 서버에서 검증한다(AI-02).
  */
 public record ArticleSummaryOutput(
-    @JsonPropertyDescription("입력받은 기사 제목을 그대로")
+    @JsonPropertyDescription("입력받은 기사 제목을 글자 그대로. 빈 문자열이나 자리 표시 값을 쓰지 않는다")
     String title,
 
     @JsonPropertyDescription("입력받은 요약 난이도를 그대로")

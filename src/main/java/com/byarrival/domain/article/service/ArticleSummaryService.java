@@ -2,6 +2,7 @@ package com.byarrival.domain.article.service;
 
 import com.byarrival.common.exception.BusinessException;
 import com.byarrival.domain.ai.exception.AiRateLimitedException;
+import com.byarrival.domain.ai.exception.AiResponseInvalidException;
 import com.byarrival.domain.ai.service.ClaudeClient.ClaudeResult;
 import com.byarrival.domain.ai.service.ClaudeClient.TokenUsage;
 import com.byarrival.domain.article.config.ArticleSummaryProperties;
@@ -16,6 +17,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -53,7 +55,7 @@ public class ArticleSummaryService {
 
     public SummaryResult summarize(List<SummaryTarget> targets) {
         if (targets.isEmpty()) {
-            return new SummaryResult(0, List.of(), 0, new UsageTotal(0, 0, 0, 0));
+            return new SummaryResult(0, List.of(), 0, new UsageTotal(0, 0, TokenUsage.ZERO));
         }
         UsageTally tally = new UsageTally();
         Map<Long, ArticleDifficulty> difficulties = targets.stream()
@@ -78,9 +80,8 @@ public class ArticleSummaryService {
         int skipped = difficulties.size() - succeeded - failed.size();
         UsageTotal usage = tally.total();
         SummaryResult result = new SummaryResult(succeeded, List.copyOf(failed), skipped, usage);
-        log.info("[AI 요약] 대상 {}건, 성공 {}건, 실패 {}건, 건너뜀 {}건, 호출 {}회, 입력 토큰 {}, 출력 토큰 {}",
-            difficulties.size(), succeeded, failed.size(), skipped, usage.calls(), usage.inputTokens(),
-            usage.outputTokens());
+        log.info("[AI 요약] 대상 {}건, 성공 {}건, 실패 {}건, 건너뜀 {}건, 호출 {}회, 토큰 {}",
+            difficulties.size(), succeeded, failed.size(), skipped, usage.calls(), usage.tokens().describe());
         return result;
     }
 
@@ -135,7 +136,7 @@ public class ArticleSummaryService {
                 tally.add(usage, retry);
                 output = result.output();
             } catch (AiRateLimitedException e) {
-                tally.addFailedCall(retry);
+                tally.add(TokenUsage.ZERO, retry);
                 lastError = e;
                 if (rateLimited < MAX_RATE_LIMITED_RETRIES) {
                     rateLimited++;
@@ -148,10 +149,12 @@ public class ArticleSummaryService {
                     input.articleId(), attempt, attempts, mode, e.getErrorCode(), oneLine(e.getMessage()));
                 continue;
             } catch (BusinessException e) {
-                // 응답을 받지 못했거나 잘린 호출. 토큰 수를 알 수 없어 호출 수만 센다
-                tally.addFailedCall(retry);
-                log.info("[AI 요약 시도 실패] articleId={} attempt={}/{} mode={} 호출 실패 code={} reason={}",
-                    input.articleId(), attempt, attempts, mode, e.getErrorCode(), oneLine(e.getMessage()));
+                // 잘렸거나 쓸 수 없는 응답은 비용이 나갔으므로 쓴 토큰을 넣고, 응답을 받지 못한 호출은 호출 수만 센다
+                TokenUsage failedUsage = AiResponseInvalidException.usageOf(e);
+                tally.add(failedUsage, retry);
+                log.info("[AI 요약 시도 실패] articleId={} attempt={}/{} mode={} 호출 실패 code={} outputTokens={} reason={}",
+                    input.articleId(), attempt, attempts, mode, e.getErrorCode(), failedUsage.outputTokens(),
+                    oneLine(e.getMessage()));
                 lastError = e;
                 // 수선 호출이 잘렸으면 이전 답은 그대로 두고 다시 수선한다. 처음부터 다시 쓰는 것보다 싸다
                 if (!"repair".equals(mode)) {
@@ -168,8 +171,9 @@ public class ArticleSummaryService {
                 return summary;
             } catch (ArticleSummaryInvalidException e) {
                 // 재요청 비용을 줄이려면 어떤 규칙이 얼마나 자주 어겨지는지 알아야 한다. 사유는 " | "로 이어 한 줄로 남긴다
-                log.info("[AI 요약 시도 실패] articleId={} attempt={}/{} mode={} 검증 실패 inputTokens={} outputTokens={} problems={}",
-                    input.articleId(), attempt, attempts, mode, usage.inputTokens(), usage.outputTokens(),
+                log.info("[AI 요약 시도 실패] articleId={} attempt={}/{} mode={} 검증 실패 inputTokens={} cacheReadTokens={} outputTokens={} problems={}",
+                    input.articleId(), attempt, attempts, mode, usage.inputTokens(), usage.cacheReadTokens(),
+                    usage.outputTokens(),
                     oneLine(e.getMessage()));
                 lastError = e;
                 boolean repaired = "repair".equals(mode);
@@ -208,8 +212,9 @@ public class ArticleSummaryService {
 
     /**
      * @param retries 검증 실패나 호출 실패로 다시 요청한 횟수
+     * @param tokens  검증에 실패하거나 잘린 응답까지 포함해 쓴 토큰
      */
-    public record UsageTotal(long calls, long retries, long inputTokens, long outputTokens) {
+    public record UsageTotal(long calls, long retries, TokenUsage tokens) {
     }
 
     // 여러 스레드가 동시에 더하므로 원자 연산으로 센다
@@ -217,24 +222,18 @@ public class ArticleSummaryService {
 
         private final AtomicLong calls = new AtomicLong();
         private final AtomicLong retries = new AtomicLong();
-        private final AtomicLong inputTokens = new AtomicLong();
-        private final AtomicLong outputTokens = new AtomicLong();
+        private final AtomicReference<TokenUsage> tokens = new AtomicReference<>(TokenUsage.ZERO);
 
         void add(TokenUsage usage, boolean retry) {
-            addFailedCall(retry);
-            inputTokens.addAndGet(usage.inputTokens());
-            outputTokens.addAndGet(usage.outputTokens());
-        }
-
-        void addFailedCall(boolean retry) {
             calls.incrementAndGet();
             if (retry) {
                 retries.incrementAndGet();
             }
+            tokens.accumulateAndGet(usage, TokenUsage::plus);
         }
 
         UsageTotal total() {
-            return new UsageTotal(calls.get(), retries.get(), inputTokens.get(), outputTokens.get());
+            return new UsageTotal(calls.get(), retries.get(), tokens.get());
         }
     }
 

@@ -45,8 +45,21 @@ log "현재: ${active:-없음(첫 배포)} → 배포 대상: $target ($APP_IMAG
 
 # 모니터링. 설정 파일이 바뀌었을 수 있으므로 매번 다시 만든다(수집한 데이터는 볼륨에 남는다).
 # 모니터링이 실패해도 앱 배포는 계속한다.
-if ! "${COMPOSE[@]}" up -d --force-recreate prometheus; then
-  log "Prometheus를 띄우지 못했습니다. 앱 배포는 계속합니다."
+# metrics·backups는 컨테이너가 먼저 만들면 root 소유가 되어 backup.sh가 쓰지 못하므로 여기서 만든다
+mkdir -p metrics backups
+chmod 700 backups
+chmod 755 metrics
+for service in node-exporter postgres-exporter blackbox-exporter prometheus; do
+  if ! "${COMPOSE[@]}" up -d --no-deps --force-recreate "$service"; then
+    log "$service 를 띄우지 못했습니다. 앱 배포는 계속합니다."
+  fi
+done
+if grep -Eq '^DISCORD_BATCH_WEBHOOK_URL=.+' .env; then
+  if ! "${COMPOSE[@]}" up -d --no-deps --force-recreate alertmanager; then
+    log "Alertmanager를 띄우지 못했습니다. 앱 배포는 계속합니다."
+  fi
+else
+  log ".env에 DISCORD_BATCH_WEBHOOK_URL이 없어 Alertmanager를 띄우지 않습니다."
 fi
 if grep -Eq '^GRAFANA_ADMIN_PASSWORD=.+' .env; then
   if ! "${COMPOSE[@]}" up -d --force-recreate grafana; then
@@ -55,6 +68,21 @@ if grep -Eq '^GRAFANA_ADMIN_PASSWORD=.+' .env; then
 else
   log ".env에 GRAFANA_ADMIN_PASSWORD가 없어 Grafana를 띄우지 않습니다."
 fi
+
+# cron 등록(서버 시간대 KST). 이미 등록돼 있으면 그대로 둔다
+register_cron() {
+  local name="$1" script="$2" line="$3"
+  if crontab -l 2>/dev/null | grep -Fq "$script"; then
+    return 0
+  fi
+  if { crontab -l 2>/dev/null || true; echo "$line"; } | crontab -; then
+    log "$name cron을 등록했습니다."
+  else
+    log "$name cron을 등록하지 못했습니다. README를 확인해 주세요."
+  fi
+}
+register_cron "DB 백업" "$PWD/db/backup.sh" "0 3 * * * $PWD/db/backup.sh >> $PWD/backups/backup.log 2>&1"
+register_cron "감시 프로그램 확인" "$PWD/watchdog.sh" "*/5 * * * * $PWD/watchdog.sh > /dev/null 2>&1"
 "${COMPOSE[@]}" up -d certbot
 
 # Nginx는 인증서 파일이 없으면 뜨지 않는다. 처음에는 임시 자체 서명 인증서를 두고,
