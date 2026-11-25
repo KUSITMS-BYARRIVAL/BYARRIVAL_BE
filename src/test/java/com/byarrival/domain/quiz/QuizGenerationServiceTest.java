@@ -285,7 +285,6 @@ class QuizGenerationServiceTest {
         assertThat(result.succeeded()).isEqualTo(1);
         // 생성 2회(각 100/50) + 잘린 검수(300/4000) + 성공한 검수(100/50)
         assertThat(result.calls()).isEqualTo(4);
-        assertThat(result.inputTokens()).isEqualTo(600);
-        assertThat(result.outputTokens()).isEqualTo(4150);
+        assertThat(result.usage()).isEqualTo(new TokenUsage(600, 4150));
     }
 }

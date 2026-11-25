@@ -60,7 +60,7 @@ public class ArticleStoryService {
         } catch (RuntimeException e) {
             log.error("[같은 사건] serviceDate={} 묶기 중 오류, 건너뜀 - {}", serviceDate,
                 e.getClass().getSimpleName(), e);
-            StoryResult result = StoryResult.failed(0, new TokenUsage(0, 0));
+            StoryResult result = StoryResult.failed(0, TokenUsage.ZERO);
             notifyResult(serviceDate, result, Map.of());
             return result;
         }
@@ -134,10 +134,9 @@ public class ArticleStoryService {
                     .append(result.removedCount()).append("건\n");
             }
             content.append("호출 ").append(result.calls()).append("회 · 토큰 ")
-                .append(String.format("입력 %,d / 출력 %,d", result.usage().inputTokens(),
-                    result.usage().outputTokens()))
+                .append(result.usage().describe())
                 .append(" · 예상 비용 $").append(String.format("%.4f",
-                    anthropicProperties.estimateCost(result.usage().inputTokens(), result.usage().outputTokens())));
+                    anthropicProperties.estimateCost(result.usage())));
             removedByKept.forEach((kept, removed) ->
                 content.append("\n남김 ").append(kept).append(" ← 제외 ").append(removed));
             batchAlertNotifier.send(content.toString());
@@ -154,7 +153,7 @@ public class ArticleStoryService {
     public record StoryResult(boolean succeeded, int groupCount, int removedCount, long calls, TokenUsage usage) {
 
         static StoryResult skipped() {
-            return new StoryResult(true, 0, 0, 0, new TokenUsage(0, 0));
+            return new StoryResult(true, 0, 0, 0, TokenUsage.ZERO);
         }
 
         static StoryResult failed(long calls, TokenUsage usage) {

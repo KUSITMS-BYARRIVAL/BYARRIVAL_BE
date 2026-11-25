@@ -17,6 +17,7 @@ import com.anthropic.errors.RateLimitException;
 import com.anthropic.models.messages.Message;
 import com.anthropic.models.messages.MessageCreateParams;
 import com.anthropic.models.messages.OutputConfig;
+import com.anthropic.models.messages.TextBlockParam;
 import com.anthropic.services.blocking.MessageService;
 import com.byarrival.common.exception.BusinessException;
 import com.byarrival.domain.ai.exception.AiErrorCode;
@@ -67,7 +68,10 @@ class ClaudeClientTest {
         MessageCreateParams params = sentParams.get();
         assertThat(params.model().asString()).isEqualTo("claude-haiku-5-5");
         assertThat(params.maxTokens()).isEqualTo(4000);
-        assertThat(params.system().orElseThrow().asString()).isEqualTo("시스템 지시");
+        TextBlockParam system = params.system().orElseThrow().asTextBlockParams().getFirst();
+        assertThat(system.text()).isEqualTo("시스템 지시");
+        // 배치에서 되풀이해 보내는 지시문은 캐시한다
+        assertThat(system.cacheControl()).isPresent();
         OutputConfig outputConfig = params.outputConfig().orElseThrow();
         assertThat(outputConfig.effort()).contains(OutputConfig.Effort.LOW);
         assertThat(outputConfig.format()).isPresent();
@@ -84,6 +88,20 @@ class ClaudeClientTest {
             .isEqualTo(20);
         assertThat(meterRegistry.counter("ai.tokens", "model", "claude-haiku-5-5", "type", "output").count())
             .isEqualTo(20);
+    }
+
+    @Test
+    void 캐시에_쓰고_읽은_토큰을_입력_토큰과_나눠_센다() {
+        respond("end_turn", "{\"title\":\"제목\",\"summary\":[]}", 20, 300);
+
+        ClaudeResult<Sample> result = claudeClient.generate(REQUEST, Sample.class);
+
+        assertThat(result.usage()).isEqualTo(new TokenUsage(10, 10, 20, 300));
+        assertThat(meterRegistry.counter("ai.tokens", "model", "claude-haiku-5-5", "type", "cache_write").count())
+            .isEqualTo(20);
+        assertThat(meterRegistry.counter("ai.tokens", "model", "claude-haiku-5-5", "type", "cache_read").count())
+            .isEqualTo(300);
+        assertThat(result.usage().describe()).isEqualTo("입력 330 (캐시 읽기 300 · 쓰기 20) / 출력 10");
     }
 
     @Test
@@ -155,7 +173,11 @@ class ClaudeClientTest {
     }
 
     private void respond(String stopReason, String text) {
-        Message message = message(stopReason, text);
+        respond(stopReason, text, 0, 0);
+    }
+
+    private void respond(String stopReason, String text, long cacheWriteTokens, long cacheReadTokens) {
+        Message message = message(stopReason, text, cacheWriteTokens, cacheReadTokens);
         given(messageService.create(any(MessageCreateParams.class), any(RequestOptions.class)))
             .willAnswer(invocation -> {
                 sentParams.set(invocation.getArgument(0));
@@ -163,16 +185,16 @@ class ClaudeClientTest {
             });
     }
 
-    private static Message message(String stopReason, String text) {
+    private static Message message(String stopReason, String text, long cacheWriteTokens, long cacheReadTokens) {
         String content = text.isEmpty() ? "[]"
             : "[{\"type\":\"text\",\"text\":" + quote(text) + ",\"citations\":null}]";
         String json = """
             {"id":"msg_test","type":"message","role":"assistant","model":"claude-haiku-5-5",
              "content":%s,"stop_reason":"%s","stop_sequence":null,"stop_details":null,"container":null,
-             "usage":{"input_tokens":10,"output_tokens":10,"cache_creation_input_tokens":0,
-                      "cache_read_input_tokens":0,"cache_creation":null,"server_tool_use":null,
+             "usage":{"input_tokens":10,"output_tokens":10,"cache_creation_input_tokens":%d,
+                      "cache_read_input_tokens":%d,"cache_creation":null,"server_tool_use":null,
                       "service_tier":"standard","inference_geo":null}}
-            """.formatted(content, stopReason);
+            """.formatted(content, stopReason, cacheWriteTokens, cacheReadTokens);
         try {
             return ObjectMappers.jsonMapper().readValue(json, Message.class);
         } catch (Exception e) {

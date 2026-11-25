@@ -150,7 +150,7 @@ class ArticleSummaryServiceTest {
         assertThat(result.succeeded()).isEqualTo(1);
         assertThat(articleRepository.findById(article.getId()).orElseThrow().getSummarySentence1())
             .isEqualTo("첫째 문장입니다.");
-        assertThat(result.usage()).isEqualTo(new UsageTotal(2, 1, 2000, 400));
+        assertThat(result.usage()).isEqualTo(new UsageTotal(2, 1, new TokenUsage(2000, 400)));
         verify(generator, never()).regenerate(anyString(), anyString(), any(), any(), anyString());
     }
 
@@ -256,7 +256,7 @@ class ArticleSummaryServiceTest {
             List.of(new SummaryTarget(article.getId(), ArticleDifficulty.EASY)));
 
         assertThat(result.succeeded()).isEqualTo(1);
-        assertThat(result.usage()).isEqualTo(new UsageTotal(2, 1, 1000, 200));
+        assertThat(result.usage()).isEqualTo(new UsageTotal(2, 1, new TokenUsage(1000, 200)));
     }
 
     @Test
@@ -270,7 +270,7 @@ class ArticleSummaryServiceTest {
 
         assertThat(result.failedArticleIds()).containsExactly(article.getId());
         // 호출 7번 중 첫 호출을 뺀 6번이 재요청이다
-        assertThat(result.usage()).isEqualTo(new UsageTotal(7, 6, 0, 0));
+        assertThat(result.usage()).isEqualTo(new UsageTotal(7, 6, new TokenUsage(0, 0)));
         // 시도 4번 + 시도로 세지 않은 한도 초과 3번
         verify(generator, times(4 + ArticleSummaryService.MAX_RATE_LIMITED_RETRIES))
             .generate(anyString(), anyString(), any());

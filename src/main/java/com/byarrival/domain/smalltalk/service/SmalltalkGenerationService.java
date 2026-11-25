@@ -5,6 +5,7 @@ import com.byarrival.common.monitoring.BatchAlertNotifier;
 import com.byarrival.domain.ai.config.AnthropicProperties;
 import com.byarrival.domain.ai.exception.AiResponseInvalidException;
 import com.byarrival.domain.ai.service.ClaudeClient.ClaudeResult;
+import com.byarrival.domain.ai.service.ClaudeClient.TokenUsage;
 import com.byarrival.domain.article.entity.Article;
 import com.byarrival.domain.article.service.ArticleQueryService;
 import com.byarrival.domain.category.service.CategoryMappingService;
@@ -24,6 +25,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 import lombok.extern.slf4j.Slf4j;
 import org.hibernate.exception.ConstraintViolationException;
@@ -144,7 +146,7 @@ public class SmalltalkGenerationService {
                 ClaudeResult<SmalltalkOutput> result = previous == null
                     ? generator.generate(source)
                     : generator.regenerate(source, previous, problems);
-                tally.add(result.usage().inputTokens(), result.usage().outputTokens());
+                tally.add(result.usage());
                 output = result.output();
             } catch (BusinessException e) {
                 tally.addFailed(e);
@@ -201,9 +203,9 @@ public class SmalltalkGenerationService {
             batchAlertNotifier.send((shortage == 0 ? "💬 **AI 스몰토크 완료**" : "⚠️ **AI 스몰토크 완료 (부족한 카테고리 있음)**")
                 + " 서비스일 " + serviceDate + "\n카테고리별 확보 " + counts
                 + "\n알맞지 않음 " + tally.unsuitable.get() + "건 · 호출 " + tally.calls.get() + "회"
-                + String.format(" · 토큰 입력 %,d / 출력 %,d", tally.inputTokens.get(), tally.outputTokens.get())
+                + " · 토큰 " + tally.tokens.get().describe()
                 + "\n예상 비용 $" + String.format("%.4f",
-                anthropicProperties.estimateCost(tally.inputTokens.get(), tally.outputTokens.get())));
+                anthropicProperties.estimateCost(tally.tokens.get())));
         } catch (RuntimeException e) {
             log.warn("[AI 스몰토크] 완료 알림 실패 - {}", e.getMessage());
         }
@@ -213,23 +215,17 @@ public class SmalltalkGenerationService {
     private static final class Tally {
 
         private final AtomicLong calls = new AtomicLong();
-        private final AtomicLong inputTokens = new AtomicLong();
-        private final AtomicLong outputTokens = new AtomicLong();
+        private final AtomicReference<TokenUsage> tokens = new AtomicReference<>(TokenUsage.ZERO);
         private final AtomicLong unsuitable = new AtomicLong();
 
-        void add(long input, long output) {
+        void add(TokenUsage usage) {
             calls.incrementAndGet();
-            inputTokens.addAndGet(input);
-            outputTokens.addAndGet(output);
+            tokens.accumulateAndGet(usage, TokenUsage::plus);
         }
 
         // 응답을 받았지만 쓸 수 없던 호출은 쓴 토큰을 넣고, 응답을 받지 못한 호출은 호출 수만 센다
         void addFailed(BusinessException e) {
-            if (e instanceof AiResponseInvalidException invalid) {
-                add(invalid.getUsage().inputTokens(), invalid.getUsage().outputTokens());
-            } else {
-                add(0, 0);
-            }
+            add(AiResponseInvalidException.usageOf(e));
         }
     }
 }

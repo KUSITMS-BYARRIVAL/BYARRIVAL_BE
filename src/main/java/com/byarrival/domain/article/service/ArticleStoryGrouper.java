@@ -49,23 +49,21 @@ public class ArticleStoryGrouper {
         ClaudeRequest request = new ClaudeRequest(properties.model(), properties.maxTokens(),
             properties.outputEffort(), systemPrompt, userMessage(articles));
         long calls = 0;
-        long inputTokens = 0;
-        long outputTokens = 0;
+        TokenUsage usage = TokenUsage.ZERO;
         BusinessException lastError = null;
         for (int attempt = 1; attempt <= properties.maxRetries() + 1; attempt++) {
             calls++;
             try {
                 ClaudeResult<ArticleStoryOutput> result = claudeClient.generate(request, ArticleStoryOutput.class);
-                inputTokens += result.usage().inputTokens();
-                outputTokens += result.usage().outputTokens();
+                usage = usage.plus(result.usage());
                 List<Set<Long>> groups = validate(result.output(), articles);
-                return new GroupResult(groups, calls, new TokenUsage(inputTokens, outputTokens));
+                return new GroupResult(groups, calls, usage);
             } catch (BusinessException e) {
                 lastError = e;
                 log.warn("[AI 같은 사건] {}번째 시도 실패 - {}", attempt, e.getMessage());
             }
         }
-        throw new StoryGroupingException(lastError, calls, new TokenUsage(inputTokens, outputTokens));
+        throw new StoryGroupingException(lastError, calls, usage);
     }
 
     /**

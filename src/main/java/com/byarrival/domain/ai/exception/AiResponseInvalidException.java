@@ -17,4 +17,11 @@ public class AiResponseInvalidException extends BusinessException {
         super(AiErrorCode.AI_RESPONSE_INVALID, message);
         this.usage = usage;
     }
+
+    /**
+     * 실패한 호출이 쓴 토큰. 응답을 받지 못한 호출은 쓴 토큰을 알 수 없어 0으로 센다.
+     */
+    public static TokenUsage usageOf(BusinessException e) {
+        return e instanceof AiResponseInvalidException invalid ? invalid.usage : TokenUsage.ZERO;
+    }
 }
