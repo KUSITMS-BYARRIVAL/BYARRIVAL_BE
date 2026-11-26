@@ -56,6 +56,17 @@ public interface ArticleRepository extends JpaRepository<Article, Long> {
     List<Article> findStoryCandidates(@Param("serviceDate") LocalDate serviceDate);
 
     // 추천에서 뺀 기사를 가리키던 중복 기록을 새로 남긴 기사로 옮긴다(배치 재실행으로 남길 기사가 바뀐 경우)
+    // 지울 기사를 대표로 가리키는 참조를 먼저 끊는다. 같은 사건 묶기는 서비스일 안에서만 하지만 다른 날 기사도 함께 본다
+    @Modifying
+    @Query("UPDATE Article a SET a.duplicateOfArticleId = NULL WHERE a.duplicateOfArticleId IN "
+        + "(SELECT d.id FROM Article d WHERE d.serviceDate = :serviceDate)")
+    int clearDuplicatesOf(@Param("serviceDate") LocalDate serviceDate);
+
+    // 요약·원문·퀴즈·스몰토크·AI 작업·숨김 이력은 DB의 ON DELETE CASCADE로 함께 지워진다
+    @Modifying
+    @Query("DELETE FROM Article a WHERE a.serviceDate = :serviceDate")
+    int deleteByServiceDate(@Param("serviceDate") LocalDate serviceDate);
+
     @Modifying
     @Query("UPDATE Article a SET a.duplicateOfArticleId = :representativeId WHERE a.duplicateOfArticleId = :removedId")
     int repointDuplicates(@Param("removedId") Long removedId, @Param("representativeId") Long representativeId);
