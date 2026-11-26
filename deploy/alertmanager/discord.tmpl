@@ -1,3 +1,3 @@
-{{ define "byarrival.title" }}{{ if eq .Status "resolved" }}✅ 복구{{ else if eq .CommonLabels.severity "critical" }}🚨 긴급{{ else }}⚠️ 경고{{ end }} · {{ with .CommonAnnotations.summary }}{{ . }}{{ else }}{{ .GroupLabels.alertname }}{{ end }}{{ end }}
-{{ define "byarrival.message" }}{{ range .Alerts }}{{ .Annotations.description }}
-{{ end }}{{ end }}
+{{ define "byarrival.title" }}{{ if eq .Status "resolved" }}✅ 해결됨{{ else if eq .CommonLabels.severity "critical" }}🚨 긴급{{ else }}⚠️ 경고{{ end }} · {{ with .CommonAnnotations.summary }}{{ . }}{{ else }}{{ .GroupLabels.alertname }}{{ end }}{{ end }}
+{{ define "byarrival.message" }}{{ if eq .Status "resolved" }}정상으로 돌아왔습니다.{{ else }}{{ range .Alerts }}{{ .Annotations.description }}
+{{ end }}{{ end }}{{ end }}

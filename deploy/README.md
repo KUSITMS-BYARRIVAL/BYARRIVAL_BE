@@ -70,7 +70,7 @@ blue/green 중 쉬고 있는 쪽은 꺼져 있으므로 Prometheus Targets에서
 
 ### 알림 규칙
 
-규칙은 `prometheus/rules/byarrival.yml`에 있고, Alertmanager가 디스코드 배치·운영 채널(`DISCORD_BATCH_WEBHOOK_URL`)로 보냅니다. 복구되면 복구 알림도 보냅니다. 긴급은 1시간, 경고는 6시간마다 다시 알립니다.
+규칙은 `prometheus/rules/byarrival.yml`에 있고, Alertmanager가 디스코드 배치·운영 채널(`DISCORD_BATCH_WEBHOOK_URL`)로 보냅니다. 문제가 풀리면 "✅ 해결됨" 알림을 보냅니다(본문은 "정상으로 돌아왔습니다."). 긴급은 1시간, 경고는 6시간마다 다시 알립니다.
 
 | 항목 | 경고 | 긴급 |
 |---|---|---|
