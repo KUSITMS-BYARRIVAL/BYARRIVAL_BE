@@ -45,6 +45,28 @@ public class BatchRunService {
         }
     }
 
+    /**
+     * 운영자 새로고침용 시작. 완료된 배치는 대체됨으로 바꾸고 새 실행을 시작한다. 실행 중이면 거절한다.
+     * 호출하는 쪽 트랜잭션에 참여해 기사 삭제와 함께 커밋되게 한다. 동시에 시작해 제약에 걸리면
+     * {@link org.springframework.dao.DataIntegrityViolationException}이 그대로 올라간다.
+     */
+    @Transactional
+    public Long startReplacing(LocalDate serviceDate) {
+        if (batchRunRepository.existsByServiceDateAndStatusIn(serviceDate, EnumSet.of(BatchRunStatus.RUNNING))) {
+            throw new BusinessException(BatchErrorCode.BATCH_RUNNING);
+        }
+        batchRunRepository.findByServiceDateAndStatus(serviceDate, BatchRunStatus.COMPLETED)
+            .forEach(BatchRun::replace);
+        // 대체 표시가 새 실행 저장보다 먼저 반영돼야 유니크 제약에 걸리지 않는다
+        batchRunRepository.flush();
+        return batchRunRepository.saveAndFlush(BatchRun.start(serviceDate, LocalDateTime.now(clock))).getId();
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<BatchRun> findLatest(LocalDate serviceDate) {
+        return batchRunRepository.findFirstByServiceDateOrderByIdDesc(serviceDate);
+    }
+
     @Transactional
     public void complete(Long batchRunId) {
         getBatchRun(batchRunId).complete(LocalDateTime.now(clock));

@@ -58,6 +58,11 @@ public class BatchRun extends BaseEntity {
         this.finishedAt = finishedAt;
     }
 
+    // 완료 시각은 원래 실행이 끝난 시각으로 남긴다
+    public void replace() {
+        this.status = BatchRunStatus.REPLACED;
+    }
+
     public void fail(LocalDateTime finishedAt, String errorMessage) {
         this.status = BatchRunStatus.FAILED;
         this.finishedAt = finishedAt;
