@@ -17,6 +17,7 @@ import com.byarrival.domain.notification.entity.PushStatus;
 import com.byarrival.domain.notification.event.NotificationCreatedEvent;
 import com.byarrival.domain.notification.repository.NotificationRepository;
 import com.byarrival.domain.user.entity.NotificationPermission;
+import com.byarrival.domain.user.service.UserRestrictionService;
 import com.byarrival.domain.user.service.UserService;
 import java.time.Clock;
 import java.time.LocalDate;
@@ -40,6 +41,7 @@ class NotificationSendServiceTest {
     private NotificationRepository notificationRepository;
     private NotificationSettingService settingService;
     private UserService userService;
+    private UserRestrictionService userRestrictionService;
     private ApplicationEventPublisher eventPublisher;
     private NotificationSendService sendService;
 
@@ -48,11 +50,12 @@ class NotificationSendServiceTest {
         notificationRepository = mock(NotificationRepository.class);
         settingService = mock(NotificationSettingService.class);
         userService = mock(UserService.class);
+        userRestrictionService = mock(UserRestrictionService.class);
         eventPublisher = mock(ApplicationEventPublisher.class);
         ZoneId kst = ZoneId.of("Asia/Seoul");
         Clock clock = Clock.fixed(ZonedDateTime.of(NOW, kst).toInstant(), kst);
-        sendService = new NotificationSendService(notificationRepository, settingService, userService, eventPublisher,
-            clock);
+        sendService = new NotificationSendService(notificationRepository, settingService, userService,
+            userRestrictionService, eventPublisher, clock);
         given(notificationRepository.save(any())).willAnswer(invocation -> {
             Notification notification = invocation.getArgument(0);
             ReflectionTestUtils.setField(notification, "id", 100L);
@@ -72,6 +75,17 @@ class NotificationSendServiceTest {
         assertThat(saved.getPushStatus()).isEqualTo(PushStatus.PENDING);
         assertThat(saved.getServiceDate()).isEqualTo(LocalDate.of(2026, 11, 8));
         verify(eventPublisher).publishEvent(new NotificationCreatedEvent(100L));
+    }
+
+    @Test
+    void 이용_제한_중인_회원에게는_알림함에도_남기지_않고_보내지_않는다() {
+        given(userRestrictionService.isRestricted(USER_ID)).willReturn(true);
+
+        Optional<Long> id = sendService.send(notice());
+
+        assertThat(id).isEmpty();
+        verify(notificationRepository, never()).save(any());
+        verifyNoInteractions(eventPublisher);
     }
 
     @Test
