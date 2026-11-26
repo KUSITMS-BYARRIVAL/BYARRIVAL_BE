@@ -46,7 +46,9 @@ public class AdminArticleRepository {
         a.id, a.title, a.press_name, a.category_id, c.name AS category_name, a.difficulty, a.process_status,
         a.created_at, a.summary_sentence1 IS NOT NULL AS has_summary, %s AS has_quiz, %s AS state,
         (SELECT COUNT(DISTINCT r.user_id) FROM route_card rc JOIN route r ON r.id = rc.route_id
-            WHERE rc.article_id = a.id AND rc.cart_order IS NOT NULL) AS view_count
+            WHERE rc.article_id = a.id AND rc.cart_order IS NOT NULL) AS view_count,
+        (SELECT COUNT(DISTINCT r.user_id) FROM route_card rc JOIN route r ON r.id = rc.route_id
+            WHERE rc.article_id = a.id AND rc.read_at IS NOT NULL) AS read_count
         """.formatted(HAS_QUIZ, STATE);
 
     private final NamedParameterJdbcTemplate jdbcTemplate;
@@ -171,13 +173,13 @@ public class AdminArticleRepository {
             difficulty == null ? null : ArticleDifficulty.valueOf(difficulty),
             ArticleProcessStatus.valueOf(rs.getString("process_status")),
             rs.getObject("created_at", LocalDateTime.class), rs.getBoolean("has_summary"), rs.getBoolean("has_quiz"),
-            AdminArticleState.valueOf(rs.getString("state")), rs.getLong("view_count"));
+            AdminArticleState.valueOf(rs.getString("state")), rs.getLong("view_count"), rs.getLong("read_count"));
     }
 
     public record ArticleRow(Long id, String title, String pressName, Long categoryId, String categoryName,
                              ArticleDifficulty difficulty, ArticleProcessStatus processStatus,
                              LocalDateTime collectedAt, boolean hasSummary, boolean hasQuiz, AdminArticleState state,
-                             long viewCount) {
+                             long viewCount, long readCount) {
     }
 
     public record QuizRow(String question, String choicesJson, int answerSeq, String explanation) {

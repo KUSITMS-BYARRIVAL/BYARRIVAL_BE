@@ -104,7 +104,7 @@ public class AdminArticleService {
             row.difficulty(), article.getOriginalUrl(), article.getSourceUrl(), article.getPublishedAt(),
             row.collectedAt(), article.getServiceDate(), article.getSummaryOneLine(), summary,
             article.getSummaryKeywords() == null ? List.of() : article.getSummaryKeywords(), readingMinutes,
-            row.viewCount(), Steps.from(row), quiz, histories);
+            row.viewCount(), row.readCount(), Steps.from(row), quiz, histories);
     }
 
     /**

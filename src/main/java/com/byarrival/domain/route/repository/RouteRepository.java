@@ -31,6 +31,10 @@ public interface RouteRepository extends JpaRepository<Route, Long> {
     List<UserCompletedDate> findCompletedServiceDatesOf(@Param("userIds") Collection<Long> userIds,
         @Param("today") LocalDate today);
 
+    // 가장 최근에 출발한(탑승한) 시각. 출발한 노선이 없으면 null
+    @Query("SELECT MAX(r.startedAt) FROM Route r WHERE r.userId = :userId")
+    LocalDateTime findLastStartedAt(@Param("userId") Long userId);
+
     // 서비스일별 노선 이용 기록. 서비스일당 노선은 하나다
     @Query(value = "SELECT r.service_date AS serviceDate, COUNT(rc.read_at) AS readCount, "
         + "r.status = 'COMPLETED' AS completed, r.route_condition AS condition, "
