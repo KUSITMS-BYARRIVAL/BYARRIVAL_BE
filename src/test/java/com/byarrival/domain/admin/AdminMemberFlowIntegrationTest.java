@@ -121,45 +121,47 @@ class AdminMemberFlowIntegrationTest {
     }
 
     @Test
-    void 목록의_연속_기록은_회원별로_계산한다() throws Exception {
-        LocalDate today = ServiceDay.today(clock);
-        LocalDate last = previousWeekday(today);
-        LocalDate beforeLast = previousWeekday(last);
-        Long twoDays = member("streak", "KAKAO", "WORKER", LocalDateTime.of(2030, 1, 2, 9, 0));
-        completedRoute(twoDays, last);
-        completedRoute(twoDays, beforeLast);
-        Long none = member("none", "KAKAO", "WORKER", LocalDateTime.of(2030, 1, 1, 9, 0));
+    void 목록은_직군과_근무_지역을_보여_준다() throws Exception {
+        Long member = member("job", "KAKAO", "WORKER", LocalDateTime.of(2030, 1, 1, 9, 0));
+        profile(member);
+        member("empty", "KAKAO", "WORKER", LocalDateTime.of(2029, 12, 31, 9, 0));
 
         search("keyword", prefix)
-            .andExpect(jsonPath("$.data.members[0].memberId").value(twoDays))
-            .andExpect(jsonPath("$.data.members[0].streak.current").value(2))
-            .andExpect(jsonPath("$.data.members[0].streak.longest").value(2))
-            .andExpect(jsonPath("$.data.members[1].memberId").value(none))
-            .andExpect(jsonPath("$.data.members[1].streak.current").value(0));
+            .andExpect(jsonPath("$.data.members[0].memberId").value(member))
+            .andExpect(jsonPath("$.data.members[0].jobGroup.code").value("IT_DATA"))
+            .andExpect(jsonPath("$.data.members[0].jobGroup.name").value("IT개발·데이터"))
+            .andExpect(jsonPath("$.data.members[0].region.sidoName").value("서울"))
+            .andExpect(jsonPath("$.data.members[0].region.sigunguName").value("강남구"))
+            .andExpect(jsonPath("$.data.members[1].jobGroup").doesNotExist())
+            .andExpect(jsonPath("$.data.members[1].region").doesNotExist());
     }
 
     @Test
-    void 상세는_이동_설정과_알림_수신을_돌려주고_열람_기록을_남긴다() throws Exception {
+    void 상세는_화면의_항목을_돌려주고_열람_기록을_남긴다() throws Exception {
+        LocalDate today = ServiceDay.today(clock);
+        LocalDate last = previousWeekday(today);
+        LocalDate beforeLast = previousWeekday(last);
         Long member = member("detail", "APPLE", "WORKER", LocalDateTime.of(2030, 1, 1, 9, 0));
-        jdbcTemplate.update("UPDATE users SET default_commute_minutes = 30, mon_start_time = '08:00', mon_minutes = 30, "
-            + "notification_permission = 'GRANTED' WHERE id = ?", member);
-        Long marketing = jdbcTemplate.queryForObject("SELECT MAX(id) FROM terms WHERE terms_type = 'MARKETING'",
-            Long.class);
-        jdbcTemplate.update("INSERT INTO user_terms_agreement (user_id, terms_id, agreed, agreed_at) VALUES (?, ?, TRUE, ?)",
-            member, marketing, LocalDateTime.of(2030, 1, 1, 9, 0));
+        profile(member);
+        jdbcTemplate.update("UPDATE users SET default_commute_minutes = 30, mon_start_time = '08:00', mon_minutes = 30 "
+            + "WHERE id = ?", member);
+        completedRoute(member, beforeLast);
+        completedRoute(member, last);
 
         mockMvc.perform(get(MEMBERS + "/" + member).cookie(cookie))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.memberId").value(member))
             .andExpect(jsonPath("$.data.provider").value("APPLE"))
+            .andExpect(jsonPath("$.data.lastRideAt").value(last.atTime(8, 0).toString() + ":00"))
             .andExpect(jsonPath("$.data.defaultCommuteMinutes").value(30))
             .andExpect(jsonPath("$.data.weeklyCommute[0].dayOfWeek").value("MONDAY"))
-            .andExpect(jsonPath("$.data.weeklyCommute[0].startTime").value("08:00"))
-            .andExpect(jsonPath("$.data.notification.permission").value("GRANTED"))
-            .andExpect(jsonPath("$.data.notification.activityEnabled").value(true))
-            .andExpect(jsonPath("$.data.notification.marketingAgreed").value(true))
-            .andExpect(jsonPath("$.data.providerUserId").doesNotExist())
-            .andExpect(jsonPath("$.data.appleRefreshToken").doesNotExist());
+            .andExpect(jsonPath("$.data.jobGroup.code").value("IT_DATA"))
+            .andExpect(jsonPath("$.data.region.sigunguName").value("강남구"))
+            .andExpect(jsonPath("$.data.streak.current").value(2))
+            .andExpect(jsonPath("$.data.streak.longest").value(2))
+            .andExpect(jsonPath("$.data.thisMonth").doesNotExist())
+            .andExpect(jsonPath("$.data.notification").doesNotExist())
+            .andExpect(jsonPath("$.data.providerUserId").doesNotExist());
 
         assertThat(accessLogCount(member)).isEqualTo(1);
         mockMvc.perform(get(MEMBERS + "/" + member).cookie(cookie)).andExpect(status().isOk());
@@ -167,27 +169,12 @@ class AdminMemberFlowIntegrationTest {
     }
 
     @Test
-    void 상세는_이번_달_완주_횟수와_시간을_돌려준다() throws Exception {
-        Long member = member("month", "KAKAO", "WORKER", LocalDateTime.of(2030, 1, 1, 9, 0));
-        completedRoute(member, ServiceDay.today(clock));
+    void 출발한_적이_없으면_최근_탑승은_없다() throws Exception {
+        Long member = member("noride", "KAKAO", "WORKER", LocalDateTime.of(2030, 1, 1, 9, 0));
 
         mockMvc.perform(get(MEMBERS + "/" + member).cookie(cookie))
-            .andExpect(jsonPath("$.data.thisMonth.completedCount").value(1))
-            .andExpect(jsonPath("$.data.thisMonth.usedMinutes").value(10));
-    }
-
-    @Test
-    void 마케팅_동의를_철회했으면_미동의로_보여_준다() throws Exception {
-        Long member = member("marketing", "KAKAO", "WORKER", LocalDateTime.of(2030, 1, 1, 9, 0));
-        Long marketing = jdbcTemplate.queryForObject("SELECT MAX(id) FROM terms WHERE terms_type = 'MARKETING'",
-            Long.class);
-        jdbcTemplate.update("INSERT INTO user_terms_agreement (user_id, terms_id, agreed, agreed_at) VALUES (?, ?, TRUE, ?)",
-            member, marketing, LocalDateTime.of(2030, 1, 1, 9, 0));
-        jdbcTemplate.update("INSERT INTO user_terms_agreement (user_id, terms_id, agreed, agreed_at) VALUES (?, ?, FALSE, ?)",
-            member, marketing, LocalDateTime.of(2030, 1, 2, 9, 0));
-
-        mockMvc.perform(get(MEMBERS + "/" + member).cookie(cookie))
-            .andExpect(jsonPath("$.data.notification.marketingAgreed").value(false));
+            .andExpect(jsonPath("$.data.lastRideAt").doesNotExist())
+            .andExpect(jsonPath("$.data.streak.current").value(0));
     }
 
     @Test
@@ -245,6 +232,13 @@ class AdminMemberFlowIntegrationTest {
             VALUES (?, ?, ?, ?, ?, ?)
             RETURNING id
             """, Long.class, provider, UUID.randomUUID().toString(), prefix + suffix, travelType, joinedAt, joinedAt);
+    }
+
+    // 직군 IT_DATA, 근무 지역 101(서울 강남구)
+    private void profile(Long userId) {
+        jdbcTemplate.update("UPDATE users SET region_sigungu_id = 101 WHERE id = ?", userId);
+        jdbcTemplate.update("INSERT INTO user_job_group (user_id, job_group, sort_order) VALUES (?, 'IT_DATA', 1)",
+            userId);
     }
 
     private void completedRoute(Long userId, LocalDate serviceDate) {

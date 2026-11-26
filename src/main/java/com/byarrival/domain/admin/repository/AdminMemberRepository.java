@@ -1,6 +1,7 @@
 package com.byarrival.domain.admin.repository;
 
 import com.byarrival.domain.admin.dto.request.AdminMemberSearchRequest;
+import com.byarrival.domain.user.entity.JobGroup;
 import com.byarrival.domain.user.entity.SocialProvider;
 import com.byarrival.domain.user.entity.TravelType;
 import java.time.LocalDateTime;
@@ -31,15 +32,23 @@ public class AdminMemberRepository {
 
     public List<MemberRow> findPage(AdminMemberSearchRequest search, int limit, long offset) {
         MapSqlParameterSource params = new MapSqlParameterSource();
-        String sql = "SELECT u.id, u.nickname, u.provider, u.travel_type, u.created_at FROM users u "
+        // 직군은 처음 고른 하나만 쓴다(지금은 1개만 고를 수 있다)
+        String sql = "SELECT u.id, u.nickname, u.provider, u.travel_type, u.created_at, j.job_group, "
+            + "sd.name AS sido_name, sg.name AS sigungu_name FROM users u "
+            + "LEFT JOIN user_job_group j ON j.user_id = u.id AND j.sort_order = 1 "
+            + "LEFT JOIN region_sigungu sg ON sg.id = u.region_sigungu_id "
+            + "LEFT JOIN region_sido sd ON sd.id = sg.sido_id "
             + where(search, params) + "ORDER BY u.created_at DESC, u.id DESC LIMIT :limit OFFSET :offset";
         params.addValue("limit", limit).addValue("offset", offset);
         return jdbcTemplate.query(sql, params, (rs, rowNum) -> {
             String travelType = rs.getString("travel_type");
+            String jobGroup = rs.getString("job_group");
             return new MemberRow(rs.getLong("id"), rs.getString("nickname"),
                 SocialProvider.valueOf(rs.getString("provider")),
                 travelType == null ? null : TravelType.valueOf(travelType),
-                rs.getObject("created_at", LocalDateTime.class));
+                rs.getObject("created_at", LocalDateTime.class),
+                jobGroup == null ? null : JobGroup.valueOf(jobGroup),
+                rs.getString("sido_name"), rs.getString("sigungu_name"));
         });
     }
 
@@ -72,6 +81,6 @@ public class AdminMemberRepository {
     }
 
     public record MemberRow(Long id, String nickname, SocialProvider provider, TravelType travelType,
-                            LocalDateTime joinedAt) {
+                            LocalDateTime joinedAt, JobGroup jobGroup, String sidoName, String sigunguName) {
     }
 }
