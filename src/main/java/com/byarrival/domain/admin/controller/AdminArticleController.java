@@ -12,6 +12,8 @@ import com.byarrival.domain.admin.dto.response.AdminArticleResponses.Page;
 import com.byarrival.domain.admin.dto.response.AdminArticleResponses.VisibilityResult;
 import com.byarrival.domain.admin.security.AdminPrincipal;
 import com.byarrival.domain.admin.service.AdminArticleService;
+import com.byarrival.domain.batch.dto.response.BatchRefreshResponse;
+import com.byarrival.domain.batch.service.BatchRefreshService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -32,6 +34,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class AdminArticleController {
 
     private final AdminArticleService adminArticleService;
+    private final BatchRefreshService batchRefreshService;
 
     @Operation(summary = "기사 목록", description = "탭별 건수와 기사 목록. 페이지당 20개이고 page는 1부터 시작한다.")
     @GetMapping
@@ -78,5 +81,21 @@ public class AdminArticleController {
     public ApiResponse<BulkResult> restoreAll(@AuthenticationPrincipal AdminPrincipal admin,
         @Valid @RequestBody ArticleBulkRestoreRequest request) {
         return ApiResponse.ok(adminArticleService.restoreAll(admin.id(), request.articleIds()));
+    }
+
+    @Operation(summary = "다음 서비스일 기사 새로고침",
+        description = "다음 서비스일 기사와 요약·퀴즈·스몰토크(운영자가 만든 에디터 픽 포함)를 지우고, 지금 시점으로 일일 배치를 "
+            + "처음부터 다시 실행한다. 바로 응답하고 배치는 백그라운드에서 돈다. 배치가 실행 중이면 409 BATCH_RUNNING. "
+            + "04:00~23:45에 실행하면 그날 23:45 정기 배치는 건너뛴다. 실제 Claude API를 호출하므로 배치 한 번 분량의 비용이 든다.")
+    @PostMapping("/refresh")
+    public ApiResponse<BatchRefreshResponse> refresh(@AuthenticationPrincipal AdminPrincipal admin) {
+        return ApiResponse.ok(batchRefreshService.refresh(admin.id()));
+    }
+
+    @Operation(summary = "새로고침 상태",
+        description = "다음 서비스일 배치 상태. RUNNING이면 새로고침 버튼을 비활성화하고, 끝나면 결과를 안내한다.")
+    @GetMapping("/refresh")
+    public ApiResponse<BatchRefreshResponse> getRefreshStatus() {
+        return ApiResponse.ok(batchRefreshService.getStatus());
     }
 }
