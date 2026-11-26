@@ -156,12 +156,17 @@ class AdminArticleFlowIntegrationTest {
     }
 
     @Test
-    void 목록의_조회_수는_기사를_담은_사용자_수다() throws Exception {
+    void 조회_수는_담은_사용자_수와_원문을_연_사용자_수다() throws Exception {
         Long article = readyArticle("담은 기사", true);
-        carted(article);
-        carted(article);
+        carted(article, true);
+        carted(article, false);
 
-        list("").andExpect(jsonPath("$.data.articles[0].viewCount").value(2));
+        list("")
+            .andExpect(jsonPath("$.data.articles[0].viewCount").value(2))
+            .andExpect(jsonPath("$.data.articles[0].readCount").value(1));
+        mockMvc.perform(get(ARTICLES + "/" + article).cookie(cookie))
+            .andExpect(jsonPath("$.data.viewCount").value(2))
+            .andExpect(jsonPath("$.data.readCount").value(1));
     }
 
     @Test
@@ -314,7 +319,7 @@ class AdminArticleFlowIntegrationTest {
             SERVICE_DATE.atTime(3, 0), SERVICE_DATE);
     }
 
-    private void carted(Long articleId) {
+    private void carted(Long articleId, boolean read) {
         Long userId = jdbcTemplate.queryForObject(
             "INSERT INTO users (provider, provider_user_id) VALUES ('KAKAO', ?) RETURNING id", Long.class,
             UUID.randomUUID().toString());
@@ -325,8 +330,8 @@ class AdminArticleFlowIntegrationTest {
             """, Long.class, userId, SERVICE_DATE, SERVICE_DATE.plusDays(1).atTime(4, 0));
         jdbcTemplate.update("""
             INSERT INTO route_card (route_id, article_id, pool_order, difficulty, reading_minutes, recommended,
-                cart_order, carted_at)
-            VALUES (?, ?, 1, 'EASY', 2.0, TRUE, 1, ?)
-            """, routeId, articleId, SERVICE_DATE.atTime(8, 0));
+                cart_order, carted_at, read_at)
+            VALUES (?, ?, 1, 'EASY', 2.0, TRUE, 1, ?, ?)
+            """, routeId, articleId, SERVICE_DATE.atTime(8, 0), read ? SERVICE_DATE.atTime(8, 10) : null);
     }
 }

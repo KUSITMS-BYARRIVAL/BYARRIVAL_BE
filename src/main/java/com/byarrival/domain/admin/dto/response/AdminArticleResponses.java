@@ -34,15 +34,19 @@ public final class AdminArticleResponses {
     }
 
     /**
+     * 목록의 조회수는 "viewCount (readCount)"로 표시한다. 예: 53 (45)
+     *
      * @param viewCount 이 기사를 담은 사용자 수
+     * @param readCount 이 기사를 [기사 보러가기]로 연 사용자 수(원문 조회 수)
      */
     public record Item(Long articleId, String title, String pressName, Long categoryId, String categoryName,
                        ArticleDifficulty difficulty, LocalDateTime collectedAt, Steps steps,
-                       ArticleProcessStatus processStatus, AdminArticleState state, long viewCount) {
+                       ArticleProcessStatus processStatus, AdminArticleState state, long viewCount, long readCount) {
 
         public static Item of(ArticleRow row, Steps steps) {
             return new Item(row.id(), row.title(), row.pressName(), row.categoryId(), row.categoryName(),
-                row.difficulty(), row.collectedAt(), steps, row.processStatus(), row.state(), row.viewCount());
+                row.difficulty(), row.collectedAt(), steps, row.processStatus(), row.state(), row.viewCount(),
+                row.readCount());
         }
     }
 
@@ -88,13 +92,15 @@ public final class AdminArticleResponses {
      * @param originalUrl    수집한 주소
      * @param sourceUrl      크롤링한 언론사 원문 주소. 없으면 null
      * @param readingMinutes 예상 읽기 시간(올림). 계산 전이면 null
+     * @param viewCount      이 기사를 담은 사용자 수
+     * @param readCount      이 기사를 [기사 보러가기]로 연 사용자 수(원문 조회 수)
      * @param quiz           활성 퀴즈. 없으면 null
      */
     public record Detail(Long articleId, AdminArticleState state, String title, String pressName, Long categoryId,
                          String categoryName, ArticleDifficulty difficulty, String originalUrl, String sourceUrl,
                          LocalDateTime publishedAt, LocalDateTime collectedAt, LocalDate serviceDate,
                          String summaryOneLine, List<String> summary, List<String> keywords, Integer readingMinutes,
-                         long viewCount, Steps steps, Quiz quiz, List<History> histories) {
+                         long viewCount, long readCount, Steps steps, Quiz quiz, List<History> histories) {
     }
 
     public record Quiz(String question, List<QuizChoice> choices, int answerSeq, String explanation) {
