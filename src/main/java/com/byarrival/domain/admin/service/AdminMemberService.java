@@ -8,6 +8,7 @@ import com.byarrival.domain.admin.dto.response.AdminMemberResponses.Item;
 import com.byarrival.domain.admin.dto.response.AdminMemberResponses.Job;
 import com.byarrival.domain.admin.dto.response.AdminMemberResponses.Page;
 import com.byarrival.domain.admin.dto.response.AdminMemberResponses.Region;
+import com.byarrival.domain.admin.dto.response.AdminMemberResponses.RestrictionResult;
 import com.byarrival.domain.admin.dto.response.AdminMemberResponses.Streak;
 import com.byarrival.domain.admin.entity.AdminMemberAccessLog;
 import com.byarrival.domain.admin.exception.AdminErrorCode;
@@ -31,7 +32,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 어드민 회원 목록·상세(MEMBER-01·02, ADM-S07)와 상세 열람 기록(MEMBER-04).
+ * 어드민 회원 목록·상세(MEMBER-01·02, ADM-S07)와 상세 열람 기록(MEMBER-04). 이용 제한은 AdminMemberRestrictionService가 맡는다.
  */
 @Service
 @RequiredArgsConstructor
@@ -45,13 +46,15 @@ public class AdminMemberService {
     private final RouteStreakService routeStreakService;
     private final RouteRecordService routeRecordService;
     private final CategoryMappingService categoryMappingService;
+    private final AdminMemberRestrictionService restrictionService;
     private final Clock clock;
 
     @Transactional(readOnly = true)
     public Page getMembers(AdminMemberSearchRequest search) {
-        long total = memberRepository.count(search);
+        LocalDateTime now = LocalDateTime.now(clock);
+        long total = memberRepository.count(search, now);
         int page = search.page();
-        List<Item> members = memberRepository.findPage(search, PAGE_SIZE, (page - 1L) * PAGE_SIZE).stream()
+        List<Item> members = memberRepository.findPage(search, now, PAGE_SIZE, (page - 1L) * PAGE_SIZE).stream()
             .map(Item::from)
             .toList();
         int totalPages = (int) Math.ceil((double) total / PAGE_SIZE);
@@ -77,9 +80,11 @@ public class AdminMemberService {
             .filter(Objects::nonNull)
             .toList();
         Job jobGroup = Job.from(userService.findJobGroups(memberId).stream().findFirst().orElse(null));
+        RestrictionResult restriction = restrictionService.getRestriction(memberId);
         return new Detail(user.getId(), user.getNickname(), user.getProvider(), user.getTravelType(),
             user.getCreatedAt(), user.getOnboardingStatus() == OnboardingStatus.COMPLETED,
             routeRecordService.findLastStartedAt(memberId).orElse(null), user.getDefaultCommuteMinutes(), weekly,
-            jobGroup, Region.from(userService.findRegion(user)), interests, Streak.from(streak));
+            jobGroup, Region.from(userService.findRegion(user)), interests, Streak.from(streak),
+            restriction.status(), restriction.restriction(), restriction.restrictionHistory());
     }
 }

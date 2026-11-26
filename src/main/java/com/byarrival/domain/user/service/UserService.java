@@ -175,6 +175,13 @@ public class UserService {
     }
 
     /**
+     * 활동 중인 회원 행을 잠그고 가져온다. 호출하는 쪽의 트랜잭션 안에서 부른다. 탈퇴했거나 없는 회원이면 비어 있다.
+     */
+    public Optional<User> findActiveByIdForUpdate(Long userId) {
+        return userRepository.findForUpdate(userId, UserStatus.ACTIVE);
+    }
+
+    /**
      * 고른 순서대로 돌려준다.
      */
     @Transactional(readOnly = true)
