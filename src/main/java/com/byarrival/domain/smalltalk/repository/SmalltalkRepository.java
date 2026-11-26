@@ -10,14 +10,21 @@ import org.springframework.data.repository.query.Param;
 
 public interface SmalltalkRepository extends JpaRepository<Smalltalk, Long> {
 
-    // 관리자가 숨긴 스몰토크(visibility = HIDDEN)는 뺀다
-    @Query(value = "SELECT * FROM smalltalk WHERE service_date = :serviceDate AND visibility = 'VISIBLE' ORDER BY id",
-        nativeQuery = true)
+    // 운영자가 숨겼거나(visibility = HIDDEN) 삭제한 스몰토크는 뺀다
+    @Query("SELECT s FROM Smalltalk s WHERE s.serviceDate = :serviceDate AND s.visibility = com.byarrival.domain.smalltalk.entity.SmalltalkVisibility.VISIBLE "
+        + "AND s.deletedAt IS NULL ORDER BY s.id")
     List<Smalltalk> findVisibleByServiceDate(@Param("serviceDate") LocalDate serviceDate);
 
-    @Query(value = "SELECT id FROM smalltalk WHERE id IN (:ids) AND visibility = 'VISIBLE'", nativeQuery = true)
+    @Query("SELECT s.id FROM Smalltalk s WHERE s.id IN :ids AND s.visibility = com.byarrival.domain.smalltalk.entity.SmalltalkVisibility.VISIBLE AND s.deletedAt IS NULL")
     List<Long> findVisibleIds(@Param("ids") Collection<Long> ids);
 
+    // 배치가 같은 기사로 다시 만들지 않고 삭제한 자리를 다시 채우지 않도록 삭제한 것까지 돌려준다
     @Query("SELECT s.articleId FROM Smalltalk s WHERE s.serviceDate = :serviceDate")
     List<Long> findArticleIdsByServiceDate(@Param("serviceDate") LocalDate serviceDate);
+
+    // 어드민 에디터 픽 목록. 삭제한 것만 뺀다
+    @Query("SELECT s FROM Smalltalk s WHERE s.serviceDate = :serviceDate AND s.deletedAt IS NULL ORDER BY s.id")
+    List<Smalltalk> findNotDeletedByServiceDate(@Param("serviceDate") LocalDate serviceDate);
+
+    boolean existsByArticleId(Long articleId);
 }

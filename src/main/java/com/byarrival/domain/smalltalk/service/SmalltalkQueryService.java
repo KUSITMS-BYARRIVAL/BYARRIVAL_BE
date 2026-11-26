@@ -8,6 +8,7 @@ import com.byarrival.domain.smalltalk.repository.SmalltalkRepository;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -28,21 +29,37 @@ public class SmalltalkQueryService {
     private final CategoryMappingService categoryMappingService;
 
     /**
-     * 그 서비스일의 스몰토크 중 볼 수 있는 것. 카테고리 화면 순서, 같은 카테고리는 인기 순서다.
+     * 그 서비스일의 스몰토크 중 볼 수 있는 것. 홈 에디터 픽과 16시 알림(첫 번째)이 이 순서를 따른다.
      */
     @Transactional(readOnly = true)
     public List<SmalltalkView> findAvailableOf(LocalDate serviceDate) {
         List<Smalltalk> smalltalks = smalltalkRepository.findVisibleByServiceDate(serviceDate);
         Map<Long, SmalltalkView> views = viewsOf(smalltalks,
             Set.copyOf(smalltalks.stream().map(Smalltalk::getId).toList()));
-        Map<Long, Integer> categoryOrder = categoryOrder();
-        return views.values().stream()
+        return sorted(smalltalks).stream()
+            .map(smalltalk -> views.get(smalltalk.getId()))
             .filter(SmalltalkView::available)
-            .sorted((a, b) -> {
-                int byCategory = Integer.compare(categoryOrder.getOrDefault(a.categoryId(), Integer.MAX_VALUE),
-                    categoryOrder.getOrDefault(b.categoryId(), Integer.MAX_VALUE));
-                return byCategory != 0 ? byCategory : Long.compare(a.articleId(), b.articleId());
-            })
+            .toList();
+    }
+
+    /**
+     * 운영자가 정한 순서가 먼저다. 순서가 없는 것은 그 뒤에 카테고리 화면 순서, 같은 카테고리는 인기(기사) 순서로 둔다.
+     * 어드민 에디터 픽 목록도 이 순서를 쓴다.
+     */
+    @Transactional(readOnly = true)
+    public List<Smalltalk> sorted(List<Smalltalk> smalltalks) {
+        Map<Long, Article> articles = articleQueryService.findAllByIds(
+            smalltalks.stream().map(Smalltalk::getArticleId).toList());
+        Map<Long, Integer> categoryOrder = categoryOrder();
+        Comparator<Smalltalk> bySortOrder = Comparator.comparing(Smalltalk::getSortOrder,
+            Comparator.nullsLast(Comparator.naturalOrder()));
+        Comparator<Smalltalk> byCategory = Comparator.comparing(smalltalk -> {
+            Article article = articles.get(smalltalk.getArticleId());
+            return article == null ? Integer.MAX_VALUE
+                : categoryOrder.getOrDefault(article.getCategoryId(), Integer.MAX_VALUE);
+        });
+        return smalltalks.stream()
+            .sorted(bySortOrder.thenComparing(byCategory).thenComparing(Smalltalk::getArticleId))
             .toList();
     }
 
