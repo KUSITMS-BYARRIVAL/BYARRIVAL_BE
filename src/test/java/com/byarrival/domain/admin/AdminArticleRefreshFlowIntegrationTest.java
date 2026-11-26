@@ -191,7 +191,21 @@ class AdminArticleRefreshFlowIntegrationTest {
         mockMvc.perform(get(REFRESH).cookie(cookie))
             .andExpect(jsonPath("$.data.status").value("COMPLETED"))
             .andExpect(jsonPath("$.data.finishedAt").exists())
-            .andExpect(jsonPath("$.data.recommendableCount").value(1));
+            .andExpect(jsonPath("$.data.recommendableCount").value(1))
+            .andExpect(jsonPath("$.data.failureReason").doesNotExist());
+    }
+
+    @Test
+    void 실패한_실행은_실패_사유를_함께_보여_준다() throws Exception {
+        jdbcTemplate.update("""
+            INSERT INTO batch_run (service_date, status, started_at, finished_at, error_message)
+            VALUES (?, 'FAILED', ?, ?, '모든 Feed 수집 실패 feedIds=[1, 2]')
+            """, NEXT, TODAY.atTime(14, 0), TODAY.atTime(14, 3));
+
+        mockMvc.perform(get(REFRESH).cookie(cookie))
+            .andExpect(jsonPath("$.data.status").value("FAILED"))
+            .andExpect(jsonPath("$.data.failureReason").value("모든 Feed 수집 실패 feedIds=[1, 2]"))
+            .andExpect(jsonPath("$.data.recommendableCount").doesNotExist());
     }
 
     @Test

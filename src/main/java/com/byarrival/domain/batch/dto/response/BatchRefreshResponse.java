@@ -13,7 +13,8 @@ public record BatchRefreshResponse(
     @Schema(description = "NONE(아직 배치 없음), RUNNING(실행 중, 버튼 비활성화), COMPLETED, FAILED") State status,
     @Schema(description = "가장 최근 실행의 시작 시각. NONE이면 null") LocalDateTime startedAt,
     @Schema(description = "가장 최근 실행의 종료 시각. 실행 중이거나 NONE이면 null") LocalDateTime finishedAt,
-    @Schema(description = "추천 대상 기사 수. COMPLETED일 때만 값이 있다") Long recommendableCount
+    @Schema(description = "추천 대상 기사 수. COMPLETED일 때만 값이 있다") Long recommendableCount,
+    @Schema(description = "실패 사유. FAILED일 때만 값이 있다") String failureReason
 ) {
 
     public enum State {
@@ -24,7 +25,7 @@ public record BatchRefreshResponse(
     }
 
     public static BatchRefreshResponse none(LocalDate serviceDate) {
-        return new BatchRefreshResponse(serviceDate, State.NONE, null, null, null);
+        return new BatchRefreshResponse(serviceDate, State.NONE, null, null, null, null);
     }
 
     public static BatchRefreshResponse of(BatchRun batchRun, Long recommendableCount) {
@@ -35,6 +36,7 @@ public record BatchRefreshResponse(
             case FAILED -> State.FAILED;
         };
         return new BatchRefreshResponse(batchRun.getServiceDate(), state, batchRun.getStartedAt(),
-            batchRun.getFinishedAt(), state == State.COMPLETED ? recommendableCount : null);
+            batchRun.getFinishedAt(), state == State.COMPLETED ? recommendableCount : null,
+            state == State.FAILED ? batchRun.getErrorMessage() : null);
     }
 }
