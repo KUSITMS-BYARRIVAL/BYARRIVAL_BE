@@ -18,6 +18,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
@@ -77,10 +78,19 @@ public class BatchRefreshService {
             batchRunService.fail(prepared.batchRunId(), "새로고침 실행 대기열이 가득 차 시작하지 못함");
             throw new BusinessException(BatchErrorCode.BATCH_RUNNING);
         }
-        return getStatus();
+        // 다시 날짜를 계산하면 04:00을 넘긴 순간 다른 서비스일을 볼 수 있으므로 방금 시작한 실행으로 응답한다
+        return BatchRefreshResponse.of(batchRunService.get(prepared.batchRunId()), null);
     }
 
+    /**
+     * 다음 서비스일 배치 상태. 04:00을 넘겨 이전 서비스일 배치가 아직 돌고 있으면 그 실행을 보여 줘 버튼을 막는다.
+     */
+    @Transactional(readOnly = true)
     public BatchRefreshResponse getStatus() {
+        Optional<BatchRun> running = batchRunService.findRunning();
+        if (running.isPresent()) {
+            return BatchRefreshResponse.of(running.get(), null);
+        }
         LocalDate serviceDate = nextServiceDate();
         Optional<BatchRun> latest = batchRunService.findLatest(serviceDate);
         if (latest.isEmpty()) {

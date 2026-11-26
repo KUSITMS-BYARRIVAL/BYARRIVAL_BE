@@ -162,6 +162,26 @@ class AdminArticleRefreshFlowIntegrationTest {
     }
 
     @Test
+    void 이전_서비스일_배치가_04시를_넘겨_실행_중이어도_409이다() throws Exception {
+        batchRun(TODAY, "RUNNING");
+
+        mockMvc.perform(post(REFRESH).cookie(cookie))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.code").value("BATCH_RUNNING"));
+
+        verify(dailyBatchService, after(300).never()).process(anyLong(), eq(NEXT));
+    }
+
+    @Test
+    void 이전_서비스일_배치가_실행_중이면_그_실행을_RUNNING으로_보여_준다() throws Exception {
+        batchRun(TODAY, "RUNNING");
+
+        mockMvc.perform(get(REFRESH).cookie(cookie))
+            .andExpect(jsonPath("$.data.serviceDate").value(TODAY.toString()))
+            .andExpect(jsonPath("$.data.status").value("RUNNING"));
+    }
+
+    @Test
     void 다음_서비스일_배치가_없으면_NONE이다() throws Exception {
         mockMvc.perform(get(REFRESH).cookie(cookie))
             .andExpect(status().isOk())

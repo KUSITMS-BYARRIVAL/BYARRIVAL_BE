@@ -16,5 +16,9 @@ public interface BatchRunRepository extends JpaRepository<BatchRun, Long> {
 
     Optional<BatchRun> findFirstByServiceDateOrderByIdDesc(LocalDate serviceDate);
 
+    boolean existsByStatus(BatchRunStatus status);
+
+    Optional<BatchRun> findFirstByStatusOrderByIdDesc(BatchRunStatus status);
+
     List<BatchRun> findByServiceDateAndStatus(LocalDate serviceDate, BatchRunStatus status);
 }

@@ -52,7 +52,8 @@ public class BatchRunService {
      */
     @Transactional
     public Long startReplacing(LocalDate serviceDate) {
-        if (batchRunRepository.existsByServiceDateAndStatusIn(serviceDate, EnumSet.of(BatchRunStatus.RUNNING))) {
+        // 04:00 직전에 시작한 배치는 서비스일이 바뀐 뒤에도 돌고 있으므로, 대상 날짜와 상관없이 실행 중이면 막는다
+        if (batchRunRepository.existsByStatus(BatchRunStatus.RUNNING)) {
             throw new BusinessException(BatchErrorCode.BATCH_RUNNING);
         }
         batchRunRepository.findByServiceDateAndStatus(serviceDate, BatchRunStatus.COMPLETED)
@@ -65,6 +66,16 @@ public class BatchRunService {
     @Transactional(readOnly = true)
     public Optional<BatchRun> findLatest(LocalDate serviceDate) {
         return batchRunRepository.findFirstByServiceDateOrderByIdDesc(serviceDate);
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<BatchRun> findRunning() {
+        return batchRunRepository.findFirstByStatusOrderByIdDesc(BatchRunStatus.RUNNING);
+    }
+
+    @Transactional(readOnly = true)
+    public BatchRun get(Long batchRunId) {
+        return getBatchRun(batchRunId);
     }
 
     @Transactional
