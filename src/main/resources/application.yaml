@@ -204,8 +204,8 @@ jwt:
 
 admin:
   auth:
-    # 어드민 로그인 유지 시간. 기획 확정 전 가정값
-    session-validity: 8h
+    # 어드민 로그인 유지 시간(개발·운영 같음)
+    session-validity: 24h
     # http로 로컬 테스트할 때만 ADMIN_COOKIE_SECURE=false
     cookie-secure: ${ADMIN_COOKIE_SECURE:true}
     # 어드민 웹 주소(쉼표로 구분). 쿠키를 함께 보내므로 정확한 주소만 허용한다

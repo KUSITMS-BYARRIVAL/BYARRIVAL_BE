@@ -78,7 +78,7 @@ class AdminAuthFlowIntegrationTest {
 
         String setCookie = result.getResponse().getHeader(HttpHeaders.SET_COOKIE);
         assertThat(setCookie).contains(AdminCookieFactory.COOKIE_NAME + "=", "HttpOnly", "Secure", "SameSite=Lax",
-            "Path=/api/admin", "Max-Age=28800");
+            "Path=/api/admin", "Max-Age=86400");
     }
 
     @Test
