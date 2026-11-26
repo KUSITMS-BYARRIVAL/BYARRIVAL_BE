@@ -7,6 +7,7 @@ import com.byarrival.domain.notification.entity.NotificationType;
 import com.byarrival.domain.notification.event.NotificationCreatedEvent;
 import com.byarrival.domain.notification.repository.NotificationRepository;
 import com.byarrival.domain.user.entity.NotificationPermission;
+import com.byarrival.domain.user.service.UserRestrictionService;
 import com.byarrival.domain.user.service.UserService;
 import java.time.Clock;
 import java.time.LocalDate;
@@ -24,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
  *     <li>자동 알림은 서비스일마다 유형별 1번만 보낸다. 스트릭 이탈·인기 기사는 합쳐서 하루 2번까지만 보낸다.</li>
  *     <li>OS 알림 권한이 거부됐거나 수신 설정이 꺼져 있으면 운영 안내까지 알림함에만 저장하고 푸시는 보내지 않는다.</li>
  *     <li>운영 안내는 횟수 제한 없이 보낸다.</li>
+ *     <li>이용 제한 중인 회원에게는 어떤 알림도 보내지 않고 알림함에도 남기지 않는다.</li>
  * </ul>
  */
 @Slf4j
@@ -36,6 +38,7 @@ public class NotificationSendService {
     private final NotificationRepository notificationRepository;
     private final NotificationSettingService settingService;
     private final UserService userService;
+    private final UserRestrictionService userRestrictionService;
     private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
 
@@ -50,6 +53,10 @@ public class NotificationSendService {
         }
 
         Long userId = request.userId();
+        if (userRestrictionService.isRestricted(userId)) {
+            log.info("이용 제한 회원이라 알림을 건너뜀: userId={}, type={}", userId, type);
+            return Optional.empty();
+        }
         LocalDate serviceDate = ServiceDay.today(clock);
         if (!withinDailyLimits(userId, type, serviceDate)) {
             log.info("알림 발송 제한으로 건너뜀: userId={}, type={}", userId, type);

@@ -8,6 +8,7 @@ import com.byarrival.domain.region.service.RegionService;
 import com.byarrival.domain.term.service.TermService;
 import com.byarrival.domain.user.dto.response.NotificationPermissionResponse;
 import com.byarrival.domain.user.dto.response.UserMeResponse;
+import com.byarrival.domain.user.dto.response.UserRestrictionResponse;
 import com.byarrival.domain.user.entity.JobGroup;
 import com.byarrival.domain.user.entity.NotificationPermission;
 import com.byarrival.domain.user.entity.SocialProvider;
@@ -50,6 +51,7 @@ public class UserService {
     private final RegionService regionService;
     private final TermService termService;
     private final FileDeletionService fileDeletionService;
+    private final UserRestrictionService userRestrictionService;
     private final Clock clock;
 
     @Transactional(readOnly = true)
@@ -68,8 +70,11 @@ public class UserService {
     @Transactional(readOnly = true)
     public UserMeResponse getMe(Long userId) {
         User user = getActiveUser(userId);
+        UserRestrictionResponse restriction = userRestrictionService.findActive(userId)
+            .map(UserRestrictionResponse::from)
+            .orElse(null);
         return UserMeResponse.of(user, termService.hasAgreedRequiredTerms(userId), findInterestCategoryIds(userId),
-            findJobGroups(userId), findRegion(user));
+            findJobGroups(userId), findRegion(user), restriction);
     }
 
     @Transactional
@@ -172,6 +177,13 @@ public class UserService {
     @Transactional(readOnly = true)
     public Optional<User> findActiveById(Long userId) {
         return userRepository.findByIdAndStatus(userId, UserStatus.ACTIVE);
+    }
+
+    /**
+     * 활동 중인 회원 행을 잠그고 가져온다. 호출하는 쪽의 트랜잭션 안에서 부른다. 탈퇴했거나 없는 회원이면 비어 있다.
+     */
+    public Optional<User> findActiveByIdForUpdate(Long userId) {
+        return userRepository.findForUpdate(userId, UserStatus.ACTIVE);
     }
 
     /**

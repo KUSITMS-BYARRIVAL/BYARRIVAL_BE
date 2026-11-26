@@ -12,6 +12,7 @@ import java.util.List;
  *
  * @param defaultCommuteMinutes 기본 이동시간. 요일별 설정이 없는 날의 노선 목표 시간으로 쓴다.
  * @param region                근무 지역. 고르지 않았으면 null이다.
+ * @param restriction           지금 적용 중인 이용 제한. 있으면 다른 분기보다 먼저 이용 제한 안내 화면으로 보낸다. 없으면 null이다.
  */
 public record UserMeResponse(
     Long userId,
@@ -24,16 +25,17 @@ public record UserMeResponse(
     List<DailyCommuteResponse> weeklyCommute,
     List<Long> categoryIds,
     List<JobGroup> jobGroups,
-    RegionResponse region
+    RegionResponse region,
+    UserRestrictionResponse restriction
 ) {
 
     public static UserMeResponse of(User user, boolean termsAgreed, List<Long> categoryIds, List<JobGroup> jobGroups,
-        RegionResponse region) {
+        RegionResponse region, UserRestrictionResponse restriction) {
         List<DailyCommuteResponse> weeklyCommute = user.getWeeklyCommute().entrySet().stream()
             .map(entry -> DailyCommuteResponse.of(entry.getKey(), entry.getValue()))
             .toList();
         return new UserMeResponse(user.getId(), user.getNickname(), user.getProfileImageUrl(), termsAgreed,
             user.isOnboardingCompleted(), user.getTravelType(), user.getDefaultCommuteMinutes(), weeklyCommute,
-            categoryIds, jobGroups, region);
+            categoryIds, jobGroups, region, restriction);
     }
 }
