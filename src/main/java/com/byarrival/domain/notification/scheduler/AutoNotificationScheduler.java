@@ -43,7 +43,7 @@ public class AutoNotificationScheduler {
         }
     }
 
-    @Scheduled(cron = "0 0 16 * * *", zone = ClockConfig.KST)
+    @Scheduled(cron = "0 0 13 * * *", zone = ClockConfig.KST)
     public void smalltalk() {
         try {
             smalltalkTrigger.run(ServiceDay.today(clock));
