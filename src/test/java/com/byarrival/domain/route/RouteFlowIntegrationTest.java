@@ -336,7 +336,8 @@ class RouteFlowIntegrationTest {
         Long userId = newUser(10, 0, categoryId);
         TokenResponse user = tokenService.issue(userId);
         Long routeId = boardedRoute(user, articles);
-        // 오늘 11-10(화). 어제(월) 완주, 그제(일)는 주말이라 세지 않고, 11-06(금) 완주로 이어져 오늘 완주하면 평일 연속 3일
+        // 오늘 11-10(화). 이동하는 요일이 없어 11-07(토)에 완주하지 않아도 끊기지 않는다.
+        // 11-06(금)·11-08(일)·11-09(월) 완주에 오늘 완주까지 연속 4일
         completedRoute(userId, TODAY.minusDays(1));
         completedRoute(userId, TODAY.minusDays(2));
         completedRoute(userId, TODAY.minusDays(4));
@@ -409,11 +410,11 @@ class RouteFlowIntegrationTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.readCount").value(3))
             .andExpect(jsonPath("$.data.totalStops").value(3))
-            .andExpect(jsonPath("$.data.streakDays").value(3))
+            .andExpect(jsonPath("$.data.streakDays").value(4))
             .andExpect(jsonPath("$.data.usedMinutes").value(0));
         // 다시 눌러도 같은 결과, 완주 후에도 오늘 노선 다시 보기 가능
         perform(user, post("/api/v1/routes/{routeId}/arrival", routeId), null)
-            .andExpect(jsonPath("$.data.streakDays").value(3));
+            .andExpect(jsonPath("$.data.streakDays").value(4));
         perform(user, get("/api/v1/routes/{routeId}/stops/2", routeId), null)
             .andExpect(jsonPath("$.data.read").value(true));
         perform(user, get("/api/v1/routes/today"), null)

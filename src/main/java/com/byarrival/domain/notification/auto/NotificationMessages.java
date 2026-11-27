@@ -91,7 +91,7 @@ public class NotificationMessages {
     }
 
     /**
-     * @param streakDays 어제(직전 평일)까지 이어진 일수
+     * @param streakDays 어제까지 이어진 일수
      */
     public String streakBreakTitle(int streakDays) {
         return pick(STREAK_BREAK_TITLES).formatted(streakDays + 1, streakDays);

@@ -12,7 +12,7 @@ import java.util.List;
 public record HomeResponse(
     @Schema(description = "서비스일(04:00 경계)") LocalDate serviceDate,
     @Schema(description = "오늘 탑승 상태. GET /routes/today와 같다. 조회 실패 시 null") TodayRouteResponse todayRoute,
-    @Schema(description = "연속 이용 일수(평일 완주 기준, HOME-02). 기록이 없으면 0, 조회 실패 시 null") Integer streakDays,
+    @Schema(description = "연속 이용 일수(이동하는 요일 기준, HOME-02). 기록이 없으면 0, 조회 실패 시 null") Integer streakDays,
     @Schema(description = "스몰토크 추천 미리보기 최대 3개(HOME-03). 비어 있으면 영역 미노출, 조회 실패 시 null")
     List<SmalltalkResponse> smalltalks,
     @Schema(description = "오늘(서비스일) 한 번이라도 앱을 쓴 회원 수(HOME-04). 조회 실패 시 null이며 카드를 숨긴다")
