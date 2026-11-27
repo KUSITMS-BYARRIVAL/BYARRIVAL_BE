@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.byarrival.common.time.ServiceDay;
 import com.byarrival.domain.auth.dto.response.TokenResponse;
 import com.byarrival.domain.auth.service.TokenService;
 import com.byarrival.domain.user.entity.SocialProvider;
@@ -16,6 +17,9 @@ import com.byarrival.domain.user.entity.User;
 import com.byarrival.domain.user.repository.UserRepository;
 import com.byarrival.domain.user.service.UserService;
 import com.byarrival.support.TestcontainersConfig;
+import java.time.Clock;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -56,6 +60,9 @@ class UserSettingFlowIntegrationTest {
 
     @Autowired
     private UserService userService;
+
+    @Autowired
+    private Clock clock;
 
     private Long userId;
     private TokenResponse tokens;
@@ -170,10 +177,31 @@ class UserSettingFlowIntegrationTest {
     }
 
     @Test
-    void 이동하는_요일이_하나도_없으면_NO_COMMUTE_DAY로_응답한다() throws Exception {
+    void 모든_요일을_쉬는_날로_저장할_수_있다() throws Exception {
         perform(put(ME + "/weekly-commute"), "{\"days\":[]}")
-            .andExpect(status().isBadRequest())
-            .andExpect(jsonPath("$.code").value("NO_COMMUTE_DAY"));
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.weeklyCommute").isEmpty());
+    }
+
+    @Test
+    void 요일_설정을_바꾸면_바꾸기_전_설정과_다음_서비스일부터의_설정을_스트릭_기준으로_남긴다() throws Exception {
+        perform(put(ME + "/weekly-commute"), "{\"days\":[" + day("MONDAY", "08:00", 30) + "]}")
+            .andExpect(status().isOk());
+        // 같은 서비스일에 다시 바꾸면 다음 서비스일부터의 설정을 덮어쓴다
+        perform(put(ME + "/weekly-commute"), "{\"days\":[" + day("TUESDAY", "08:00", 30) + "]}")
+            .andExpect(status().isOk());
+
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+            "SELECT effective_from, commute_days FROM user_commute_day_history WHERE user_id = ? "
+                + "ORDER BY effective_from", userId);
+        assertThat(rows).hasSize(2);
+        // 처음 설정은 이동하는 요일이 없었다
+        assertThat(rows.get(0).get("effective_from").toString()).isEqualTo("1970-01-01");
+        assertThat(((Number) rows.get(0).get("commute_days")).intValue()).isZero();
+        assertThat(rows.get(1).get("effective_from").toString())
+            .isEqualTo(ServiceDay.today(clock).plusDays(1).toString());
+        // 화요일 = 2
+        assertThat(((Number) rows.get(1).get("commute_days")).intValue()).isEqualTo(2);
     }
 
     @Test
