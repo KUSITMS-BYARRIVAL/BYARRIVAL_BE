@@ -13,7 +13,6 @@ import com.byarrival.domain.route.service.RouteStreakService;
 import com.byarrival.domain.user.entity.JobGroup;
 import com.byarrival.domain.user.service.UserNotificationTargetService;
 import com.byarrival.domain.user.service.UserNotificationTargetService.Profile;
-import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -73,11 +72,12 @@ public class CommuteNotificationTrigger {
     }
 
     /**
-     * 평일 기준 연속 완주가 정해진 일수 이상인데 오늘 아직 완주하지 않았으면 보낸다.
-     * 스트릭은 평일만 세서 주말에는 완주하지 않아도 끊기지 않으므로 주말에는 보내지 않는다.
+     * 연속 완주가 정해진 일수 이상인데 오늘 아직 완주하지 않았으면 보낸다.
+     * 오늘이 스트릭 대상일(이동하는 요일)이 아니면 완주하지 않아도 끊기지 않으므로 보내지 않는다.
      */
     void sendStreakBreak(Long userId, LocalDate today) {
-        if (isWeekend(today) || sender.isSentToday(userId, NotificationType.STREAK_BREAK)) {
+        if (sender.isSentToday(userId, NotificationType.STREAK_BREAK)
+            || !routeStreakService.isStreakDay(userId, today)) {
             return;
         }
         Optional<Route> route = routeQueryService.findRoute(userId, today);
@@ -166,10 +166,6 @@ public class CommuteNotificationTrigger {
                 log.error("[AutoNotification] 출근 시각 알림 처리 실패: userId={}", userId, e);
             }
         }
-    }
-
-    private static boolean isWeekend(LocalDate date) {
-        return date.getDayOfWeek() == DayOfWeek.SATURDAY || date.getDayOfWeek() == DayOfWeek.SUNDAY;
     }
 
     /**

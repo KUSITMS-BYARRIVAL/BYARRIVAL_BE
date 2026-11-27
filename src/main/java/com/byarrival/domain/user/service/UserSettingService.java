@@ -1,14 +1,18 @@
 package com.byarrival.domain.user.service;
 
 import com.byarrival.common.exception.BusinessException;
+import com.byarrival.common.time.ServiceDay;
 import com.byarrival.domain.user.dto.request.UserUpdateRequest;
 import com.byarrival.domain.user.dto.request.WeeklyCommuteRequest.DailyCommuteRequest;
 import com.byarrival.domain.user.dto.response.UserMeResponse;
+import com.byarrival.domain.user.entity.CommuteDays;
 import com.byarrival.domain.user.entity.DailyCommute;
 import com.byarrival.domain.user.entity.JobGroup;
 import com.byarrival.domain.user.entity.User;
 import com.byarrival.domain.user.exception.UserErrorCode;
+import java.time.Clock;
 import java.time.DayOfWeek;
+import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.EnumMap;
@@ -28,6 +32,8 @@ public class UserSettingService {
 
     private final UserService userService;
     private final UserProfileValidator userProfileValidator;
+    private final CommuteDayService commuteDayService;
+    private final Clock clock;
 
     /**
      * 보낸 항목만 검증해서 저장한다. 하나라도 규칙에 어긋나면 아무것도 저장하지 않는다.
@@ -56,14 +62,12 @@ public class UserSettingService {
     }
 
     /**
-     * 보낸 요일만 이동하는 날로 저장하고 나머지 요일은 비운다. 하루 이상은 이동하는 요일이어야 한다.
+     * 보낸 요일만 이동하는 날로 저장하고 나머지 요일은 비운다. 모든 요일을 비워도 된다(모두 쉬는 날).
+     * 노선 목표 시간과 출근 시각 알림에는 바로 반영하고, 스트릭 대상일에는 다음 서비스일부터 반영한다.
      */
     @Transactional
     public UserMeResponse replaceWeeklyCommute(Long userId, List<DailyCommuteRequest> days) {
         User user = userService.getActiveUserForUpdate(userId);
-        if (days.isEmpty()) {
-            throw new BusinessException(UserErrorCode.NO_COMMUTE_DAY);
-        }
         Map<DayOfWeek, DailyCommute> weekly = new EnumMap<>(DayOfWeek.class);
         for (DailyCommuteRequest day : days) {
             userProfileValidator.validateDailyCommuteMinutes(day.minutes());
@@ -73,6 +77,8 @@ public class UserSettingService {
                 throw new BusinessException(UserErrorCode.INVALID_WEEKLY_COMMUTE);
             }
         }
+        commuteDayService.recordChange(userId, CommuteDayService.commuteDaysOf(user), CommuteDays.of(weekly.keySet()),
+            ServiceDay.today(clock), LocalDateTime.now(clock));
         user.replaceWeeklyCommute(weekly);
         return userService.getMe(userId);
     }

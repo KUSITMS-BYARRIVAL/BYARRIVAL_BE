@@ -96,7 +96,7 @@ public class UserController {
 
     @Operation(summary = "요일별 이동 설정 저장",
         description = "이동하는 요일만 시작 시각(HH:mm)과 이동시간(5~120분, 5분 단위)을 보낸다. 보내지 않은 요일은 이동하지 않는 날이 되고 "
-            + "출근 알림이 가지 않는다. 하루 이상 보내야 한다.")
+            + "출근 알림이 가지 않는다. 모든 요일을 비워도 된다. 스트릭 대상일에는 다음 서비스일(04:00)부터 반영된다.")
     @PutMapping("/me/weekly-commute")
     public ApiResponse<UserMeResponse> replaceWeeklyCommute(
         @LoginUserId Long userId, @Valid @RequestBody WeeklyCommuteRequest request) {

@@ -192,14 +192,19 @@ class StatFlowIntegrationTest {
     }
 
     @Test
-    void 연속_완주는_주말을_건너뛰고_평일만_센다() throws Exception {
-        // 10-19(월)~10-23(금), 10-26(월)~10-28(수): 주말을 건너뛰어 8일 연속. 10-29(목)에 끊김
+    void 연속_완주는_이동하는_요일을_빠짐없이_완주한_일수이고_쉬는_날_완주도_센다() throws Exception {
+        // 월~금을 이동하는 요일로 둔다
+        jdbcTemplate.update("UPDATE users SET mon_start_time = TIME '08:00', mon_minutes = 30, "
+            + "tue_start_time = TIME '08:00', tue_minutes = 30, wed_start_time = TIME '08:00', wed_minutes = 30, "
+            + "thu_start_time = TIME '08:00', thu_minutes = 30, fri_start_time = TIME '08:00', fri_minutes = 30 "
+            + "WHERE id = ?", userId);
+        // 10-19(월)~10-23(금), 10-26(월)~10-28(수): 쉬는 날(토·일)은 건너뛰어 8일 연속. 10-29(목)에 끊김
         for (LocalDate day : List.of(LocalDate.of(2026, 10, 19), LocalDate.of(2026, 10, 20), LocalDate.of(2026, 10, 21),
             LocalDate.of(2026, 10, 22), LocalDate.of(2026, 10, 23), LocalDate.of(2026, 10, 26),
             LocalDate.of(2026, 10, 27), LocalDate.of(2026, 10, 28))) {
             newRoute(day, 1, 1, day.atTime(8, 10));
         }
-        // 11-06(금), 11-07(토, 주말이라 세지 않음), 11-09(월)~11-11(수). 오늘 11-12(목)는 아직 완주 전
+        // 11-06(금), 11-07(토, 쉬는 날 완주도 셈), 11-09(월)~11-11(수). 오늘 11-12(목)는 아직 완주 전
         for (LocalDate day : List.of(LocalDate.of(2026, 11, 6), LocalDate.of(2026, 11, 7), LocalDate.of(2026, 11, 9),
             LocalDate.of(2026, 11, 10), LocalDate.of(2026, 11, 11))) {
             newRoute(day, 1, 1, day.atTime(8, 10));
@@ -207,7 +212,7 @@ class StatFlowIntegrationTest {
 
         perform(get("/api/v1/stats/streak"))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.currentStreak").value(4))
+            .andExpect(jsonPath("$.data.currentStreak").value(5))
             .andExpect(jsonPath("$.data.longestStreak").value(8));
     }
 

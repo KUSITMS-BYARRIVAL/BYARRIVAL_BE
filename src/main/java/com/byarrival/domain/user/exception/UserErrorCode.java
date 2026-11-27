@@ -18,7 +18,6 @@ public enum UserErrorCode implements ErrorCode {
     INVALID_REGION(HttpStatus.BAD_REQUEST, "선택할 수 없는 근무 지역입니다."),
     INVALID_PROFILE_IMAGE(HttpStatus.BAD_REQUEST, "JPG·PNG 이미지만 올릴 수 있습니다."),
     INVALID_WEEKLY_COMMUTE(HttpStatus.BAD_REQUEST, "요일별 이동 설정이 올바르지 않습니다."),
-    NO_COMMUTE_DAY(HttpStatus.BAD_REQUEST, "이동하는 요일을 하루 이상 설정해야 합니다."),
     USER_RESTRICTED(HttpStatus.FORBIDDEN, "현재 서비스 이용이 제한된 계정입니다.");
 
     private final HttpStatus status;
