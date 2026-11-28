@@ -276,13 +276,7 @@ class AdminEditorPickFlowIntegrationTest {
     }
 
     @Test
-    void 에디터도_에디터_픽을_관리할_수_있고_쿠키_없이는_쓸_수_없다() throws Exception {
-        String email = "editor-" + UUID.randomUUID() + "@example.com";
-        jdbcTemplate.update("INSERT INTO admin_account (email, password_hash, role) VALUES (?, ?, 'EDITOR')", email,
-            PASSWORD_HASH);
-        Cookie editor = login(email);
-
-        mockMvc.perform(get(PICKS).cookie(editor)).andExpect(status().isOk());
+    void 쿠키_없이는_에디터_픽_API를_쓸_수_없다() throws Exception {
         mockMvc.perform(get(PICKS)).andExpect(status().isUnauthorized());
     }
 

@@ -1,6 +1,7 @@
 package com.byarrival.domain.admin;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -8,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.byarrival.common.time.ServiceDay;
 import com.byarrival.domain.admin.security.AdminCookieFactory;
+import com.byarrival.domain.admin.service.AdminMemberAccessLogCleanupService;
 import com.byarrival.support.TestcontainersConfig;
 import jakarta.servlet.http.Cookie;
 import java.time.Clock;
@@ -21,6 +23,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -50,6 +53,9 @@ class AdminMemberFlowIntegrationTest {
 
     @Autowired
     private Clock clock;
+
+    @Autowired
+    private AdminMemberAccessLogCleanupService accessLogCleanupService;
 
     private Cookie cookie;
     private Long adminId;
@@ -192,19 +198,24 @@ class AdminMemberFlowIntegrationTest {
     }
 
     @Test
-    void 에디터는_회원_API에_접근할_수_없고_기사_API는_쓸_수_있다() throws Exception {
+    void 에디터_권한은_없어져_만들_수_없다() {
         String email = "editor-" + UUID.randomUUID() + "@example.com";
-        jdbcTemplate.update("INSERT INTO admin_account (email, password_hash, role) VALUES (?, ?, 'EDITOR')", email,
-            PASSWORD_HASH);
-        Cookie editor = login(email);
-        Long member = member("private", "KAKAO", "WORKER", LocalDateTime.of(2030, 1, 1, 9, 0));
 
-        mockMvc.perform(get(MEMBERS).cookie(editor))
-            .andExpect(status().isForbidden())
-            .andExpect(jsonPath("$.code").value("FORBIDDEN"));
-        mockMvc.perform(get(MEMBERS + "/" + member).cookie(editor)).andExpect(status().isForbidden());
-        mockMvc.perform(get("/api/admin/articles").cookie(editor)).andExpect(status().isOk());
-        assertThat(accessLogCount(member)).isZero();
+        assertThatThrownBy(() -> jdbcTemplate.update(
+            "INSERT INTO admin_account (email, password_hash, role) VALUES (?, ?, 'EDITOR')", email, PASSWORD_HASH))
+            .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void 보관_기간_2년이_지난_열람_기록만_지운다() {
+        Long member = member("old", "KAKAO", "WORKER", LocalDateTime.of(2030, 1, 1, 9, 0));
+        LocalDateTime now = LocalDateTime.now(clock);
+        insertAccessLog(member, now.minusYears(2).minusDays(1));
+        insertAccessLog(member, now.minusYears(2).plusDays(1));
+
+        accessLogCleanupService.deleteExpired();
+
+        assertThat(accessLogCount(member)).isEqualTo(1);
     }
 
     @Test
@@ -248,6 +259,11 @@ class AdminMemberFlowIntegrationTest {
                 started_at, completed_at)
             VALUES (?, ?, 'SUNNY', 10, 'COMPLETED', 0, ?, ?, ?)
             """, userId, serviceDate, serviceDate.plusDays(1).atTime(4, 0), startedAt, startedAt.plusMinutes(10));
+    }
+
+    private void insertAccessLog(Long userId, LocalDateTime accessedAt) {
+        jdbcTemplate.update("INSERT INTO admin_member_access_log (admin_id, user_id, accessed_at) VALUES (?, ?, ?)",
+            adminId, userId, accessedAt);
     }
 
     private int accessLogCount(Long userId) {

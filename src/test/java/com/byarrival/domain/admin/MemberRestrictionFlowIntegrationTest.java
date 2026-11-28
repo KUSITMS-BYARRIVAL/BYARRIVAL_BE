@@ -181,20 +181,6 @@ class MemberRestrictionFlowIntegrationTest {
     }
 
     @Test
-    void 에디터는_회원을_제한할_수_없다() throws Exception {
-        String email = "editor-" + UUID.randomUUID() + "@example.com";
-        jdbcTemplate.update("INSERT INTO admin_account (email, password_hash, role) VALUES (?, ?, 'EDITOR')", email,
-            PASSWORD_HASH);
-        Cookie editor = login(email);
-
-        mockMvc.perform(post(MEMBERS + "/" + memberId + "/restriction").cookie(editor)
-                .contentType(MediaType.APPLICATION_JSON).content("{\"period\":\"DAYS_3\",\"reason\":\"사유\"}"))
-            .andExpect(status().isForbidden());
-        mockMvc.perform(delete(MEMBERS + "/" + memberId + "/restriction").cookie(editor))
-            .andExpect(status().isForbidden());
-    }
-
-    @Test
     void 제한된_회원은_내_정보에서_사유를_받고_다른_앱_API는_쓸_수_없다() throws Exception {
         restrict(memberId, "DAYS_7", "욕설 신고 누적").andExpect(status().isOk());
 
