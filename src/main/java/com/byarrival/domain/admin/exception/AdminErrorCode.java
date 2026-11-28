@@ -12,6 +12,8 @@ public enum AdminErrorCode implements ErrorCode {
     ADMIN_LOGIN_FAILED(HttpStatus.UNAUTHORIZED, "이메일 또는 비밀번호가 맞지 않습니다."),
     ADMIN_ARTICLE_NOT_FOUND(HttpStatus.NOT_FOUND, "기사를 찾을 수 없습니다."),
     ADMIN_ARTICLE_UNAVAILABLE(HttpStatus.CONFLICT, "원문이 삭제된 기사는 숨기거나 복구할 수 없습니다."),
+    ADMIN_ARTICLE_NOT_REGENERATABLE(HttpStatus.CONFLICT, "숨긴 기사나 오류 기사만 재생성할 수 있습니다."),
+    ADMIN_ARTICLE_NO_SUMMARY(HttpStatus.CONFLICT, "요약이 없어 퀴즈를 만들 수 없습니다. 요약을 먼저 재생성해 주세요."),
     ADMIN_MEMBER_NOT_FOUND(HttpStatus.NOT_FOUND, "회원을 찾을 수 없습니다."),
     ADMIN_MEMBER_ALREADY_RESTRICTED(HttpStatus.CONFLICT, "이미 이용 제한 중인 회원입니다. 해제한 뒤 다시 제한해 주세요."),
     ADMIN_EDITOR_PICK_NOT_FOUND(HttpStatus.NOT_FOUND, "에디터 픽을 찾을 수 없습니다."),
