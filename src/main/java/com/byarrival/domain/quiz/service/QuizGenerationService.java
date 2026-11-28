@@ -83,10 +83,7 @@ public class QuizGenerationService {
         Map<Long, String> categoryNames = categoryMappingService.getActiveCategoryNames();
         List<QuizSource> sources = articles.stream()
             .filter(article -> !done.contains(article.getId()))
-            .map(article -> new QuizSource(article.getId(), article.getTitle(),
-                categoryNames.getOrDefault(article.getCategoryId(), ""), article.getSummaryOneLine(),
-                Stream.of(article.getSummarySentence1(), article.getSummarySentence2(), article.getSummarySentence3())
-                    .filter(Objects::nonNull).toList()))
+            .map(article -> sourceOf(article, categoryNames))
             .toList();
         if (sources.isEmpty()) {
             log.info("[AI 퀴즈] serviceDate={} 만들 퀴즈 없음", serviceDate);
@@ -114,6 +111,32 @@ public class QuizGenerationService {
             sources.size(), succeeded, duplicated, failed.size(), result.calls());
         notifyCompleted(serviceDate, sources.size(), result);
         return result;
+    }
+
+    /**
+     * 어드민 재생성(ARTICLE-06). 요약을 보고 퀴즈를 새로 만들어 새 버전으로 저장한다. 기존 퀴즈는 INACTIVE로 남는다.
+     * 요약이 없는 기사는 부르지 않는다.
+     *
+     * @return 검증을 통과해 저장했으면 true
+     */
+    public boolean regenerate(Article article) {
+        QuizSource source = sourceOf(article, categoryMappingService.getActiveCategoryNames());
+        Tally tally = new Tally();
+        ValidatedQuiz quiz = generateValid(source, tally);
+        log.info("[AI 퀴즈 재생성] articleId={} 결과={} 호출 {}회", article.getId(), quiz == null ? "실패" : "성공",
+            tally.calls.get());
+        if (quiz == null) {
+            return false;
+        }
+        store.replace(article.getId(), quiz, LocalDateTime.now(clock));
+        return true;
+    }
+
+    private static QuizSource sourceOf(Article article, Map<Long, String> categoryNames) {
+        return new QuizSource(article.getId(), article.getTitle(),
+            categoryNames.getOrDefault(article.getCategoryId(), ""), article.getSummaryOneLine(),
+            Stream.of(article.getSummarySentence1(), article.getSummarySentence2(), article.getSummarySentence3())
+                .filter(Objects::nonNull).toList());
     }
 
     private Outcome generateOne(QuizSource source, Tally tally) {

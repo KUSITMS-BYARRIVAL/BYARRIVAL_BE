@@ -1,6 +1,7 @@
 package com.byarrival.domain.admin.dto.response;
 
 import com.byarrival.domain.admin.entity.AdminArticleState;
+import com.byarrival.domain.admin.entity.RegenerateStep;
 import com.byarrival.domain.admin.entity.AdminStepStatus;
 import com.byarrival.domain.admin.entity.ArticleHideReason;
 import com.byarrival.domain.admin.entity.ArticleVisibilityAction;
@@ -115,6 +116,18 @@ public final class AdminArticleResponses {
     }
 
     public record VisibilityResult(Long articleId, AdminArticleState state) {
+    }
+
+    /**
+     * 재생성 결과(ARTICLE-06).
+     *
+     * @param summary       요약 재생성 결과. 퀴즈만 재생성했으면 SKIPPED
+     * @param quiz          퀴즈 재생성 결과. 요약이 실패해 하지 않았으면 SKIPPED
+     * @param failureReason 실패한 단계가 있으면 안내 문구. 모두 성공했으면 null
+     * @param article       재생성 뒤 기사 상세
+     */
+    public record RegenerateResult(Long articleId, RegenerateStep summary, RegenerateStep quiz, String failureReason,
+                                   Detail article) {
     }
 
     /**

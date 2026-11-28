@@ -46,6 +46,17 @@ public class QuizStore {
             quiz.answerSeq(), quiz.explanation(), now));
     }
 
+    /**
+     * 재생성한 퀴즈를 새 버전으로 저장한다(ARTICLE-06). 기존 ACTIVE 퀴즈는 지우지 않고 INACTIVE로 내린다.
+     * 기사당 ACTIVE 퀴즈는 하나뿐이어야 하므로 내린 것을 먼저 반영한 뒤 새 퀴즈를 넣는다.
+     */
+    @Transactional
+    public void replace(Long articleId, ValidatedQuiz quiz, LocalDateTime now) {
+        quizRepository.findActiveByArticleIds(List.of(articleId)).forEach(Quiz::deactivate);
+        quizRepository.flush();
+        save(articleId, quiz, now);
+    }
+
     static List<QuizChoice> choicesOf(Quiz quiz) {
         return List.of(JSON_MAPPER.readValue(quiz.getChoices(), QuizChoice[].class));
     }

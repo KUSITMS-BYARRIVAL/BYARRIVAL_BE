@@ -85,6 +85,20 @@ public class ArticleSummaryService {
         return result;
     }
 
+    /**
+     * 어드민 재생성(ARTICLE-06)용으로 기사 하나의 요약을 만들고 검증한다. 저장은 호출하는 쪽이 한다.
+     *
+     * @return 검증을 통과한 요약. 끝내 실패하면 null
+     */
+    ValidatedSummary generateOne(SummaryInput input, ArticleDifficulty difficulty) {
+        UsageTally tally = new UsageTally();
+        ValidatedSummary summary = generateValid(input, difficulty, tally);
+        UsageTotal usage = tally.total();
+        log.info("[AI 요약 재생성] articleId={} 결과={} 호출 {}회, 토큰 {}", input.articleId(),
+            summary == null ? "실패" : "성공", usage.calls(), usage.tokens().describe());
+        return summary;
+    }
+
     private Outcome summarizeOne(SummaryInput input, ArticleDifficulty difficulty, UsageTally tally) {
         try {
             ValidatedSummary summary = generateValid(input, difficulty, tally);

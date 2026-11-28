@@ -161,11 +161,12 @@ public class Article extends BaseEntity {
         this.recommendable = false;
     }
 
-    // 카테고리가 매핑되고 읽기시간까지 계산된 기사만 추천 후보가 된다(RSS-08)
+    // 카테고리가 매핑되고 읽기시간까지 계산된 기사만 추천 후보가 된다(RSS-08).
+    // 같은 사건으로 뺀 기사는 요약을 다시 만들어도(ARTICLE-06) 추천 후보로 되돌리지 않는다
     private void markReadyIfComplete() {
         if (categoryId != null && readingMinutes != null) {
             this.processStatus = ArticleProcessStatus.READY;
-            this.recommendable = true;
+            this.recommendable = duplicateOfArticleId == null;
         }
     }
 }

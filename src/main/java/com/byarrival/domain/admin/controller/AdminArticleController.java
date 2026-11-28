@@ -9,8 +9,10 @@ import com.byarrival.domain.admin.dto.response.AdminArticleResponses.BulkResult;
 import com.byarrival.domain.admin.dto.response.AdminArticleResponses.Detail;
 import com.byarrival.domain.admin.dto.response.AdminArticleResponses.Filters;
 import com.byarrival.domain.admin.dto.response.AdminArticleResponses.Page;
+import com.byarrival.domain.admin.dto.response.AdminArticleResponses.RegenerateResult;
 import com.byarrival.domain.admin.dto.response.AdminArticleResponses.VisibilityResult;
 import com.byarrival.domain.admin.security.AdminPrincipal;
+import com.byarrival.domain.admin.service.AdminArticleRegenerateService;
 import com.byarrival.domain.admin.service.AdminArticleService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -32,6 +34,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class AdminArticleController {
 
     private final AdminArticleService adminArticleService;
+    private final AdminArticleRegenerateService regenerateService;
 
     @Operation(summary = "기사 목록", description = "탭별 건수와 기사 목록. 페이지당 20개이고 page는 1부터 시작한다.")
     @GetMapping
@@ -63,6 +66,21 @@ public class AdminArticleController {
     public ApiResponse<VisibilityResult> restore(@AuthenticationPrincipal AdminPrincipal admin,
         @PathVariable Long articleId) {
         return ApiResponse.ok(adminArticleService.restore(admin.id(), articleId));
+    }
+
+    @Operation(summary = "기사 요약 재생성", description = "숨긴 기사나 오류 기사만 된다. 3줄 요약·한 줄 요약·키워드를 다시 "
+        + "만들어 덮어쓰고, 이어서 퀴즈도 새 버전으로 만든다. 난이도는 바꾸지 않는다. 숨긴 기사는 숨김 그대로이고, 오류 기사는 "
+        + "성공하면 바로 노출된다. AI를 호출하므로 수십 초까지 걸릴 수 있고 결과를 바로 응답한다.")
+    @PostMapping("/{articleId}/regenerate/summary")
+    public ApiResponse<RegenerateResult> regenerateSummary(@PathVariable Long articleId) {
+        return ApiResponse.ok(regenerateService.regenerateSummary(articleId));
+    }
+
+    @Operation(summary = "기사 퀴즈 재생성", description = "숨긴 기사나 오류 기사만 된다. 요약은 두고 퀴즈만 새 버전으로 만든다. "
+        + "이전 버전은 지우지 않아 이미 퀴즈를 받은 노선은 받은 버전을 그대로 쓴다. 요약이 없으면 409.")
+    @PostMapping("/{articleId}/regenerate/quiz")
+    public ApiResponse<RegenerateResult> regenerateQuiz(@PathVariable Long articleId) {
+        return ApiResponse.ok(regenerateService.regenerateQuiz(articleId));
     }
 
     @Operation(summary = "기사 일괄 숨김", description = "최대 100개. 숨길 수 없는 기사는 제외하고 결과로 알려 준다.")
