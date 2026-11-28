@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.byarrival.common.time.ServiceDay;
 import com.byarrival.domain.admin.security.AdminCookieFactory;
+import com.byarrival.domain.admin.service.AdminMemberAccessLogCleanupService;
 import com.byarrival.support.TestcontainersConfig;
 import jakarta.servlet.http.Cookie;
 import java.time.Clock;
@@ -52,6 +53,9 @@ class AdminMemberFlowIntegrationTest {
 
     @Autowired
     private Clock clock;
+
+    @Autowired
+    private AdminMemberAccessLogCleanupService accessLogCleanupService;
 
     private Cookie cookie;
     private Long adminId;
@@ -203,6 +207,18 @@ class AdminMemberFlowIntegrationTest {
     }
 
     @Test
+    void 보관_기간_2년이_지난_열람_기록만_지운다() {
+        Long member = member("old", "KAKAO", "WORKER", LocalDateTime.of(2030, 1, 1, 9, 0));
+        LocalDateTime now = LocalDateTime.now(clock);
+        insertAccessLog(member, now.minusYears(2).minusDays(1));
+        insertAccessLog(member, now.minusYears(2).plusDays(1));
+
+        accessLogCleanupService.deleteExpired();
+
+        assertThat(accessLogCount(member)).isEqualTo(1);
+    }
+
+    @Test
     void 쿠키_없이는_회원_API를_쓸_수_없다() throws Exception {
         mockMvc.perform(get(MEMBERS)).andExpect(status().isUnauthorized());
     }
@@ -243,6 +259,11 @@ class AdminMemberFlowIntegrationTest {
                 started_at, completed_at)
             VALUES (?, ?, 'SUNNY', 10, 'COMPLETED', 0, ?, ?, ?)
             """, userId, serviceDate, serviceDate.plusDays(1).atTime(4, 0), startedAt, startedAt.plusMinutes(10));
+    }
+
+    private void insertAccessLog(Long userId, LocalDateTime accessedAt) {
+        jdbcTemplate.update("INSERT INTO admin_member_access_log (admin_id, user_id, accessed_at) VALUES (?, ?, ?)",
+            adminId, userId, accessedAt);
     }
 
     private int accessLogCount(Long userId) {
