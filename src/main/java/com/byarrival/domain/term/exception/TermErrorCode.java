@@ -10,7 +10,8 @@ import org.springframework.http.HttpStatus;
 public enum TermErrorCode implements ErrorCode {
 
     REQUIRED_TERMS_NOT_AGREED(HttpStatus.BAD_REQUEST, "필수 약관에 모두 동의해야 합니다."),
-    INVALID_TERMS(HttpStatus.BAD_REQUEST, "동의할 수 없는 약관이 포함되어 있습니다.");
+    INVALID_TERMS(HttpStatus.BAD_REQUEST, "동의할 수 없는 약관이 포함되어 있습니다."),
+    INVALID_MARKETING_CONSENT(HttpStatus.BAD_REQUEST, "야간 광고성 정보 수신은 광고성 정보 수신에 동의해야 받을 수 있습니다.");
 
     private final HttpStatus status;
     private final String message;

@@ -43,7 +43,8 @@ class TermServiceTest {
         agreementRepository = mock(UserTermsAgreementRepository.class);
         ZoneId kst = ZoneId.of("Asia/Seoul");
         Clock clock = Clock.fixed(ZonedDateTime.of(NOW, kst).toInstant(), kst);
-        termService = new TermService(termsRepository, agreementRepository, clock);
+        // 마케팅·야간 동의 규칙은 MarketingConsentFlowIntegrationTest에서 확인한다
+        termService = new TermService(termsRepository, agreementRepository, mock(MarketingConsentService.class), clock);
         given(termsRepository.findLatestOfEachType()).willReturn(List.of(
             terms(1L, TermsType.SERVICE, true), terms(2L, TermsType.PRIVACY, true)));
         given(agreementRepository.saveAll(any())).willAnswer(invocation -> invocation.getArgument(0));

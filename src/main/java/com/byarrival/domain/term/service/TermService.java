@@ -5,12 +5,14 @@ import com.byarrival.domain.term.dto.request.TermsAgreementRequest.Agreement;
 import com.byarrival.domain.term.dto.response.TermsAgreementResponse;
 import com.byarrival.domain.term.dto.response.TermsResponse;
 import com.byarrival.domain.term.entity.Terms;
+import com.byarrival.domain.term.entity.TermsType;
 import com.byarrival.domain.term.entity.UserTermsAgreement;
 import com.byarrival.domain.term.exception.TermErrorCode;
 import com.byarrival.domain.term.repository.TermsRepository;
 import com.byarrival.domain.term.repository.UserTermsAgreementRepository;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -31,6 +33,7 @@ public class TermService {
 
     private final TermsRepository termsRepository;
     private final UserTermsAgreementRepository userTermsAgreementRepository;
+    private final MarketingConsentService marketingConsentService;
     private final Clock clock;
 
     @Transactional(readOnly = true)
@@ -49,8 +52,12 @@ public class TermService {
             .collect(Collectors.toMap(Terms::getId, Function.identity()));
         validateTermsIds(agreements, latestTerms);
         validateRequiredTermsAgreed(agreements, latestTerms);
+        Map<TermsType, Boolean> marketing = marketingConsentOf(agreements, latestTerms);
+        marketingConsentService.validateSignupConsent(marketing);
 
         LocalDateTime now = LocalDateTime.now(clock);
+        // 저장하기 전에 지금 상태와 비교해 바뀐 마케팅·야간 동의만 안내한다
+        marketingConsentService.announceIfChanged(userId, marketing, now);
         List<UserTermsAgreement> saved = userTermsAgreementRepository.saveAll(agreements.stream()
             .map(agreement -> UserTermsAgreement.record(userId, agreement.termsId(), agreement.agreed(), now))
             .toList());
@@ -77,6 +84,18 @@ public class TermService {
             .forEach(agreement -> currentState.putIfAbsent(agreement.getTermsId(), agreement.isAgreed()));
         return requiredTermsIds.stream()
             .allMatch(termsId -> Boolean.TRUE.equals(currentState.get(termsId)));
+    }
+
+    private static Map<TermsType, Boolean> marketingConsentOf(List<Agreement> agreements,
+        Map<Long, Terms> latestTerms) {
+        Map<TermsType, Boolean> consent = new EnumMap<>(TermsType.class);
+        for (Agreement agreement : agreements) {
+            TermsType type = latestTerms.get(agreement.termsId()).getTermsType();
+            if (type == TermsType.MARKETING || type == TermsType.MARKETING_NIGHT) {
+                consent.put(type, agreement.agreed());
+            }
+        }
+        return consent;
     }
 
     private void validateTermsIds(List<Agreement> agreements, Map<Long, Terms> latestTerms) {
