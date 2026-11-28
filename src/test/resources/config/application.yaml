@@ -6,3 +6,6 @@ jwt:
 notification:
   auto:
     enabled: false
+  # 예약 발송 작업도 끈다. 어드민 알림 테스트는 발송을 직접 부른다
+  broadcast:
+    enabled: false

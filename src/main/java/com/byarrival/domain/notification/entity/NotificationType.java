@@ -21,6 +21,8 @@ public enum NotificationType {
     STREAK_BREAK(true, true, NotificationCategory.ACTIVITY),
     POPULAR_ARTICLE(true, true, NotificationCategory.ACTIVITY),
     SERVICE_NOTICE(false, false, NotificationCategory.ACTIVITY),
+    /** 어드민이 보내는 이벤트(광고성) 알림. 광고성 정보 수신 동의자에게만 보낸다 */
+    EVENT(false, false, NotificationCategory.ACTIVITY),
     /** 광고성 정보 수신 동의·철회 결과와 2년마다 하는 재확인 안내(정보통신망법). 알림함에는 늘 남는다 */
     MARKETING_CONSENT(false, false, NotificationCategory.ACTIVITY),
     TEST(false, false, null);

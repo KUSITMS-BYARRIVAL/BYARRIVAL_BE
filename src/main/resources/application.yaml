@@ -218,6 +218,12 @@ notification:
     # Firebase 서비스 계정 키 JSON 파일을 base64로 인코딩한 한 줄
     fcm-credentials-base64: ${FCM_CREDENTIALS_BASE64:}
     android-channel-id: default
+  # 어드민 알림 발송 (NOTI-01·02)
+  broadcast:
+    # false면 1분마다 도는 예약 발송 작업을 돌리지 않는다(테스트)
+    enabled: true
+    # 테스트 발송을 받을 앱 회원 ID(쉼표로 구분). 운영자 기기에 로그인한 회원을 적는다
+    test-user-ids: ${TEST_NOTIFICATION_USER_IDS:}
   # 자동 알림 발송 조건 (DCK-34). 시각은 해당 요일의 출근 시각 기준이다
   auto:
     # false면 시각 기준 자동 알림 작업을 돌리지 않는다(테스트)
