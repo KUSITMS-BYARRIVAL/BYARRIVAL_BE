@@ -69,6 +69,13 @@ public class Quiz {
         return new Quiz(articleId, question, choicesJson, answerSeq, explanation, now);
     }
 
+    /**
+     * 재생성으로 새 버전이 생기면 이 버전은 내린다. 이미 이 퀴즈를 받은 노선은 그대로 쓴다.
+     */
+    public void deactivate() {
+        this.status = QuizStatus.INACTIVE;
+    }
+
     public boolean isCorrect(int selectedSeq) {
         return answerSeq == selectedSeq;
     }
