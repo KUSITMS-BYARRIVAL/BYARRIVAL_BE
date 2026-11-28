@@ -136,12 +136,14 @@ class AuthFlowIntegrationTest {
     void 필수_약관에_모두_동의하면_내_정보의_약관_동의_여부가_true가_된다() throws Exception {
         mockMvc.perform(get("/api/v1/terms").header(HttpHeaders.AUTHORIZATION, bearer(tokens.accessToken())))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.length()").value(3))
+            .andExpect(jsonPath("$.data.length()").value(4))
             .andExpect(jsonPath("$.data[0].type").value("SERVICE"))
             .andExpect(jsonPath("$.data[0].required").value(true))
             .andExpect(jsonPath("$.data[1].type").value("PRIVACY"))
             .andExpect(jsonPath("$.data[2].type").value("MARKETING"))
-            .andExpect(jsonPath("$.data[2].required").value(false));
+            .andExpect(jsonPath("$.data[2].required").value(false))
+            .andExpect(jsonPath("$.data[3].type").value("MARKETING_NIGHT"))
+            .andExpect(jsonPath("$.data[3].required").value(false));
 
         mockMvc.perform(post("/api/v1/terms/agreements")
                 .header(HttpHeaders.AUTHORIZATION, bearer(tokens.accessToken()))

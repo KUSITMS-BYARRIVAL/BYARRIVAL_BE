@@ -21,6 +21,8 @@ public enum NotificationType {
     STREAK_BREAK(true, true, NotificationCategory.ACTIVITY),
     POPULAR_ARTICLE(true, true, NotificationCategory.ACTIVITY),
     SERVICE_NOTICE(false, false, NotificationCategory.ACTIVITY),
+    /** 광고성 정보 수신 동의·철회 결과와 2년마다 하는 재확인 안내(정보통신망법). 알림함에는 늘 남는다 */
+    MARKETING_CONSENT(false, false, NotificationCategory.ACTIVITY),
     TEST(false, false, null);
 
     /** 서비스일마다 이 유형은 1번만 보낸다(DB 유니크 인덱스와 같다) */
