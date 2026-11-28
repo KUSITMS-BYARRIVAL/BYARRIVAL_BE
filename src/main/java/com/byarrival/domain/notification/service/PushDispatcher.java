@@ -5,6 +5,7 @@ import com.byarrival.domain.notification.entity.PushStatus;
 import com.byarrival.domain.notification.push.PushMessage;
 import com.byarrival.domain.notification.push.PushResult;
 import com.byarrival.domain.notification.push.PushSender;
+import com.byarrival.domain.notification.repository.NotificationBroadcastRepository;
 import com.byarrival.domain.notification.repository.NotificationRepository;
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -28,6 +29,7 @@ public class PushDispatcher {
     static final String TYPE_KEY = "type";
 
     private final NotificationRepository notificationRepository;
+    private final NotificationBroadcastRepository broadcastRepository;
     private final DeviceTokenService deviceTokenService;
     private final PushSender pushSender;
     private final Clock clock;
@@ -44,6 +46,7 @@ public class PushDispatcher {
         List<String> tokens = deviceTokenService.findTokens(notification.getUserId());
         if (tokens.isEmpty()) {
             updateStatus(notificationId, PushStatus.NO_DEVICE);
+            countBroadcast(notification, PushStatus.NO_DEVICE);
             return 0;
         }
 
@@ -53,11 +56,14 @@ public class PushDispatcher {
         } catch (RuntimeException e) {
             log.error("푸시 발송 실패: notificationId={}", notificationId, e);
             updateStatus(notificationId, PushStatus.FAILED);
+            countBroadcast(notification, PushStatus.FAILED);
             return 0;
         }
 
         deviceTokenService.deleteTokens(result.invalidTokens());
-        updateStatus(notificationId, result.successCount() > 0 ? PushStatus.SENT : PushStatus.FAILED);
+        PushStatus status = result.successCount() > 0 ? PushStatus.SENT : PushStatus.FAILED;
+        updateStatus(notificationId, status);
+        countBroadcast(notification, status);
         return result.successCount();
     }
 
@@ -70,5 +76,15 @@ public class PushDispatcher {
 
     private void updateStatus(Long notificationId, PushStatus status) {
         notificationRepository.updatePushStatus(notificationId, status, LocalDateTime.now(clock));
+    }
+
+    // 어드민 알림이면 발송 결과를 센다. 기기가 없거나 보내지 못하면 실패다
+    private void countBroadcast(Notification notification, PushStatus status) {
+        String broadcastId = notification.getParams().get(BroadcastDispatcher.BROADCAST_ID_KEY);
+        if (broadcastId == null) {
+            return;
+        }
+        boolean success = status == PushStatus.SENT;
+        broadcastRepository.addResult(Long.valueOf(broadcastId), success ? 1 : 0, success ? 0 : 1);
     }
 }

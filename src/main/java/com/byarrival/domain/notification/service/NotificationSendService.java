@@ -77,8 +77,16 @@ public class NotificationSendService {
      */
     @Transactional
     public Long createTest(Long userId, String title, String body) {
+        return createTest(userId, title, body, Map.of());
+    }
+
+    /**
+     * @param params 앱이 화면을 열 때 쓸 값(어드민 테스트 발송의 이동 화면)
+     */
+    @Transactional
+    public Long createTest(Long userId, String title, String body, Map<String, String> params) {
         Notification notification = notificationRepository.save(Notification.create(
-            userId, NotificationType.TEST, title, body, Map.of(), ServiceDay.today(clock), true));
+            userId, NotificationType.TEST, title, body, params, ServiceDay.today(clock), true));
         return notification.getId();
     }
 

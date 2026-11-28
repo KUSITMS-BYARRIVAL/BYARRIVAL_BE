@@ -16,6 +16,7 @@ import com.byarrival.domain.notification.push.PushMessage;
 import com.byarrival.domain.notification.push.PushResult;
 import com.byarrival.domain.notification.push.PushSendException;
 import com.byarrival.domain.notification.push.PushSender;
+import com.byarrival.domain.notification.repository.NotificationBroadcastRepository;
 import com.byarrival.domain.notification.repository.NotificationRepository;
 import java.time.Clock;
 import java.time.LocalDate;
@@ -48,7 +49,9 @@ class PushDispatcherTest {
         pushSender = mock(PushSender.class);
         ZoneId kst = ZoneId.of("Asia/Seoul");
         Clock clock = Clock.fixed(ZonedDateTime.of(NOW, kst).toInstant(), kst);
-        dispatcher = new PushDispatcher(notificationRepository, deviceTokenService, pushSender, clock);
+        // 어드민 알림 결과 집계는 AdminNotificationFlowIntegrationTest에서 확인한다
+        dispatcher = new PushDispatcher(notificationRepository, mock(NotificationBroadcastRepository.class),
+            deviceTokenService, pushSender, clock);
 
         Notification notification = Notification.create(USER_ID, NotificationType.SERVICE_NOTICE, "점검 안내", "내용",
             Map.of("noticeId", "7"), LocalDate.of(2026, 11, 8), true);
