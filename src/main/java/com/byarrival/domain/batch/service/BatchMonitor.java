@@ -84,6 +84,15 @@ public class BatchMonitor {
         guard(() -> recordFailed(serviceDate, startedAt, reason, fill));
     }
 
+    /**
+     * 운영자 새로고침은 배치 한 번 분량의 AI 비용이 드므로 누가 언제 실행했는지 남긴다.
+     */
+    public void refreshStarted(LocalDate serviceDate, Long adminId, int deletedArticles) {
+        guard(() -> batchAlertNotifier.send("🔄 **어드민 새로고침 시작** 서비스일 " + serviceDate
+            + " · 운영자 ID " + adminId + "\n기존 기사 " + deletedArticles
+            + "건을 지우고 수집부터 AI 가공까지 다시 실행합니다."));
+    }
+
     public void crashed(Throwable error) {
         guard(() -> batchAlertNotifier.send("🔥 **일일 배치 비정상 종료** 배치 상태를 기록하지 못했을 수 있습니다. "
             + "batch_run과 서버 로그를 확인하세요.\n" + error.getClass().getName()));

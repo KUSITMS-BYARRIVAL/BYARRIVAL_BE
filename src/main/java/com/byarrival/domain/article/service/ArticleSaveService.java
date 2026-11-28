@@ -47,6 +47,18 @@ public class ArticleSaveService {
      * 제목을 읽을 수 없는 기사(외국어, 깨진 글자), 사진 기사([사진]·[포토] 말머리),
      * 뉴스가 아닌 기사([오늘의 운세]·[미리보는 ○○신문]·[영상]·[부고]·[인사] 말머리)는 뺀다.
      */
+    /**
+     * 그 서비스일 기사를 모두 지운다. 운영자 새로고침이 같은 기사를 다시 수집할 수 있게 한다(GUID·URL은 전체에서 유일).
+     * 노선이 가리키는 기사가 있으면 외래 키 제약으로 실패하므로, 아직 노출되지 않은 서비스일에만 쓴다.
+     *
+     * @return 지운 기사 수
+     */
+    @Transactional
+    public int deleteByServiceDate(LocalDate serviceDate) {
+        articleRepository.clearDuplicatesOf(serviceDate);
+        return articleRepository.deleteByServiceDate(serviceDate);
+    }
+
     @Transactional(readOnly = true)
     public CollectPlan plan(FetchedFeed feed, LocalDate serviceDate) {
         List<RssItem> items = feed.items().stream()

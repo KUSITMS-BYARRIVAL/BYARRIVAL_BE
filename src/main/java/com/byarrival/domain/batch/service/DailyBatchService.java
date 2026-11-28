@@ -46,13 +46,20 @@ public class DailyBatchService {
             log.info("[DailyBatch] serviceDate={} 배치가 이미 실행 중이거나 완료되어 건너뜀", serviceDate);
             return;
         }
+        process(batchRunId.get(), serviceDate);
+    }
+
+    /**
+     * 시작 기록을 마친 배치를 수집부터 AI 가공까지 실행한다. 정기 실행과 운영자 새로고침이 함께 쓴다.
+     */
+    public void process(Long batchRunId, LocalDate serviceDate) {
         Instant startedAt = batchMonitor.start();
 
         try {
             FeedCollectResult collectResult = feedCollectService.collect(serviceDate);
             if (collectResult.allFailed()) {
                 // 다시 실행할 수 있도록 실패로 남긴다. 실패 횟수는 서비스일당 1회만 세므로 재실행해도 늘지 않는다.
-                fail(batchRunId.get(), serviceDate, startedAt,
+                fail(batchRunId, serviceDate, startedAt,
                     "모든 Feed 수집 실패 feedIds=" + collectResult.failedFeedIds());
                 return;
             }
@@ -69,7 +76,7 @@ public class DailyBatchService {
             generateSmalltalks(serviceDate);
             if (!saveFailedFeedIds.isEmpty()) {
                 // 다시 실행할 수 있도록 실패로 남긴다. 이미 저장·가공된 기사는 재실행 때 건너뛴다.
-                fail(batchRunId.get(), serviceDate, startedAt, "기사 저장 실패 feedIds=" + saveFailedFeedIds);
+                fail(batchRunId, serviceDate, startedAt, "기사 저장 실패 feedIds=" + saveFailedFeedIds);
                 return;
             }
             CategoryFill fill = articleCollectService.checkCategoryFill(serviceDate);
@@ -80,7 +87,7 @@ public class DailyBatchService {
             if (!fill.emptyCategoryIds().isEmpty()) {
                 // 그날 추천을 할 수 없는 카테고리. 다시 실행해 빈 카테고리를 채울 수 있도록 실패로 남긴다.
                 String reason = "기사 0건 카테고리 categoryIds=" + fill.emptyCategoryIds();
-                batchRunService.fail(batchRunId.get(), reason);
+                batchRunService.fail(batchRunId, reason);
                 batchMonitor.failed(serviceDate, startedAt, reason, fill);
                 return;
             }
@@ -88,16 +95,16 @@ public class DailyBatchService {
             if (!ready.emptyCategoryIds().isEmpty()) {
                 // 요약을 하나도 못 해 그날 추천을 할 수 없는 카테고리. 다시 실행하면 남은 기사만 가공한다
                 String reason = "추천 가능 기사 0건 카테고리 categoryIds=" + ready.emptyCategoryIds();
-                batchRunService.fail(batchRunId.get(), reason);
+                batchRunService.fail(batchRunId, reason);
                 batchMonitor.failed(serviceDate, startedAt, reason, ready);
                 return;
             }
-            batchRunService.complete(batchRunId.get());
+            batchRunService.complete(batchRunId);
             batchMonitor.completed(serviceDate, startedAt, ready);
             log.info("[DailyBatch] serviceDate={} 완료 - 수집 Feed {}개", serviceDate, fetchedFeeds.size());
         } catch (RuntimeException e) {
             log.error("[DailyBatch] serviceDate={} 실패 - {}", serviceDate, e.getMessage(), e);
-            batchRunService.fail(batchRunId.get(), e.getMessage());
+            batchRunService.fail(batchRunId, e.getMessage());
             // 예외 메시지에는 외부 URL이나 사용자 값이 섞일 수 있어 알림에는 종류만 보낸다
             batchMonitor.failed(serviceDate, startedAt, e.getClass().getName());
         }
